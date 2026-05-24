@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 
 AskMode = Literal["auto", "rag", "graphrag"]
+ResponseMode = Literal["direct", "rag", "graphrag", "general"]
 
 
 class AskRequest(BaseModel):
@@ -15,8 +16,9 @@ class AskRequest(BaseModel):
 
 class RouteDecision(BaseModel):
     target_department: str | None
-    mode: Literal["direct", "rag", "graphrag"]
+    mode: ResponseMode
     requires_rag: bool
+    need_rag: bool = False
     confidence: float
     reason: str
 
@@ -44,8 +46,9 @@ class AskResponse(BaseModel):
     denied: bool
     refusal_reason: str | None = None
     cache_hit: bool
-    mode: Literal["direct", "rag", "graphrag"]
+    mode: ResponseMode
     route: RouteDecision
+    retrieved_chunks: list[Citation] = Field(default_factory=list)
     citations: list[Citation] = Field(default_factory=list)
     graph_paths: list[GraphPath] = Field(default_factory=list)
 

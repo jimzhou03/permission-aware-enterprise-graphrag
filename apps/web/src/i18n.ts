@@ -24,6 +24,7 @@ export const UI_TEXT: Record<
   Language,
   {
     subtitle: string;
+    consoleLabel: string;
     language: string;
     chinese: string;
     english: string;
@@ -33,7 +34,6 @@ export const UI_TEXT: Record<
     password: string;
     signIn: string;
     working: string;
-    overreachDemoQuestions: string;
     currentSession: string;
     currentUser: string;
     currentRole: string;
@@ -51,6 +51,9 @@ export const UI_TEXT: Record<
     requestDetailAndAdminAudit: string;
     noRequestDetailLoaded: string;
     loadAuditLogs: string;
+    riskAlert: string;
+    normalState: string;
+    accountState: string;
     citations: string;
     graphPaths: string;
     loginSuccess: string;
@@ -63,52 +66,88 @@ export const UI_TEXT: Record<
     scenarioExecutionFailed: string;
     loadAuditLogsFailed: string;
     loadedAuditLogsPrefix: string;
+    logout: string;
+    loginPageTagline: string;
+    capabilityTitle: string;
+    capabilityA: string;
+    capabilityB: string;
+    capabilityC: string;
+    securityTestScenarios: string;
+    expandScenarios: string;
+    collapseScenarios: string;
+    routerStatus: string;
+    generatorStatus: string;
+    restoringSession: string;
+    sessionRestoreFailed: string;
+    modelStatus: string;
+    auditDetail: string;
+    demoAccountHint: string;
   }
 > = {
   zh: {
-    subtitle: "权限矩阵演示控制台",
+    subtitle: "企业级权限感知 GraphRAG 知识助手",
+    consoleLabel: "Enterprise Access Console",
     language: "语言",
     chinese: "中文",
     english: "English",
     login: "登录",
-    demoAccount: "演示账号",
-    email: "Email",
-    password: "Password",
-    signIn: "Sign In",
+    demoAccount: "Demo Account",
+    email: "邮箱",
+    password: "密码",
+    signIn: "登录",
     working: "处理中...",
-    overreachDemoQuestions: "越权演示问题",
     currentSession: "当前会话",
     currentUser: "当前用户",
     currentRole: "当前角色",
-    deniedCurrentRequest: "本次拒绝",
+    deniedCurrentRequest: "本次是否拒绝",
     requestId: "request_id",
     accessibleKnowledgeBases: "可访问知识库",
-    hitKnowledgeBases: "本次命中知识库",
-    askQuestionSection: "提问",
-    askQuestionPlaceholder: "Ask a question...",
-    ask: "Ask",
-    mode: "Mode",
-    kbScopeOptional: "Knowledge Base Scope (optional)",
+    hitKnowledgeBases: "命中知识库",
+    askQuestionSection: "提问区",
+    askQuestionPlaceholder: "请输入问题...",
+    ask: "提问",
+    mode: "模式",
+    kbScopeOptional: "知识库范围（可选）",
     latestResponse: "最新响应",
     noResponseYet: "暂无响应。",
-    requestDetailAndAdminAudit: "Request Detail & Admin Audit",
+    requestDetailAndAdminAudit: "请求详情与管理员审计",
     noRequestDetailLoaded: "暂无请求详情。",
-    loadAuditLogs: "Load Audit Logs",
-    citations: "Citations",
-    graphPaths: "Graph Paths",
+    loadAuditLogs: "加载审计日志",
+    riskAlert: "风险提示",
+    normalState: "正常",
+    accountState: "账号状态",
+    citations: "引用片段",
+    graphPaths: "图谱路径",
     loginSuccess: "登录成功。",
     loginFailed: "登录失败。",
     requestDeniedPrefix: "请求被拒绝",
     answerServedFromCache: "命中缓存返回答案。",
     answerGenerated: "答案已生成。",
     askFailed: "提问失败。",
-    scenarioExecutedPrefix: "演示场景已执行",
+    scenarioExecutedPrefix: "安全测试场景已执行",
     scenarioExecutionFailed: "场景执行失败。",
     loadAuditLogsFailed: "加载审计日志失败。",
-    loadedAuditLogsPrefix: "已加载审计日志数量"
+    loadedAuditLogsPrefix: "已加载审计日志数量",
+    logout: "退出登录",
+    loginPageTagline: "企业级权限感知知识问答系统",
+    capabilityTitle: "核心能力",
+    capabilityA: "后端确定性权限判断与越权拦截",
+    capabilityB: "权限范围内 RAG / GraphRAG 检索链路",
+    capabilityC: "审计日志与缓存隔离（防缓存越权）",
+    securityTestScenarios: "安全测试场景",
+    expandScenarios: "展开场景",
+    collapseScenarios: "收起场景",
+    routerStatus: "Router: rules",
+    generatorStatus: "Generator: mock",
+    restoringSession: "正在恢复登录状态...",
+    sessionRestoreFailed: "登录状态恢复失败，请重新登录。",
+    modelStatus: "模型/路由状态",
+    auditDetail: "审计详情",
+    demoAccountHint: "仅用于演示账号切换"
   },
   en: {
-    subtitle: "Permission Matrix Demo Console",
+    subtitle: "Permission-Aware Enterprise GraphRAG Knowledge Assistant",
+    consoleLabel: "Enterprise Access Console",
     language: "Language",
     chinese: "中文",
     english: "English",
@@ -118,7 +157,6 @@ export const UI_TEXT: Record<
     password: "Password",
     signIn: "Sign In",
     working: "Working...",
-    overreachDemoQuestions: "Overreach Demo Questions",
     currentSession: "Current Session",
     currentUser: "Current User",
     currentRole: "Current Role",
@@ -136,6 +174,9 @@ export const UI_TEXT: Record<
     requestDetailAndAdminAudit: "Request Detail & Admin Audit",
     noRequestDetailLoaded: "No request detail loaded.",
     loadAuditLogs: "Load Audit Logs",
+    riskAlert: "Risk Alert",
+    normalState: "Normal",
+    accountState: "Account Status",
     citations: "Citations",
     graphPaths: "Graph Paths",
     loginSuccess: "Login success.",
@@ -144,9 +185,25 @@ export const UI_TEXT: Record<
     answerServedFromCache: "Answer served from cache.",
     answerGenerated: "Answer generated.",
     askFailed: "Ask failed.",
-    scenarioExecutedPrefix: "Scenario executed",
+    scenarioExecutedPrefix: "Security scenario executed",
     scenarioExecutionFailed: "Scenario execution failed.",
     loadAuditLogsFailed: "Load audit logs failed.",
-    loadedAuditLogsPrefix: "Loaded audit logs"
+    loadedAuditLogsPrefix: "Loaded audit logs",
+    logout: "Logout",
+    loginPageTagline: "Enterprise permission-aware knowledge assistant",
+    capabilityTitle: "Core Capabilities",
+    capabilityA: "Deterministic backend authorization and overreach interception",
+    capabilityB: "Permission-scoped RAG / GraphRAG retrieval pipeline",
+    capabilityC: "Audit logs and cache isolation to prevent cache overreach",
+    securityTestScenarios: "Security Test Scenarios",
+    expandScenarios: "Expand",
+    collapseScenarios: "Collapse",
+    routerStatus: "Router: rules",
+    generatorStatus: "Generator: mock",
+    restoringSession: "Restoring session...",
+    sessionRestoreFailed: "Session restore failed, please sign in again.",
+    modelStatus: "Model / Router Status",
+    auditDetail: "Audit Detail",
+    demoAccountHint: "For demo account switching only"
   }
 };

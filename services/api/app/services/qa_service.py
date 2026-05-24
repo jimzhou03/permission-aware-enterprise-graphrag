@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -48,6 +49,7 @@ def _deny_response(request_id: str, reason: str, route_mode: str, route) -> AskR
         cache_hit=False,
         mode=route_mode,  # type: ignore[arg-type]
         route=route,
+        retrieved_chunks=[],
         citations=[],
         graph_paths=[],
     )
@@ -68,6 +70,7 @@ def _cache_payload_from_response(response: AskResponse, model: str) -> dict:
         "mode": response.mode,
         "model": model,
         "route": response.route.model_dump(),
+        "retrieved_chunks": [item.model_dump(mode="json") for item in response.retrieved_chunks],
         "citations": [item.model_dump(mode="json") for item in response.citations],
         "graph_paths": [item.model_dump(mode="json") for item in response.graph_paths],
     }
@@ -75,8 +78,11 @@ def _cache_payload_from_response(response: AskResponse, model: str) -> dict:
 
 def _response_from_cache_payload(request_id: str, payload: dict) -> AskResponse:
     route = RouteDecision(**payload.get("route", {}))
+    retrieved_chunks = [Citation(**item) for item in payload.get("retrieved_chunks", [])]
     citations = [Citation(**item) for item in payload.get("citations", [])]
     graph_paths = [GraphPath(**item) for item in payload.get("graph_paths", [])]
+    if not retrieved_chunks and citations:
+        retrieved_chunks = citations
     return AskResponse(
         request_id=request_id,
         answer=payload.get("answer", ""),
@@ -85,6 +91,7 @@ def _response_from_cache_payload(request_id: str, payload: dict) -> AskResponse:
         cache_hit=True,
         mode=payload.get("mode", route.mode),
         route=route,
+        retrieved_chunks=retrieved_chunks,
         citations=citations,
         graph_paths=graph_paths,
     )
@@ -93,6 +100,16 @@ def _response_from_cache_payload(request_id: str, payload: dict) -> AskResponse:
 def _model_from_cache_payload(payload: dict) -> str:
     value = payload.get("model")
     return str(value) if value else "cache:unknown-model"
+
+
+def _render_general_greeting(question: str) -> str:
+    is_zh = bool(re.search(r"[\u4e00-\u9fff]", question))
+    if is_zh:
+        return "你好，我是企业权限感知知识助手。你可以询问与当前权限范围内知识库相关的问题。"
+    return (
+        "Hello, I am the permission-aware enterprise knowledge assistant. "
+        "You can ask questions within your authorized knowledge bases."
+    )
 
 
 def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
@@ -198,6 +215,44 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         )
         return QAResult(response=cached_response, request_id=request_id)
 
+    if route.mode == "general":
+        answer = _render_general_greeting(payload.question)
+        response = AskResponse(
+            request_id=request_id,
+            answer=answer,
+            denied=False,
+            refusal_reason=None,
+            cache_hit=False,
+            mode="general",
+            route=route,
+            retrieved_chunks=[],
+            citations=[],
+            graph_paths=[],
+        )
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        create_qa_audit_log(
+            db=db,
+            request_id=request_id,
+            user_id=user.id,
+            question=payload.question,
+            answer=answer,
+            denied=False,
+            refusal_reason="",
+            hit_kb_ids=[],
+            hit_document_ids=[],
+            hit_chunk_ids=[],
+            mode="general",
+            model="general-fallback",
+            latency_ms=latency_ms,
+            cache_hit=False,
+        )
+        cache_service.set_payload(
+            cache_key_parts,
+            payload=_cache_payload_from_response(response, model="general-fallback"),
+            ttl_seconds=settings.cache_ttl_seconds,
+        )
+        return QAResult(response=response, request_id=request_id)
+
     scoped_codes = payload.knowledge_base_codes
     retrieved = retrieve_permission_scoped_chunks(
         db=db,
@@ -242,6 +297,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         cache_hit=False,
         mode=route.mode,  # type: ignore[arg-type]
         route=route,
+        retrieved_chunks=citations,
         citations=citations,
         graph_paths=graph_paths,
     )

@@ -15,6 +15,14 @@ export interface LoginResponse {
   user: UserPublic;
 }
 
+export interface AuthMeResponse {
+  user: UserPublic;
+  permission_scope: {
+    role: string;
+    department: string | null;
+  };
+}
+
 export interface KnowledgeBase {
   id: string;
   code: string;
@@ -55,14 +63,16 @@ export interface AskResponse {
   denied: boolean;
   refusal_reason: string | null;
   cache_hit: boolean;
-  mode: "direct" | "rag" | "graphrag";
+  mode: "direct" | "rag" | "graphrag" | "general";
   route: {
     target_department: string | null;
-    mode: "direct" | "rag" | "graphrag";
+    mode: "direct" | "rag" | "graphrag" | "general";
     requires_rag: boolean;
+    need_rag: boolean;
     confidence: number;
     reason: string;
   };
+  retrieved_chunks: Citation[];
   citations: Citation[];
   graph_paths: GraphPath[];
 }
@@ -82,4 +92,3 @@ export interface AuditLog {
   cache_hit: boolean;
   latency_ms: number;
 }
-

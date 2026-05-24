@@ -1,10 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { askQuestion, getRequestDetail, listAuditLogs, listKnowledgeBases, login } from "./api";
+import {
+  askQuestion,
+  fetchAuthMe,
+  getRequestDetail,
+  listAuditLogs,
+  listKnowledgeBases,
+  login
+} from "./api";
 import { LANGUAGE_STORAGE_KEY, OVERREACH_LABELS, UI_TEXT, type Language } from "./i18n";
 import type { AskMode, AskResponse, AuditLog, KnowledgeBase, UserPublic } from "./types";
 
 type DemoAccountKey = "admin" | "hr" | "finance" | "tech" | "visitor";
+
+const AUTH_SESSION_STORAGE_KEY = "paegr.auth.session";
 
 const DEMO_ACCOUNTS: Record<
   DemoAccountKey,
@@ -70,6 +79,27 @@ function getInitialLanguage(): Language {
   return stored === "en" ? "en" : "zh";
 }
 
+function saveAuthSession(accessToken: string, user: UserPublic): void {
+  const payload = JSON.stringify({ access_token: accessToken, user });
+  window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, payload);
+}
+
+function clearAuthSession(): void {
+  window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+}
+
+function readAuthSession(): { access_token: string; user: UserPublic } | null {
+  const raw = window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { access_token?: string; user?: UserPublic };
+    if (!parsed.access_token || !parsed.user) return null;
+    return { access_token: parsed.access_token, user: parsed.user };
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   const [language, setLanguage] = useState<Language>(getInitialLanguage);
   const [selectedDemoAccount, setSelectedDemoAccount] = useState<DemoAccountKey>("hr");
@@ -85,14 +115,62 @@ export default function App() {
   const [requestDetail, setRequestDetail] = useState<AuditLog | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [pending, setPending] = useState(false);
-  const [message, setMessage] = useState<string>("");
+  const [message, setMessage] = useState("");
+  const [sessionReady, setSessionReady] = useState(false);
+  const [securityOpen, setSecurityOpen] = useState(false);
 
   const t = UI_TEXT[language];
   const overreachLabels = OVERREACH_LABELS[language];
+  const isAuthenticated = Boolean(token && user);
+  const deniedThisRequest = answer?.denied ?? false;
 
   useEffect(() => {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
   }, [language]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function restoreSession() {
+      const stored = readAuthSession();
+      if (!stored) {
+        if (!cancelled) setSessionReady(true);
+        return;
+      }
+
+      if (!cancelled) {
+        setPending(true);
+        setMessage(UI_TEXT[getInitialLanguage()].restoringSession);
+      }
+
+      try {
+        const me = await fetchAuthMe(stored.access_token);
+        const kbs = await listKnowledgeBases(stored.access_token);
+        if (cancelled) return;
+        setToken(stored.access_token);
+        setUser(me.user);
+        setKnowledgeBases(kbs);
+        setMessage("");
+      } catch {
+        clearAuthSession();
+        if (cancelled) return;
+        setToken("");
+        setUser(null);
+        setKnowledgeBases([]);
+        setMessage(UI_TEXT[getInitialLanguage()].sessionRestoreFailed);
+      } finally {
+        if (!cancelled) {
+          setPending(false);
+          setSessionReady(true);
+        }
+      }
+    }
+
+    void restoreSession();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const roleBadgeClass = useMemo(() => {
     const role = user?.role ?? "";
@@ -106,21 +184,41 @@ export default function App() {
     return [...new Set(answer.citations.map((item) => item.kb_code))];
   }, [answer]);
 
+  function resetAskState() {
+    setAnswer(null);
+    setRequestDetail(null);
+    setAuditLogs([]);
+    setQuestion("");
+    setSelectedKbCodes([]);
+  }
+
   function applyDemoAccount(account: DemoAccountKey) {
     setSelectedDemoAccount(account);
     setEmail(DEMO_ACCOUNTS[account].email);
     setPassword(DEMO_ACCOUNTS[account].password);
   }
 
+  function applyAuthenticatedSession(accessToken: string, nextUser: UserPublic, kbs: KnowledgeBase[]) {
+    setToken(accessToken);
+    setUser(nextUser);
+    setKnowledgeBases(kbs);
+    saveAuthSession(accessToken, nextUser);
+  }
+
   async function loginByCredentials(loginEmail: string, loginPassword: string) {
     const response = await login(loginEmail, loginPassword);
     const kbs = await listKnowledgeBases(response.access_token);
-    setToken(response.access_token);
-    setUser(response.user);
-    setKnowledgeBases(kbs);
-    setSelectedKbCodes([]);
-    setAuditLogs([]);
+    applyAuthenticatedSession(response.access_token, response.user, kbs);
     return { token: response.access_token, user: response.user, kbs };
+  }
+
+  function logout() {
+    clearAuthSession();
+    setToken("");
+    setUser(null);
+    setKnowledgeBases([]);
+    setMessage("");
+    resetAskState();
   }
 
   async function onLogin(event: React.FormEvent) {
@@ -129,11 +227,11 @@ export default function App() {
     setMessage("");
     try {
       await loginByCredentials(email, password);
-      setAnswer(null);
-      setRequestDetail(null);
+      resetAskState();
       setMessage(t.loginSuccess);
     } catch (error) {
       setMessage(error instanceof Error ? `${t.loginFailed} ${error.message}` : t.loginFailed);
+      clearAuthSession();
       setToken("");
       setUser(null);
       setKnowledgeBases([]);
@@ -215,46 +313,63 @@ export default function App() {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,#dff2ea_0%,#f1f5f9_40%,#f8fafc_100%)]">
-      <div className="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
-        <header className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 pb-4">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900 md:text-2xl">
-              Permission-Aware Enterprise GraphRAG Assistant
-            </h1>
-            <p className="mt-1 text-sm text-slate-600">{t.subtitle}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-slate-600" htmlFor="ui-language-select">
+  if (!sessionReady) {
+    return (
+      <div className="min-h-screen bg-slate-100">
+        <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center px-6">
+          <div className="glass-panel px-6 py-5 text-sm text-slate-600">{message || t.restoringSession}</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-100">
+        <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8">
+          <div className="mb-6 flex items-center justify-end gap-2">
+            <label className="text-xs text-slate-600" htmlFor="login-language-select">
               {t.language}
             </label>
             <select
-              id="ui-language-select"
-              className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700"
+              id="login-language-select"
+              className="h-9 rounded-xl border border-slate-300 bg-white px-2 text-xs text-slate-700"
               value={language}
               onChange={(event) => setLanguage(event.target.value as Language)}
             >
               <option value="zh">{t.chinese}</option>
               <option value="en">{t.english}</option>
             </select>
-            {user ? (
-              <div className={`rounded-md border px-3 py-1 text-xs font-medium ${roleBadgeClass}`}>
-                {user.role} · {user.department ?? "none"} · {user.email}
-              </div>
-            ) : null}
           </div>
-        </header>
 
-        <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
-          <aside className="space-y-4">
-            <section className="panel p-4">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
-                {t.login}
-              </h2>
+          <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+            <section className="glass-panel p-8">
+              <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">{t.consoleLabel}</div>
+              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 md:text-3xl">
+                Permission-Aware Enterprise GraphRAG Assistant
+              </h1>
+              <p className="mt-2 text-sm text-slate-600">{t.loginPageTagline}</p>
+
+              <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  {t.capabilityTitle}
+                </p>
+                <ul className="mt-3 space-y-2 text-sm text-slate-700">
+                  <li>{t.capabilityA}</li>
+                  <li>{t.capabilityB}</li>
+                  <li>{t.capabilityC}</li>
+                </ul>
+              </div>
+            </section>
+
+            <section className="glass-panel p-8">
+              <h2 className="panel-title">{t.login}</h2>
               <form className="space-y-3" onSubmit={onLogin}>
                 <label className="block space-y-1">
-                  <span className="text-xs font-medium text-slate-600">{t.demoAccount}</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-600">{t.demoAccount}</span>
+                    <span className="text-[11px] text-slate-500">{t.demoAccountHint}</span>
+                  </div>
                   <select
                     className="field"
                     value={selectedDemoAccount}
@@ -295,98 +410,93 @@ export default function App() {
                   {pending ? t.working : t.signIn}
                 </button>
               </form>
-            </section>
 
-            <section className="panel p-4">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
-                {t.overreachDemoQuestions}
-              </h2>
-              <div className="space-y-2">
-                {OVERREACH_SCENARIOS.map((scenario) => (
-                  <button
-                    key={scenario.id}
-                    className="btn-secondary w-full justify-start text-left"
-                    type="button"
-                    disabled={pending}
-                    onClick={() => runOverreachScenario(scenario)}
-                  >
-                    {overreachLabels[scenario.id] ?? scenario.id}
-                  </button>
-                ))}
-              </div>
+              {message ? <div className="mt-3 notification-line">{message}</div> : null}
             </section>
-          </aside>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-          <main className="space-y-4">
-            <section className="panel p-4">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
-                {t.currentSession}
-              </h2>
-              <div className="grid gap-2 text-xs text-slate-700 sm:grid-cols-2 xl:grid-cols-4">
+  return (
+    <div className="min-h-screen bg-slate-100 text-slate-900">
+      <div className="mx-auto w-full max-w-[1500px] px-4 py-5 md:px-8">
+        <header className="glass-panel mb-5 flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.22em] text-slate-500">{t.consoleLabel}</div>
+            <h1 className="text-lg font-semibold tracking-tight text-slate-900 md:text-2xl">
+              Permission-Aware Enterprise GraphRAG Assistant
+            </h1>
+            <p className="mt-1 text-sm text-slate-600">{t.subtitle}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-slate-600" htmlFor="ui-language-select">
+              {t.language}
+            </label>
+            <select
+              id="ui-language-select"
+              className="h-9 rounded-xl border border-slate-300 bg-white px-2 text-xs text-slate-700"
+              value={language}
+              onChange={(event) => setLanguage(event.target.value as Language)}
+            >
+              <option value="zh">{t.chinese}</option>
+              <option value="en">{t.english}</option>
+            </select>
+            <div className={`status-pill ${roleBadgeClass}`}>
+              {user ? `${user.role} · ${user.department ?? "none"}` : t.accountState}
+            </div>
+            <button className="btn-secondary" onClick={logout} type="button">
+              {t.logout}
+            </button>
+          </div>
+        </header>
+
+        <div className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)_340px]">
+          <aside className="space-y-4">
+            <section className="glass-panel p-5">
+              <h2 className="panel-title">{t.currentSession}</h2>
+              <div className="grid gap-2 text-xs text-slate-700">
                 <div>
                   {t.currentUser}: <span className="font-mono">{user?.email ?? "-"}</span>
                 </div>
                 <div>
                   {t.currentRole}: <span className="font-mono">{user?.role ?? "-"}</span>
                 </div>
-                <div>
-                  {t.deniedCurrentRequest}:{" "}
-                  <span className="font-mono">{answer ? String(answer.denied) : "-"}</span>
-                </div>
-                <div>
-                  {t.requestId}: <span className="font-mono">{answer?.request_id ?? "-"}</span>
+              </div>
+
+              <div className="mt-4">
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-600">
+                  {t.accessibleKnowledgeBases}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {knowledgeBases.map((kb) => (
+                    <span key={kb.id} className="tag-pill">
+                      {kb.code}
+                    </span>
+                  ))}
                 </div>
               </div>
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-600">
-                    {t.accessibleKnowledgeBases}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {knowledgeBases.length === 0 ? (
-                      <span className="text-xs text-slate-500">-</span>
-                    ) : (
-                      knowledgeBases.map((kb) => (
-                        <span
-                          key={kb.id}
-                          className="rounded border border-slate-300 bg-white px-2 py-1 font-mono text-xs"
-                        >
-                          {kb.code}
-                        </span>
-                      ))
-                    )}
-                  </div>
-                </div>
-                <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-600">
-                    {t.hitKnowledgeBases}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {latestHitKbCodes.length === 0 ? (
-                      <span className="text-xs text-slate-500">-</span>
-                    ) : (
-                      latestHitKbCodes.map((code) => (
-                        <span
-                          key={code}
-                          className="rounded border border-slate-300 bg-white px-2 py-1 font-mono text-xs"
-                        >
-                          {code}
-                        </span>
-                      ))
-                    )}
-                  </div>
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-600">
+                  {t.modelStatus}
+                </p>
+                <div className="space-y-1 text-xs text-slate-700">
+                  <div>{t.routerStatus}</div>
+                  <div>{t.generatorStatus}</div>
                 </div>
               </div>
             </section>
+          </aside>
 
-            <section className="panel p-4">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
-                {t.askQuestionSection}
-              </h2>
+          <main className="space-y-4">
+            <section className="glass-panel p-5">
+              <h2 className="panel-title">{t.askQuestionSection}</h2>
               <form className="space-y-3" onSubmit={onAsk}>
-                <div className="grid gap-3 md:grid-cols-[1fr_140px]">
+                <div className="grid gap-3 md:grid-cols-[1fr_170px]">
                   <textarea
-                    className="min-h-24 w-full rounded-md border border-slate-300 bg-white p-3 text-sm text-slate-900 outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-200"
+                    className="soft-textarea"
                     value={question}
                     onChange={(event) => setQuestion(event.target.value)}
                     placeholder={t.askQuestionPlaceholder}
@@ -410,60 +520,50 @@ export default function App() {
                   </div>
                 </div>
 
-                <div>
+                <div className="soft-card">
                   <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-600">
                     {t.kbScopeOptional}
                   </p>
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="flex flex-wrap gap-2">
                     {knowledgeBases.map((kb) => (
-                      <label
-                        key={kb.id}
-                        className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs"
-                      >
+                      <label key={kb.id} className="tag-check">
                         <input
                           type="checkbox"
                           checked={selectedKbCodes.includes(kb.code)}
                           onChange={() => toggleKb(kb.code)}
                         />
-                        <span className="font-mono">{kb.code}</span>
+                        <span className="font-mono text-xs">{kb.code}</span>
                       </label>
                     ))}
                   </div>
                 </div>
               </form>
 
-              {message ? (
-                <div className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                  {message}
-                </div>
-              ) : null}
+              {message ? <div className="mt-3 notification-line">{message}</div> : null}
             </section>
 
-            <section className="panel p-4">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
-                {t.latestResponse}
-              </h2>
+            <section className="glass-panel p-5">
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <h2 className="panel-title">{t.latestResponse}</h2>
+                <div className={`risk-badge ${deniedThisRequest ? "is-risk" : "is-normal"}`}>
+                  {deniedThisRequest ? t.riskAlert : t.normalState}
+                </div>
+              </div>
               {!answer ? (
                 <p className="text-sm text-slate-500">{t.noResponseYet}</p>
               ) : (
                 <div className="space-y-3">
-                  <div className="grid gap-2 text-xs text-slate-600 md:grid-cols-4">
-                    <div>
-                      {t.requestId}: <span className="font-mono">{answer.request_id}</span>
+                  {deniedThisRequest ? (
+                    <div className="risk-panel">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-red-700">
+                        {t.requestDeniedPrefix}
+                      </div>
+                      <p className="mt-1 text-sm text-red-700">{answer.refusal_reason ?? "forbidden"}</p>
                     </div>
-                    <div>
-                      {t.mode.toLowerCase()}: <span className="font-mono">{answer.mode}</span>
-                    </div>
-                    <div>
-                      cache_hit: <span className="font-mono">{String(answer.cache_hit)}</span>
-                    </div>
-                    <div>
-                      denied: <span className="font-mono">{String(answer.denied)}</span>
-                    </div>
-                  </div>
-                  <pre className="overflow-x-auto rounded-md border border-slate-200 bg-slate-50 p-3 font-mono text-xs whitespace-pre-wrap">
-                    {answer.answer}
-                  </pre>
+                  ) : null}
+
+                  <pre className="answer-block">{answer.answer}</pre>
+
                   {answer.citations.length > 0 ? (
                     <div>
                       <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-600">
@@ -471,32 +571,11 @@ export default function App() {
                       </p>
                       <div className="space-y-2">
                         {answer.citations.map((item) => (
-                          <div
-                            key={item.chunk_id}
-                            className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs"
-                          >
-                            <div className="font-mono text-slate-700">
+                          <div key={item.chunk_id} className="soft-card">
+                            <div className="font-mono text-xs text-slate-700">
                               {item.kb_code} / {item.document_title} / score={item.score}
                             </div>
-                            <p className="mt-1 text-slate-600">{item.excerpt}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                  {answer.graph_paths.length > 0 ? (
-                    <div>
-                      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-600">
-                        {t.graphPaths}
-                      </p>
-                      <div className="space-y-2">
-                        {answer.graph_paths.map((item) => (
-                          <div
-                            key={item.chunk_id}
-                            className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs"
-                          >
-                            <div className="font-mono text-slate-700">{item.path.join(" -> ")}</div>
-                            <p className="mt-1 text-slate-600">{item.explanation}</p>
+                            <p className="mt-1 text-xs text-slate-600">{item.excerpt}</p>
                           </div>
                         ))}
                       </div>
@@ -504,54 +583,106 @@ export default function App() {
                   ) : null}
                 </div>
               )}
-            </section>
-
-            <section className="panel p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                  {t.requestDetailAndAdminAudit}
-                </h2>
-                {user?.role === "admin" ? (
-                  <button className="btn-secondary" onClick={onLoadAdminAudit} disabled={pending}>
-                    {t.loadAuditLogs}
-                  </button>
-                ) : null}
-              </div>
-              {requestDetail ? (
-                <pre className="overflow-x-auto rounded-md border border-slate-200 bg-slate-50 p-3 font-mono text-xs whitespace-pre-wrap">
-                  {JSON.stringify(requestDetail, null, 2)}
-                </pre>
-              ) : (
-                <p className="text-sm text-slate-500">{t.noRequestDetailLoaded}</p>
-              )}
-              {user?.role === "admin" && auditLogs.length > 0 ? (
-                <div className="mt-3 overflow-x-auto">
-                  <table className="w-full border-collapse text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-slate-600">
-                        <th className="px-2 py-2">{t.requestId}</th>
-                        <th className="px-2 py-2">{t.mode.toLowerCase()}</th>
-                        <th className="px-2 py-2">denied</th>
-                        <th className="px-2 py-2">cache_hit</th>
-                        <th className="px-2 py-2">question</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {auditLogs.map((row) => (
-                        <tr key={row.request_id} className="border-b border-slate-100">
-                          <td className="px-2 py-2 font-mono">{row.request_id}</td>
-                          <td className="px-2 py-2 font-mono">{row.mode}</td>
-                          <td className="px-2 py-2">{String(row.denied)}</td>
-                          <td className="px-2 py-2">{String(row.cache_hit)}</td>
-                          <td className="px-2 py-2">{row.question}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
             </section>
           </main>
+
+          <section className="space-y-4">
+            <div className="glass-panel p-5">
+              <h2 className="panel-title">{t.auditDetail}</h2>
+              <div className="grid gap-2 text-xs text-slate-700">
+                <div>
+                  {t.requestId}: <span className="font-mono">{answer?.request_id ?? "-"}</span>
+                </div>
+                <div>
+                  {t.deniedCurrentRequest}:{" "}
+                  <span className={`font-mono ${deniedThisRequest ? "text-red-700" : "text-emerald-700"}`}>
+                    {answer ? String(answer.denied) : "-"}
+                  </span>
+                </div>
+                <div>
+                  {t.hitKnowledgeBases}:{" "}
+                  <span className="font-mono">
+                    {latestHitKbCodes.length > 0 ? latestHitKbCodes.join(", ") : "-"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                {requestDetail ? (
+                  <pre className="answer-block max-h-[260px]">{JSON.stringify(requestDetail, null, 2)}</pre>
+                ) : (
+                  <p className="text-sm text-slate-500">{t.noRequestDetailLoaded}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="glass-panel p-5">
+              <div className="flex items-center justify-between">
+                <h2 className="panel-title mb-0">{t.securityTestScenarios}</h2>
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={() => setSecurityOpen((prev) => !prev)}
+                >
+                  {securityOpen ? t.collapseScenarios : t.expandScenarios}
+                </button>
+              </div>
+
+              {securityOpen ? (
+                <div className="mt-3 space-y-2">
+                  {OVERREACH_SCENARIOS.map((scenario) => (
+                    <button
+                      key={scenario.id}
+                      className="scenario-card"
+                      type="button"
+                      disabled={pending}
+                      onClick={() => runOverreachScenario(scenario)}
+                    >
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{scenario.account}</div>
+                      <div className="mt-1 text-sm text-slate-800">{overreachLabels[scenario.id] ?? scenario.id}</div>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+
+            {user?.role === "admin" ? (
+              <div className="glass-panel p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="panel-title mb-0">{t.requestDetailAndAdminAudit}</h2>
+                  <button className="btn-secondary" onClick={onLoadAdminAudit} disabled={pending} type="button">
+                    {t.loadAuditLogs}
+                  </button>
+                </div>
+                {auditLogs.length > 0 ? (
+                  <div className="max-h-[260px] overflow-y-auto overflow-x-auto">
+                    <table className="w-full border-collapse text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-slate-600">
+                          <th className="px-2 py-2">{t.requestId}</th>
+                          <th className="px-2 py-2">{t.mode.toLowerCase()}</th>
+                          <th className="px-2 py-2">denied</th>
+                          <th className="px-2 py-2">cache_hit</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {auditLogs.map((row) => (
+                          <tr key={row.request_id} className="border-b border-slate-100">
+                            <td className="px-2 py-2 font-mono">{row.request_id}</td>
+                            <td className="px-2 py-2 font-mono">{row.mode}</td>
+                            <td className="px-2 py-2">{String(row.denied)}</td>
+                            <td className="px-2 py-2">{String(row.cache_hit)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500">{t.noRequestDetailLoaded}</p>
+                )}
+              </div>
+            ) : null}
+          </section>
         </div>
       </div>
     </div>

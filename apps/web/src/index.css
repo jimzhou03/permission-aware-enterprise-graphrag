@@ -16,8 +16,16 @@ body {
   @apply rounded-lg border border-slate-200 bg-white;
 }
 
+.glass-panel {
+  @apply rounded-2xl border border-slate-200/90 bg-white/95 shadow-[0_8px_28px_rgba(15,23,42,0.05)];
+}
+
+.panel-title {
+  @apply mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600;
+}
+
 .field {
-  @apply h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-200;
+  @apply h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-200;
 }
 
 .btn {
@@ -29,6 +37,57 @@ body {
 }
 
 .btn-secondary {
-  @apply btn border border-slate-300 bg-white text-slate-700 hover:bg-slate-50;
+  @apply btn rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50;
 }
 
+.status-pill {
+  @apply rounded-xl border px-3 py-1 text-xs font-medium;
+}
+
+.scenario-card {
+  @apply w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:border-accent-200 hover:bg-accent-50 disabled:cursor-not-allowed disabled:opacity-60;
+}
+
+.soft-card {
+  @apply rounded-2xl border border-slate-200 bg-slate-50 p-3;
+}
+
+.soft-textarea {
+  @apply min-h-28 w-full rounded-2xl border border-slate-300 bg-white p-3 text-sm text-slate-900 outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-200;
+}
+
+.tag-pill {
+  @apply rounded-full border border-slate-300 bg-white px-2.5 py-1 font-mono text-[11px] text-slate-700;
+}
+
+.tag-pill.hit {
+  @apply border-accent-200 bg-accent-50 text-accent-800;
+}
+
+.tag-check {
+  @apply inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-2.5 py-2;
+}
+
+.notification-line {
+  @apply rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700;
+}
+
+.risk-badge {
+  @apply rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide;
+}
+
+.risk-badge.is-risk {
+  @apply border-red-200 bg-red-50 text-red-700;
+}
+
+.risk-badge.is-normal {
+  @apply border-emerald-200 bg-emerald-50 text-emerald-700;
+}
+
+.risk-panel {
+  @apply rounded-2xl border border-red-200 bg-red-50 px-3 py-2;
+}
+
+.answer-block {
+  @apply overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs whitespace-pre-wrap;
+}

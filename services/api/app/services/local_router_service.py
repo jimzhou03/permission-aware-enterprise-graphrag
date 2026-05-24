@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from abc import ABC, abstractmethod
 
 import httpx
@@ -17,6 +18,9 @@ DEPARTMENT_KEYWORDS: dict[str, tuple[str, ...]] = {
     "tech": ("tech", "deploy", "release", "incident", "service", "技术", "发布", "故障", "运维"),
 }
 
+GREETING_ZH = {"你好", "您好", "早上好"}
+GREETING_EN = {"hello", "hi", "good morning"}
+
 
 def detect_target_department(question: str) -> str | None:
     lowered = question.lower()
@@ -26,12 +30,42 @@ def detect_target_department(question: str) -> str | None:
     return None
 
 
+def _normalize_for_greeting(text: str) -> str:
+    lowered = text.strip().lower()
+    cleaned = re.sub(r"[^\w\s\u4e00-\u9fff]", " ", lowered)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def is_simple_greeting(question: str) -> bool:
+    normalized = _normalize_for_greeting(question)
+    if not normalized:
+        return False
+    if normalized in GREETING_EN or normalized in GREETING_ZH:
+        return True
+    return False
+
+
+def _build_general_route_decision(question: str) -> RouteDecision:
+    normalized = _normalize_for_greeting(question)
+    is_zh = bool(re.search(r"[\u4e00-\u9fff]", normalized))
+    reason = "Greeting intent detected." if not is_zh else "识别为问候语意图。"
+    return RouteDecision(
+        target_department=None,
+        mode="general",
+        requires_rag=False,
+        need_rag=False,
+        confidence=0.99,
+        reason=reason,
+    )
+
+
 def _forced_mode_decision(target_department: str | None, mode: AskMode) -> RouteDecision | None:
     if mode == "graphrag":
         return RouteDecision(
             target_department=target_department,
             mode="graphrag",
             requires_rag=True,
+            need_rag=True,
             confidence=0.9 if target_department else 0.7,
             reason="Requester forced graphrag mode.",
         )
@@ -40,6 +74,7 @@ def _forced_mode_decision(target_department: str | None, mode: AskMode) -> Route
             target_department=target_department,
             mode="rag",
             requires_rag=True,
+            need_rag=True,
             confidence=0.9 if target_department else 0.7,
             reason="Requester forced rag mode.",
         )
@@ -54,6 +89,9 @@ class BaseLocalModelRouter(ABC):
 
 class RuleBasedLocalModelRouter(BaseLocalModelRouter):
     def route(self, question: str, mode: AskMode) -> RouteDecision:
+        if is_simple_greeting(question):
+            return _build_general_route_decision(question)
+
         target_department = detect_target_department(question)
         forced = _forced_mode_decision(target_department, mode)
         if forced is not None:
@@ -62,6 +100,7 @@ class RuleBasedLocalModelRouter(BaseLocalModelRouter):
             target_department=target_department,
             mode="rag",
             requires_rag=True,
+            need_rag=True,
             confidence=0.86 if target_department else 0.65,
             reason="Auto mode defaults to permission-scoped rag in rule router.",
         )
@@ -72,6 +111,9 @@ class OllamaQwenRouter(BaseLocalModelRouter):
         self._fallback = fallback or RuleBasedLocalModelRouter()
 
     def route(self, question: str, mode: AskMode) -> RouteDecision:
+        if is_simple_greeting(question):
+            return _build_general_route_decision(question)
+
         target_department = detect_target_department(question)
         forced = _forced_mode_decision(target_department, mode)
         if forced is not None:
@@ -135,7 +177,7 @@ class OllamaQwenRouter(BaseLocalModelRouter):
             return None
 
         mode_value = str(parsed.get("mode", "rag")).strip().lower()
-        if mode_value not in {"direct", "rag", "graphrag"}:
+        if mode_value not in {"direct", "rag", "graphrag", "general"}:
             mode_value = "rag"
         if mode_value == "direct":
             mode_value = "rag"
@@ -146,7 +188,8 @@ class OllamaQwenRouter(BaseLocalModelRouter):
             if target_department not in {"hr", "finance", "tech", "public"}:
                 target_department = detect_target_department(question)
 
-        requires_rag = bool(parsed.get("requires_rag", mode_value != "direct"))
+        requires_rag = bool(parsed.get("requires_rag", mode_value in {"rag", "graphrag"}))
+        need_rag = bool(parsed.get("need_rag", requires_rag))
         confidence_raw = parsed.get("confidence", 0.7)
         try:
             confidence = max(0.0, min(1.0, float(confidence_raw)))
@@ -158,6 +201,7 @@ class OllamaQwenRouter(BaseLocalModelRouter):
             target_department=target_department,
             mode=mode_value,  # type: ignore[arg-type]
             requires_rag=requires_rag,
+            need_rag=need_rag,
             confidence=confidence,
             reason=reason,
         )

@@ -1,4 +1,5 @@
 import type {
+  AuthMeResponse,
   AskMode,
   AskResponse,
   AuditLog,
@@ -43,6 +44,10 @@ export async function listKnowledgeBases(token: string): Promise<KnowledgeBase[]
   return request<KnowledgeBase[]>("/knowledge-bases", { method: "GET" }, token);
 }
 
+export async function fetchAuthMe(token: string): Promise<AuthMeResponse> {
+  return request<AuthMeResponse>("/auth/me", { method: "GET" }, token);
+}
+
 export async function askQuestion(
   token: string,
   question: string,
@@ -73,4 +78,3 @@ export async function listDemoCases(): Promise<DemoCase[]> {
 export async function listAuditLogs(token: string): Promise<AuditLog[]> {
   return request<AuditLog[]>("/admin/audit-logs", { method: "GET" }, token);
 }
-

@@ -77,3 +77,19 @@ def test_qa_request_detail_access_control(client):
     )
     assert forbidden_read.status_code == 403, forbidden_read.text
 
+
+def test_greeting_uses_general_fallback_without_rag(client):
+    token = _login(client, "hr@example.local")
+    response = client.post(
+        "/api/v1/qa/ask",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "你好", "mode": "auto"},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["denied"] is False
+    assert payload["mode"] == "general"
+    assert payload["route"]["requires_rag"] is False
+    assert payload["route"]["need_rag"] is False
+    assert payload["citations"] == []
+    assert payload["retrieved_chunks"] == []
