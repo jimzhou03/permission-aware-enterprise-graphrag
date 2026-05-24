@@ -1,0 +1,76 @@
+import type {
+  AskMode,
+  AskResponse,
+  AuditLog,
+  DemoCase,
+  KnowledgeBase,
+  LoginResponse
+} from "./types";
+
+const API_BASE =
+  (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://127.0.0.1:8000/api/v1";
+
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  token?: string
+): Promise<T> {
+  const headers = new Headers(options.headers ?? {});
+  headers.set("Content-Type", "application/json");
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Request failed: ${response.status}`);
+  }
+  return (await response.json()) as T;
+}
+
+export async function login(email: string, password: string): Promise<LoginResponse> {
+  return request<LoginResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password })
+  });
+}
+
+export async function listKnowledgeBases(token: string): Promise<KnowledgeBase[]> {
+  return request<KnowledgeBase[]>("/knowledge-bases", { method: "GET" }, token);
+}
+
+export async function askQuestion(
+  token: string,
+  question: string,
+  mode: AskMode,
+  knowledgeBaseCodes: string[]
+): Promise<AskResponse> {
+  return request<AskResponse>(
+    "/qa/ask",
+    {
+      method: "POST",
+      body: JSON.stringify({ question, mode, knowledge_base_codes: knowledgeBaseCodes })
+    },
+    token
+  );
+}
+
+export async function getRequestDetail(token: string, requestId: string): Promise<AuditLog> {
+  return request<AuditLog>(`/qa/${requestId}`, { method: "GET" }, token);
+}
+
+export async function listDemoCases(): Promise<DemoCase[]> {
+  const payload = await request<{ cases: DemoCase[] }>("/demo/overreach-cases", {
+    method: "GET"
+  });
+  return payload.cases;
+}
+
+export async function listAuditLogs(token: string): Promise<AuditLog[]> {
+  return request<AuditLog[]>("/admin/audit-logs", { method: "GET" }, token);
+}
+
