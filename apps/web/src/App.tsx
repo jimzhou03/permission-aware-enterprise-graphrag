@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { askQuestion, getRequestDetail, listAuditLogs, listKnowledgeBases, login } from "./api";
+import { LANGUAGE_STORAGE_KEY, OVERREACH_LABELS, UI_TEXT, type Language } from "./i18n";
 import type { AskMode, AskResponse, AuditLog, KnowledgeBase, UserPublic } from "./types";
 
 type DemoAccountKey = "admin" | "hr" | "finance" | "tech" | "visitor";
@@ -38,37 +39,39 @@ const DEMO_ACCOUNTS: Record<
 
 const OVERREACH_SCENARIOS: Array<{
   id: string;
-  label: string;
   account: DemoAccountKey;
   question: string;
 }> = [
   {
     id: "visitor_finance_salary",
-    label: "visitor问finance薪酬制度",
     account: "visitor",
     question: "请提供 finance compensation salary policy。"
   },
   {
     id: "hr_finance_budget",
-    label: "hr问finance预算审批",
     account: "hr",
     question: "请说明 finance budget approval workflow。"
   },
   {
     id: "finance_tech_secret",
-    label: "finance问tech发布密钥",
     account: "finance",
     question: "请给出 tech release key management details。"
   },
   {
     id: "tech_hr_profile",
-    label: "tech问HR员工档案",
     account: "tech",
     question: "请展示 HR employee profile archive policy。"
   }
 ];
 
+function getInitialLanguage(): Language {
+  if (typeof window === "undefined") return "zh";
+  const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+  return stored === "en" ? "en" : "zh";
+}
+
 export default function App() {
+  const [language, setLanguage] = useState<Language>(getInitialLanguage);
   const [selectedDemoAccount, setSelectedDemoAccount] = useState<DemoAccountKey>("hr");
   const [email, setEmail] = useState(DEMO_ACCOUNTS.hr.email);
   const [password, setPassword] = useState(DEMO_ACCOUNTS.hr.password);
@@ -83,6 +86,13 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string>("");
+
+  const t = UI_TEXT[language];
+  const overreachLabels = OVERREACH_LABELS[language];
+
+  useEffect(() => {
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+  }, [language]);
 
   const roleBadgeClass = useMemo(() => {
     const role = user?.role ?? "";
@@ -121,9 +131,9 @@ export default function App() {
       await loginByCredentials(email, password);
       setAnswer(null);
       setRequestDetail(null);
-      setMessage("Login success.");
+      setMessage(t.loginSuccess);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Login failed.");
+      setMessage(error instanceof Error ? `${t.loginFailed} ${error.message}` : t.loginFailed);
       setToken("");
       setUser(null);
       setKnowledgeBases([]);
@@ -139,10 +149,10 @@ export default function App() {
     setRequestDetail(detail);
     setMessage(
       response.denied
-        ? `Request denied: ${response.refusal_reason ?? "forbidden"}`
+        ? `${t.requestDeniedPrefix}: ${response.refusal_reason ?? "forbidden"}`
         : response.cache_hit
-          ? "Answer served from cache."
-          : "Answer generated."
+          ? t.answerServedFromCache
+          : t.answerGenerated
     );
   }
 
@@ -154,7 +164,7 @@ export default function App() {
     try {
       await submitQuestion(token, question, mode);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Ask failed.");
+      setMessage(error instanceof Error ? `${t.askFailed} ${error.message}` : t.askFailed);
     } finally {
       setPending(false);
     }
@@ -170,9 +180,13 @@ export default function App() {
       setQuestion(scenario.question);
       setMode("auto");
       await submitQuestion(session.token, scenario.question, "auto");
-      setMessage(`Scenario executed: ${scenario.label}`);
+      setMessage(`${t.scenarioExecutedPrefix}: ${overreachLabels[scenario.id] ?? scenario.id}`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Scenario execution failed.");
+      setMessage(
+        error instanceof Error
+          ? `${t.scenarioExecutionFailed} ${error.message}`
+          : t.scenarioExecutionFailed
+      );
     } finally {
       setPending(false);
     }
@@ -185,9 +199,11 @@ export default function App() {
     try {
       const rows = await listAuditLogs(token);
       setAuditLogs(rows);
-      setMessage(`Loaded ${rows.length} audit logs.`);
+      setMessage(`${t.loadedAuditLogsPrefix}: ${rows.length}`);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Load audit logs failed.");
+      setMessage(
+        error instanceof Error ? `${t.loadAuditLogsFailed} ${error.message}` : t.loadAuditLogsFailed
+      );
     } finally {
       setPending(false);
     }
@@ -207,24 +223,38 @@ export default function App() {
             <h1 className="text-xl font-semibold tracking-tight text-slate-900 md:text-2xl">
               Permission-Aware Enterprise GraphRAG Assistant
             </h1>
-            <p className="mt-1 text-sm text-slate-600">Permission Matrix Demo Console</p>
+            <p className="mt-1 text-sm text-slate-600">{t.subtitle}</p>
           </div>
-          {user ? (
-            <div className={`rounded-md border px-3 py-1 text-xs font-medium ${roleBadgeClass}`}>
-              {user.role} · {user.department ?? "none"} · {user.email}
-            </div>
-          ) : null}
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-slate-600" htmlFor="ui-language-select">
+              {t.language}
+            </label>
+            <select
+              id="ui-language-select"
+              className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700"
+              value={language}
+              onChange={(event) => setLanguage(event.target.value as Language)}
+            >
+              <option value="zh">{t.chinese}</option>
+              <option value="en">{t.english}</option>
+            </select>
+            {user ? (
+              <div className={`rounded-md border px-3 py-1 text-xs font-medium ${roleBadgeClass}`}>
+                {user.role} · {user.department ?? "none"} · {user.email}
+              </div>
+            ) : null}
+          </div>
         </header>
 
         <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
           <aside className="space-y-4">
             <section className="panel p-4">
               <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
-                登录
+                {t.login}
               </h2>
               <form className="space-y-3" onSubmit={onLogin}>
                 <label className="block space-y-1">
-                  <span className="text-xs font-medium text-slate-600">演示账号</span>
+                  <span className="text-xs font-medium text-slate-600">{t.demoAccount}</span>
                   <select
                     className="field"
                     value={selectedDemoAccount}
@@ -239,7 +269,7 @@ export default function App() {
                 </label>
 
                 <label className="block space-y-1">
-                  <span className="text-xs font-medium text-slate-600">Email</span>
+                  <span className="text-xs font-medium text-slate-600">{t.email}</span>
                   <input
                     className="field"
                     value={email}
@@ -250,7 +280,7 @@ export default function App() {
                 </label>
 
                 <label className="block space-y-1">
-                  <span className="text-xs font-medium text-slate-600">Password</span>
+                  <span className="text-xs font-medium text-slate-600">{t.password}</span>
                   <input
                     className="field"
                     value={password}
@@ -262,14 +292,14 @@ export default function App() {
                 </label>
 
                 <button className="btn-primary w-full" disabled={pending}>
-                  {pending ? "Working..." : "Sign In"}
+                  {pending ? t.working : t.signIn}
                 </button>
               </form>
             </section>
 
             <section className="panel p-4">
               <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
-                越权演示问题
+                {t.overreachDemoQuestions}
               </h2>
               <div className="space-y-2">
                 {OVERREACH_SCENARIOS.map((scenario) => (
@@ -280,7 +310,7 @@ export default function App() {
                     disabled={pending}
                     onClick={() => runOverreachScenario(scenario)}
                   >
-                    {scenario.label}
+                    {overreachLabels[scenario.id] ?? scenario.id}
                   </button>
                 ))}
               </div>
@@ -290,26 +320,27 @@ export default function App() {
           <main className="space-y-4">
             <section className="panel p-4">
               <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
-                当前会话
+                {t.currentSession}
               </h2>
               <div className="grid gap-2 text-xs text-slate-700 sm:grid-cols-2 xl:grid-cols-4">
                 <div>
-                  当前用户: <span className="font-mono">{user?.email ?? "-"}</span>
+                  {t.currentUser}: <span className="font-mono">{user?.email ?? "-"}</span>
                 </div>
                 <div>
-                  当前角色: <span className="font-mono">{user?.role ?? "-"}</span>
+                  {t.currentRole}: <span className="font-mono">{user?.role ?? "-"}</span>
                 </div>
                 <div>
-                  本次拒绝: <span className="font-mono">{answer ? String(answer.denied) : "-"}</span>
+                  {t.deniedCurrentRequest}:{" "}
+                  <span className="font-mono">{answer ? String(answer.denied) : "-"}</span>
                 </div>
                 <div>
-                  request_id: <span className="font-mono">{answer?.request_id ?? "-"}</span>
+                  {t.requestId}: <span className="font-mono">{answer?.request_id ?? "-"}</span>
                 </div>
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
                   <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-600">
-                    可访问知识库
+                    {t.accessibleKnowledgeBases}
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {knowledgeBases.length === 0 ? (
@@ -328,7 +359,7 @@ export default function App() {
                 </div>
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
                   <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-600">
-                    本次命中知识库
+                    {t.hitKnowledgeBases}
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {latestHitKbCodes.length === 0 ? (
@@ -350,7 +381,7 @@ export default function App() {
 
             <section className="panel p-4">
               <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
-                提问
+                {t.askQuestionSection}
               </h2>
               <form className="space-y-3" onSubmit={onAsk}>
                 <div className="grid gap-3 md:grid-cols-[1fr_140px]">
@@ -358,11 +389,11 @@ export default function App() {
                     className="min-h-24 w-full rounded-md border border-slate-300 bg-white p-3 text-sm text-slate-900 outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-200"
                     value={question}
                     onChange={(event) => setQuestion(event.target.value)}
-                    placeholder="Ask a question..."
+                    placeholder={t.askQuestionPlaceholder}
                   />
                   <div className="space-y-2">
                     <label className="block space-y-1">
-                      <span className="text-xs font-medium text-slate-600">Mode</span>
+                      <span className="text-xs font-medium text-slate-600">{t.mode}</span>
                       <select
                         className="field"
                         value={mode}
@@ -374,14 +405,14 @@ export default function App() {
                       </select>
                     </label>
                     <button className="btn-primary w-full" disabled={!token || pending || !question.trim()}>
-                      Ask
+                      {t.ask}
                     </button>
                   </div>
                 </div>
 
                 <div>
                   <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-600">
-                    Knowledge Base Scope (optional)
+                    {t.kbScopeOptional}
                   </p>
                   <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                     {knowledgeBases.map((kb) => (
@@ -410,18 +441,18 @@ export default function App() {
 
             <section className="panel p-4">
               <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-700">
-                最新响应
+                {t.latestResponse}
               </h2>
               {!answer ? (
-                <p className="text-sm text-slate-500">No response yet.</p>
+                <p className="text-sm text-slate-500">{t.noResponseYet}</p>
               ) : (
                 <div className="space-y-3">
                   <div className="grid gap-2 text-xs text-slate-600 md:grid-cols-4">
                     <div>
-                      request_id: <span className="font-mono">{answer.request_id}</span>
+                      {t.requestId}: <span className="font-mono">{answer.request_id}</span>
                     </div>
                     <div>
-                      mode: <span className="font-mono">{answer.mode}</span>
+                      {t.mode.toLowerCase()}: <span className="font-mono">{answer.mode}</span>
                     </div>
                     <div>
                       cache_hit: <span className="font-mono">{String(answer.cache_hit)}</span>
@@ -436,7 +467,7 @@ export default function App() {
                   {answer.citations.length > 0 ? (
                     <div>
                       <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-600">
-                        Citations
+                        {t.citations}
                       </p>
                       <div className="space-y-2">
                         {answer.citations.map((item) => (
@@ -456,7 +487,7 @@ export default function App() {
                   {answer.graph_paths.length > 0 ? (
                     <div>
                       <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-600">
-                        Graph Paths
+                        {t.graphPaths}
                       </p>
                       <div className="space-y-2">
                         {answer.graph_paths.map((item) => (
@@ -478,11 +509,11 @@ export default function App() {
             <section className="panel p-4">
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
-                  Request Detail & Admin Audit
+                  {t.requestDetailAndAdminAudit}
                 </h2>
                 {user?.role === "admin" ? (
                   <button className="btn-secondary" onClick={onLoadAdminAudit} disabled={pending}>
-                    Load Audit Logs
+                    {t.loadAuditLogs}
                   </button>
                 ) : null}
               </div>
@@ -491,15 +522,15 @@ export default function App() {
                   {JSON.stringify(requestDetail, null, 2)}
                 </pre>
               ) : (
-                <p className="text-sm text-slate-500">No request detail loaded.</p>
+                <p className="text-sm text-slate-500">{t.noRequestDetailLoaded}</p>
               )}
               {user?.role === "admin" && auditLogs.length > 0 ? (
                 <div className="mt-3 overflow-x-auto">
                   <table className="w-full border-collapse text-left text-xs">
                     <thead>
                       <tr className="border-b border-slate-200 text-slate-600">
-                        <th className="px-2 py-2">request_id</th>
-                        <th className="px-2 py-2">mode</th>
+                        <th className="px-2 py-2">{t.requestId}</th>
+                        <th className="px-2 py-2">{t.mode.toLowerCase()}</th>
                         <th className="px-2 py-2">denied</th>
                         <th className="px-2 py-2">cache_hit</th>
                         <th className="px-2 py-2">question</th>
