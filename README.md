@@ -263,6 +263,13 @@ Set-Location services/api
 pytest
 ```
 
+权限矩阵自动化脚本（无需手动复制 token）：
+
+```powershell
+Set-Location C:\Users\lovane\Desktop\permission-aware-enterprise-graphrag
+python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
+```
+
 前端构建验证：
 
 ```powershell
@@ -276,6 +283,17 @@ npm run build
 2. 提问：`请提供 finance compensation salary policy`。
 3. 预期：后端返回 `denied=true`，并带 `department scope: finance` 拒绝原因。
 4. 以 `admin@example.local / Passw0rd!123` 登录管理员页面查看审计日志，确认本次请求被记录。
+
+前端演示增强（无需 Swagger 手工授权）：
+
+1. 登录区支持演示账号下拉：`admin/hr/finance/tech/visitor`。
+2. 可一键填充账号并登录。
+3. 提供越权场景按钮：
+   - visitor 问 finance 薪酬制度
+   - hr 问 finance 预算审批
+   - finance 问 tech 发布密钥
+   - tech 问 HR 员工档案
+4. 页面会展示当前角色、可访问知识库、本次拒绝状态、命中知识库、审计 `request_id`。
 
 ## 演示账号（虚构）
 
@@ -294,6 +312,12 @@ npm run build
 - `LOCAL_ROUTER_MODE=rules`：默认规则路由。
 - `LOCAL_ROUTER_MODE=ollama`：通过 `LOCAL_ROUTER_BASE_URL` + `LOCAL_ROUTER_MODEL` 调用本地轻量模型（如 Qwen0.5B）。
 - 无论 router 或 LLM 模式如何，权限仍由后端 `PermissionService` 决定，模型不参与授权判定。
+
+## Swagger Authorize 说明
+
+- 当前 `POST /api/v1/auth/login` 使用 JSON body（`email/password`）。
+- Swagger 的 OAuth2 Password 授权流默认按表单字段（`username/password`）请求 token，因此会出现 `422 Unprocessable Entity`。
+- 这不影响常规登录接口、前端登录以及自动化脚本。MVP 演示建议直接使用前端和脚本验证权限矩阵。
 
 ## 安全声明
 
