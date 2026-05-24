@@ -46,6 +46,21 @@ class AskResponse(BaseModel):
     cache_hit: bool
     mode: Literal["direct", "rag", "graphrag"]
     route: RouteDecision
-    citations: list[Citation] = []
-    graph_paths: list[GraphPath] = []
+    citations: list[Citation] = Field(default_factory=list)
+    graph_paths: list[GraphPath] = Field(default_factory=list)
 
+
+class QAAuditRecordResponse(BaseModel):
+    request_id: str
+    user_id: UUID | None
+    question: str
+    answer: str
+    denied: bool
+    refusal_reason: str
+    hit_kb_ids: list[str] = Field(default_factory=list)
+    hit_document_ids: list[str] = Field(default_factory=list)
+    hit_chunk_ids: list[str] = Field(default_factory=list)
+    mode: str
+    model: str
+    cache_hit: bool
+    latency_ms: int

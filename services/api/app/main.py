@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core import database as db_module
+from app.services.ingestion_service import seed_documents_and_chunks
 from app.services.seed_service import seed_demo_data
 
 
@@ -20,6 +21,7 @@ async def lifespan(app: FastAPI):
         db: Session = db_module.SessionLocal()
         try:
             seed_demo_data(db)
+            seed_documents_and_chunks(db)
         finally:
             db.close()
     yield
