@@ -8,7 +8,11 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-engine = create_engine(settings.database_url, pool_pre_ping=True)
+engine_kwargs: dict[str, object] = {"pool_pre_ping": True}
+if settings.database_url.startswith("sqlite"):
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+
+engine = create_engine(settings.database_url, **engine_kwargs)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -26,7 +30,7 @@ def get_db() -> Generator[Session, None, None]:
 
 def init_database() -> None:
     # pgvector must exist before SQLAlchemy creates vector columns.
-    if settings.database_url.startswith("postgresql"):
+    if engine.url.get_backend_name() == "postgresql":
         with engine.begin() as conn:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
 
@@ -34,3 +38,13 @@ def init_database() -> None:
 
     Base.metadata.create_all(bind=engine)
 
+
+def rebind_database(url: str) -> None:
+    global engine
+    global SessionLocal
+
+    kwargs: dict[str, object] = {"pool_pre_ping": True}
+    if url.startswith("sqlite"):
+        kwargs["connect_args"] = {"check_same_thread": False}
+    engine = create_engine(url, **kwargs)
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

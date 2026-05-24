@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ORMModel(BaseModel):
@@ -15,7 +15,7 @@ class UserPublic(ORMModel):
     full_name: str
     role: str
     department: str | None
-    permissions: list[str] = []
+    permissions: list[str] = Field(default_factory=list)
 
 
 class KnowledgeBasePublic(ORMModel):
@@ -48,5 +48,4 @@ class AuditLogPublic(ORMModel):
 
 class MessageResponse(BaseModel):
     message: str
-    detail: dict[str, Any] = {}
-
+    detail: dict[str, Any] = Field(default_factory=dict)
