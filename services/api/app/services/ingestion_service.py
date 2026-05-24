@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import ROOT_DIR
 from app.models import Document, DocumentChunk, KnowledgeBase
 from app.services.embedding_service import embed_text
+from app.services.entity_service import extract_entities
 
 
 SAMPLE_DOCUMENT_MANIFEST: list[dict[str, Any]] = [
@@ -117,6 +118,7 @@ def _upsert_document_and_chunks(
 
     db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document.id))
     for idx, chunk in enumerate(chunks):
+        entities = extract_entities(chunk)
         db.add(
             DocumentChunk(
                 document_id=document.id,
@@ -124,7 +126,7 @@ def _upsert_document_and_chunks(
                 ordinal=idx,
                 content=chunk,
                 embedding=embed_text(chunk),
-                chunk_metadata={"seeded": True, "source": source_label},
+                chunk_metadata={"seeded": True, "source": source_label, "entities": entities},
             )
         )
 
@@ -149,4 +151,3 @@ def seed_documents_and_chunks(db: Session) -> None:
             content=content,
         )
     db.commit()
-

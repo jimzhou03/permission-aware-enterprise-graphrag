@@ -12,6 +12,7 @@ from app.models import User
 from app.schemas.qa import AskRequest, AskResponse, Citation, GraphPath, RouteDecision
 from app.services.audit_service import create_qa_audit_log
 from app.services.cache_service import build_cache_key_parts, cache_service
+from app.services.graph_service import build_graph_paths_for_citations
 from app.services.local_router_service import route_question
 from app.services.permission_service import list_allowed_knowledge_bases
 from app.services.rag_service import retrieve_permission_scoped_chunks
@@ -57,6 +58,16 @@ def _render_answer(citations: list[Citation]) -> str:
     lines = ["Authorized answer generated from the following scoped knowledge:"]
     for idx, citation in enumerate(citations, start=1):
         lines.append(f"{idx}. [{citation.kb_code}] {citation.document_title}: {citation.excerpt}")
+    return "\n".join(lines)
+
+
+def _render_graphrag_answer(citations: list[Citation], graph_paths: list[GraphPath]) -> str:
+    base = _render_answer(citations)
+    if not graph_paths:
+        return base
+    lines = [base, "", "Graph evidence paths:"]
+    for idx, path in enumerate(graph_paths, start=1):
+        lines.append(f"{idx}. {' -> '.join(path.path)}")
     return "\n".join(lines)
 
 
@@ -127,7 +138,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
                 hit_document_ids=[],
                 hit_chunk_ids=[],
                 mode=route.mode,
-                model="phase2-mock-llm",
+                model="phase4-mock-llm",
                 latency_ms=latency_ms,
                 cache_hit=False,
             )
@@ -157,7 +168,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
                 hit_document_ids=[],
                 hit_chunk_ids=[],
                 mode=route.mode,
-                model="phase2-mock-llm",
+                model="phase4-mock-llm",
                 latency_ms=latency_ms,
                 cache_hit=False,
             )
@@ -193,7 +204,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
             hit_document_ids=_as_unique_strings(str(item.document_id) for item in cached_response.citations),
             hit_chunk_ids=_as_unique_strings(str(item.chunk_id) for item in cached_response.citations),
             mode=cached_response.mode,
-            model="phase3-mock-llm",
+            model="phase4-mock-llm",
             latency_ms=latency_ms,
             cache_hit=True,
         )
@@ -221,7 +232,15 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         )
         for item in retrieved
     ]
-    answer = _render_answer(citations)
+    graph_paths: list[GraphPath] = []
+    if route.mode == "graphrag":
+        graph_paths = build_graph_paths_for_citations(
+            db=db,
+            citations=citations,
+            allowed_kb_ids=allowed_kb_ids,
+        )
+
+    answer = _render_graphrag_answer(citations, graph_paths) if route.mode == "graphrag" else _render_answer(citations)
     response = AskResponse(
         request_id=request_id,
         answer=answer,
@@ -231,7 +250,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         mode=route.mode,  # type: ignore[arg-type]
         route=route,
         citations=citations,
-        graph_paths=[],
+        graph_paths=graph_paths,
     )
     latency_ms = int((time.perf_counter() - start) * 1000)
     create_qa_audit_log(
@@ -246,7 +265,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         hit_document_ids=_as_unique_strings(str(item.document_id) for item in citations),
         hit_chunk_ids=_as_unique_strings(str(item.chunk_id) for item in citations),
         mode=route.mode,
-        model="phase3-mock-llm",
+        model="phase4-mock-llm",
         latency_ms=latency_ms,
         cache_hit=False,
     )

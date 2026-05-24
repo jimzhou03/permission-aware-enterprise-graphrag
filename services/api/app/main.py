@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core import database as db_module
+from app.services.graph_service import neo4j_service, sync_neo4j_graph
 from app.services.ingestion_service import seed_documents_and_chunks
 from app.services.seed_service import seed_demo_data
 
@@ -22,9 +23,12 @@ async def lifespan(app: FastAPI):
         try:
             seed_demo_data(db)
             seed_documents_and_chunks(db)
+            if settings.sync_neo4j_on_startup:
+                sync_neo4j_graph(db)
         finally:
             db.close()
     yield
+    neo4j_service.close()
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
