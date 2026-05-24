@@ -13,6 +13,7 @@ from app.schemas.qa import AskRequest, AskResponse, Citation, GraphPath, RouteDe
 from app.services.audit_service import create_qa_audit_log
 from app.services.cache_service import build_cache_key_parts, cache_service
 from app.services.graph_service import build_graph_paths_for_citations
+from app.services.llm_service import generate_answer
 from app.services.local_router_service import route_question
 from app.services.permission_service import list_allowed_knowledge_bases
 from app.services.rag_service import retrieve_permission_scoped_chunks
@@ -52,25 +53,6 @@ def _deny_response(request_id: str, reason: str, route_mode: str, route) -> AskR
     )
 
 
-def _render_answer(citations: list[Citation]) -> str:
-    if not citations:
-        return "No relevant authorized documents were found."
-    lines = ["Authorized answer generated from the following scoped knowledge:"]
-    for idx, citation in enumerate(citations, start=1):
-        lines.append(f"{idx}. [{citation.kb_code}] {citation.document_title}: {citation.excerpt}")
-    return "\n".join(lines)
-
-
-def _render_graphrag_answer(citations: list[Citation], graph_paths: list[GraphPath]) -> str:
-    base = _render_answer(citations)
-    if not graph_paths:
-        return base
-    lines = [base, "", "Graph evidence paths:"]
-    for idx, path in enumerate(graph_paths, start=1):
-        lines.append(f"{idx}. {' -> '.join(path.path)}")
-    return "\n".join(lines)
-
-
 def _model_profile() -> str:
     return (
         f"llm={settings.llm_mode}:{settings.llm_model}|"
@@ -78,12 +60,13 @@ def _model_profile() -> str:
     )
 
 
-def _cache_payload_from_response(response: AskResponse) -> dict:
+def _cache_payload_from_response(response: AskResponse, model: str) -> dict:
     return {
         "answer": response.answer,
         "denied": response.denied,
         "refusal_reason": response.refusal_reason,
         "mode": response.mode,
+        "model": model,
         "route": response.route.model_dump(),
         "citations": [item.model_dump(mode="json") for item in response.citations],
         "graph_paths": [item.model_dump(mode="json") for item in response.graph_paths],
@@ -105,6 +88,11 @@ def _response_from_cache_payload(request_id: str, payload: dict) -> AskResponse:
         citations=citations,
         graph_paths=graph_paths,
     )
+
+
+def _model_from_cache_payload(payload: dict) -> str:
+    value = payload.get("model")
+    return str(value) if value else "cache:unknown-model"
 
 
 def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
@@ -138,7 +126,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
                 hit_document_ids=[],
                 hit_chunk_ids=[],
                 mode=route.mode,
-                model="phase4-mock-llm",
+                model="permission-deny",
                 latency_ms=latency_ms,
                 cache_hit=False,
             )
@@ -168,7 +156,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
                 hit_document_ids=[],
                 hit_chunk_ids=[],
                 mode=route.mode,
-                model="phase4-mock-llm",
+                model="permission-deny",
                 latency_ms=latency_ms,
                 cache_hit=False,
             )
@@ -204,7 +192,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
             hit_document_ids=_as_unique_strings(str(item.document_id) for item in cached_response.citations),
             hit_chunk_ids=_as_unique_strings(str(item.chunk_id) for item in cached_response.citations),
             mode=cached_response.mode,
-            model="phase4-mock-llm",
+            model=_model_from_cache_payload(cached_payload),
             latency_ms=latency_ms,
             cache_hit=True,
         )
@@ -240,7 +228,12 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
             allowed_kb_ids=allowed_kb_ids,
         )
 
-    answer = _render_graphrag_answer(citations, graph_paths) if route.mode == "graphrag" else _render_answer(citations)
+    generated = generate_answer(
+        question=payload.question,
+        citations=citations,
+        graph_paths=graph_paths,
+    )
+    answer = generated.answer
     response = AskResponse(
         request_id=request_id,
         answer=answer,
@@ -265,7 +258,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         hit_document_ids=_as_unique_strings(str(item.document_id) for item in citations),
         hit_chunk_ids=_as_unique_strings(str(item.chunk_id) for item in citations),
         mode=route.mode,
-        model="phase4-mock-llm",
+        model=generated.model,
         latency_ms=latency_ms,
         cache_hit=False,
     )
@@ -273,7 +266,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
     ttl_seconds = settings.cache_refusal_ttl_seconds if response.denied else settings.cache_ttl_seconds
     cache_service.set_payload(
         cache_key_parts,
-        payload=_cache_payload_from_response(response),
+        payload=_cache_payload_from_response(response, model=generated.model),
         ttl_seconds=ttl_seconds,
     )
     return QAResult(response=response, request_id=request_id)

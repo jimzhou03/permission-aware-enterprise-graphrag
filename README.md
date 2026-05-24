@@ -206,6 +206,95 @@ feat(web): add login qa audit and overreach demo screens
 chore: add docker docs tests and github-ready readme
 ```
 
+## 快速开始（Docker Compose）
+
+1. 在项目根目录创建本地环境文件：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+2. 启动全栈服务：
+
+```powershell
+Set-Location infra
+docker compose up -d --build
+```
+
+3. 访问：
+
+- 前端：`http://127.0.0.1:5173`
+- 后端 OpenAPI：`http://127.0.0.1:8000/docs`
+- Neo4j Browser：`http://127.0.0.1:7474`（默认账号 `neo4j` / `password12345`）
+
+4. 停止服务：
+
+```powershell
+Set-Location infra
+docker compose down
+```
+
+## 本地开发启动（不使用 Docker）
+
+后端：
+
+```powershell
+Set-Location services/api
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python main.py
+```
+
+前端（新终端）：
+
+```powershell
+Set-Location apps/web
+npm install
+npm run dev
+```
+
+## 测试与验证
+
+后端测试：
+
+```powershell
+Set-Location services/api
+pytest
+```
+
+前端构建验证：
+
+```powershell
+Set-Location apps/web
+npm run build
+```
+
+越权演示（visitor 访问 finance）：
+
+1. 使用 `visitor@example.local / Passw0rd!123` 登录。
+2. 提问：`请提供 finance compensation salary policy`。
+3. 预期：后端返回 `denied=true`，并带 `department scope: finance` 拒绝原因。
+4. 以 `admin@example.local / Passw0rd!123` 登录管理员页面查看审计日志，确认本次请求被记录。
+
+## 演示账号（虚构）
+
+| 角色 | 邮箱 | 默认密码 |
+| --- | --- | --- |
+| admin | `admin@example.local` | `Passw0rd!123` |
+| hr | `hr@example.local` | `Passw0rd!123` |
+| finance | `finance@example.local` | `Passw0rd!123` |
+| tech | `tech@example.local` | `Passw0rd!123` |
+| visitor | `visitor@example.local` | `Passw0rd!123` |
+
+## 模型接入说明（Phase 6）
+
+- `LLM_MODE=mock`：默认离线模式，返回可复现的确定性答案，便于本地演示和测试。
+- `LLM_MODE=api`：通过 `LLM_API_BASE_URL` + `LLM_API_KEY` + `LLM_MODEL` 调用 OpenAI-compatible Chat Completions。
+- `LOCAL_ROUTER_MODE=rules`：默认规则路由。
+- `LOCAL_ROUTER_MODE=ollama`：通过 `LOCAL_ROUTER_BASE_URL` + `LOCAL_ROUTER_MODEL` 调用本地轻量模型（如 Qwen0.5B）。
+- 无论 router 或 LLM 模式如何，权限仍由后端 `PermissionService` 决定，模型不参与授权判定。
+
 ## 安全声明
 
 - 不上传真实企业数据。
@@ -214,4 +303,3 @@ chore: add docker docs tests and github-ready readme
 - 不上传 `.env`。
 - 所有密钥、数据库地址、模型配置都通过环境变量传入。
 - `.env.example` 只提供示例变量，不包含真实凭据。
-

@@ -54,6 +54,7 @@ class Settings(BaseSettings):
 
     seed_on_startup: bool = True
     sync_neo4j_on_startup: bool = False
+    uvicorn_reload: bool = True
 
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
@@ -62,4 +63,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
