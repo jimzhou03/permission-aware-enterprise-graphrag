@@ -3,13 +3,15 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass
+from typing import Iterable
 
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import User
-from app.schemas.qa import AskRequest, AskResponse, Citation
+from app.schemas.qa import AskRequest, AskResponse, Citation, GraphPath, RouteDecision
 from app.services.audit_service import create_qa_audit_log
+from app.services.cache_service import build_cache_key_parts, cache_service
 from app.services.local_router_service import route_question
 from app.services.permission_service import list_allowed_knowledge_bases
 from app.services.rag_service import retrieve_permission_scoped_chunks
@@ -22,6 +24,17 @@ settings = get_settings()
 class QAResult:
     response: AskResponse
     request_id: str
+
+
+def _as_unique_strings(items: Iterable[str]) -> list[str]:
+    values: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        values.append(item)
+    return values
 
 
 def _deny_response(request_id: str, reason: str, route_mode: str, route) -> AskResponse:
@@ -45,6 +58,42 @@ def _render_answer(citations: list[Citation]) -> str:
     for idx, citation in enumerate(citations, start=1):
         lines.append(f"{idx}. [{citation.kb_code}] {citation.document_title}: {citation.excerpt}")
     return "\n".join(lines)
+
+
+def _model_profile() -> str:
+    return (
+        f"llm={settings.llm_mode}:{settings.llm_model}|"
+        f"router={settings.local_router_mode}:{settings.local_router_model}"
+    )
+
+
+def _cache_payload_from_response(response: AskResponse) -> dict:
+    return {
+        "answer": response.answer,
+        "denied": response.denied,
+        "refusal_reason": response.refusal_reason,
+        "mode": response.mode,
+        "route": response.route.model_dump(),
+        "citations": [item.model_dump(mode="json") for item in response.citations],
+        "graph_paths": [item.model_dump(mode="json") for item in response.graph_paths],
+    }
+
+
+def _response_from_cache_payload(request_id: str, payload: dict) -> AskResponse:
+    route = RouteDecision(**payload.get("route", {}))
+    citations = [Citation(**item) for item in payload.get("citations", [])]
+    graph_paths = [GraphPath(**item) for item in payload.get("graph_paths", [])]
+    return AskResponse(
+        request_id=request_id,
+        answer=payload.get("answer", ""),
+        denied=bool(payload.get("denied", False)),
+        refusal_reason=payload.get("refusal_reason"),
+        cache_hit=True,
+        mode=payload.get("mode", route.mode),
+        route=route,
+        citations=citations,
+        graph_paths=graph_paths,
+    )
 
 
 def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
@@ -114,6 +163,42 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
             )
             return QAResult(response=response, request_id=request_id)
 
+    cache_key_parts = build_cache_key_parts(
+        user_id=str(user.id),
+        role=user.role.name if user.role else "",
+        department=user.department.code if user.department else None,
+        permission_scope_items=[
+            f"{settings.permission_policy_version}",
+            *(f"{kb.code}:{kb.id}" for kb in allowed_kbs),
+        ],
+        kb_versions=[f"{kb.code}:{kb.version}" for kb in allowed_kbs],
+        question=payload.question,
+        mode=route.mode,
+        model_profile=_model_profile(),
+        prompt_version=settings.prompt_version,
+    )
+    cached_payload = cache_service.get_payload(cache_key_parts)
+    if cached_payload is not None:
+        cached_response = _response_from_cache_payload(request_id, cached_payload)
+        latency_ms = int((time.perf_counter() - start) * 1000)
+        create_qa_audit_log(
+            db=db,
+            request_id=request_id,
+            user_id=user.id,
+            question=payload.question,
+            answer=cached_response.answer,
+            denied=cached_response.denied,
+            refusal_reason=cached_response.refusal_reason or "",
+            hit_kb_ids=_as_unique_strings(str(item.kb_id) for item in cached_response.citations),
+            hit_document_ids=_as_unique_strings(str(item.document_id) for item in cached_response.citations),
+            hit_chunk_ids=_as_unique_strings(str(item.chunk_id) for item in cached_response.citations),
+            mode=cached_response.mode,
+            model="phase3-mock-llm",
+            latency_ms=latency_ms,
+            cache_hit=True,
+        )
+        return QAResult(response=cached_response, request_id=request_id)
+
     scoped_codes = payload.knowledge_base_codes
     retrieved = retrieve_permission_scoped_chunks(
         db=db,
@@ -157,12 +242,19 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         answer=answer,
         denied=False,
         refusal_reason="",
-        hit_kb_ids=[str(item.kb_id) for item in citations],
-        hit_document_ids=[str(item.document_id) for item in citations],
-        hit_chunk_ids=[str(item.chunk_id) for item in citations],
+        hit_kb_ids=_as_unique_strings(str(item.kb_id) for item in citations),
+        hit_document_ids=_as_unique_strings(str(item.document_id) for item in citations),
+        hit_chunk_ids=_as_unique_strings(str(item.chunk_id) for item in citations),
         mode=route.mode,
-        model="phase2-mock-llm",
+        model="phase3-mock-llm",
         latency_ms=latency_ms,
         cache_hit=False,
+    )
+
+    ttl_seconds = settings.cache_refusal_ttl_seconds if response.denied else settings.cache_ttl_seconds
+    cache_service.set_payload(
+        cache_key_parts,
+        payload=_cache_payload_from_response(response),
+        ttl_seconds=ttl_seconds,
     )
     return QAResult(response=response, request_id=request_id)
