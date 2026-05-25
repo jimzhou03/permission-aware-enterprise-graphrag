@@ -100,6 +100,7 @@ class QATraceResponse(BaseModel):
     hit_document_ids: list[str] = Field(default_factory=list)
     hit_chunk_ids: list[str] = Field(default_factory=list)
     retrieved_chunks: list[TraceRetrievedChunk] = Field(default_factory=list)
+    retrieval_engine: str
     cache_hit: bool
     model: str
     latency_ms: int

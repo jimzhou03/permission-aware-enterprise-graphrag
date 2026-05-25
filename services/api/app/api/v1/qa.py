@@ -20,6 +20,7 @@ from app.services.audit_service import get_qa_audit_by_request_id
 from app.services.auth_service import user_has_permission
 from app.services.permission_service import list_allowed_knowledge_bases
 from app.services.qa_service import ask_question
+from app.services.rag_service import get_retrieval_runtime
 
 
 router = APIRouter(prefix="/qa", tags=["qa"])
@@ -33,6 +34,13 @@ def _parse_uuid_list(values: list[str]) -> list[UUID]:
         except ValueError:
             continue
     return parsed
+
+
+def _parse_retrieval_engine_from_model(model: str) -> str | None:
+    marker = "|retrieval="
+    if marker not in model:
+        return None
+    return model.split(marker, maxsplit=1)[1].strip() or None
 
 
 @router.post("/ask", response_model=AskResponse)
@@ -99,6 +107,7 @@ def get_request_trace(
     request_allowed_kbs = list_allowed_knowledge_bases(db, request_user) if request_user else []
     allowed_kb_ids = [str(kb.id) for kb in request_allowed_kbs]
     allowed_kb_codes = [kb.code for kb in request_allowed_kbs]
+    current_runtime = get_retrieval_runtime(db)
 
     hit_kb_ids = record.hit_kb_ids if isinstance(record.hit_kb_ids, list) else []
     hit_document_ids = record.hit_document_ids if isinstance(record.hit_document_ids, list) else []
@@ -173,6 +182,9 @@ def get_request_trace(
         hit_document_ids=hit_document_ids,
         hit_chunk_ids=hit_chunk_ids,
         retrieved_chunks=reconstructed_chunks,
+        retrieval_engine=(
+            _parse_retrieval_engine_from_model(record.model) or current_runtime.retrieval_engine
+        ),
         cache_hit=record.cache_hit,
         model=record.model,
         latency_ms=record.latency_ms,

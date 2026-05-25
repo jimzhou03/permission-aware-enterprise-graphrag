@@ -7,6 +7,7 @@ A permission-first internal knowledge assistant that enforces backend RBAC and s
 - JWT login with role and department claims.
 - Deterministic backend permission enforcement (`RBAC + KnowledgeBase ACL`).
 - Permission-aware RAG retrieval with knowledge base scope filtering.
+- Real pgvector SQL retrieval path for PostgreSQL deployments (with safe fallback).
 - Knowledge Base Viewer + Document Viewer + Chunk Viewer (read-only, permission-scoped).
 - Retrieval Trace API and Developer Trace page for `request_id`, scope, chunk hits, deny/cache path.
 - GraphRAG scaffolding with Neo4j entity/path projection.
@@ -52,6 +53,13 @@ Permission boundary is backend-owned:
 5. Optionally project graph evidence paths (GraphRAG mode).
 6. Generate answer (`LLM_MODE=mock` by default).
 7. Persist audit record and cache payload.
+
+Retrieval engine behavior:
+
+- PostgreSQL + pgvector available/enabled: `pgvector_sql`
+- SQLite or pgvector unavailable/disabled: `python_cosine_fallback`
+
+In both modes, retrieval is scoped in backend by `allowed_kb_ids` before any chunk is returned.
 
 ## Observability Endpoints (v0.1.8)
 
@@ -131,8 +139,7 @@ npm run build
 
 - `LLM_MODE=mock` by default (deterministic mock generation path).
 - Embedding is deterministic mock embedding in MVP (`SHA256`-based vector projection).
-- Retrieval engine is permission-scoped Python cosine similarity (MVP), not production SQL vector execution.
-- `pgvector` field exists in schema, but production-grade SQL vector similarity retrieval is future work.
+- Document upload/indexing management API is not implemented yet.
 - Ollama router is implemented as optional code path but not connected by default.
 - External LLM API mode exists but is disabled by default.
 
@@ -140,7 +147,6 @@ npm run build
 
 - Admin knowledge base viewer polish.
 - Real document upload and indexing pipeline.
-- Production pgvector SQL retrieval execution path.
 - Ollama local router integration.
 - Function calling trace and tool-call observability.
 - MCP adapter layer.

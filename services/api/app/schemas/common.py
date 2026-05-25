@@ -56,9 +56,12 @@ class RetrievalConfigPublic(BaseModel):
     embedding_provider: str
     embedding_dimension: int
     retrieval_engine: str
+    top_k: int
     default_top_k: int
     generator_mode: str
     router_mode: str
+    pgvector_available: bool
+    sql_vector_search_enabled: bool
     pgvector_sql_retrieval_enabled: bool
     pgvector_field_available: bool
     cache_backend: str

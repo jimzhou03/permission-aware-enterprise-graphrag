@@ -148,6 +148,7 @@ export interface RequestTrace {
   hit_document_ids: string[];
   hit_chunk_ids: string[];
   retrieved_chunks: TraceRetrievedChunk[];
+  retrieval_engine: string;
   cache_hit: boolean;
   model: string;
   latency_ms: number;
@@ -158,9 +159,12 @@ export interface RetrievalConfig {
   embedding_provider: string;
   embedding_dimension: number;
   retrieval_engine: string;
+  top_k: number;
   default_top_k: number;
   generator_mode: string;
   router_mode: string;
+  pgvector_available: boolean;
+  sql_vector_search_enabled: boolean;
   pgvector_sql_retrieval_enabled: boolean;
   pgvector_field_available: boolean;
   cache_backend: string;

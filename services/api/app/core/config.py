@@ -37,6 +37,7 @@ class Settings(BaseSettings):
 
     embedding_dimensions: int = 64
     qa_top_k: int = 5
+    enable_pgvector_sql_retrieval: bool = True
     cache_ttl_seconds: int = 1200
     cache_refusal_ttl_seconds: int = 300
     prompt_version: str = "mvp-2026-05"

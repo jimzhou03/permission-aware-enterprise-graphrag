@@ -7,7 +7,35 @@
 - Docker 运行正常：前端 `http://localhost:5173`、后端 `http://localhost:8000/docs`、健康检查 `GET /healthz` 返回 `{"status":"ok"}`。
 - 模型模式保持 `LLM_MODE=mock`。
 - 未接入 Ollama，未接入外部大模型 API。
-- v0.1.8 已实现知识库可观测视图（Knowledge Base / Document / Chunk / Retrieval Trace）。
+- v0.2.0 已实现 PostgreSQL + pgvector SQL 检索路径，并保留 SQLite/不可用环境安全回退。
+
+## 本阶段（v0.2.0 Real pgvector SQL Retrieval）完成项
+
+1. 检索引擎升级（后端）
+   - `rag_service` 新增运行时检索引擎判定：
+     - `pgvector_sql`
+     - `python_cosine_fallback`
+   - PostgreSQL 且 `pgvector` 扩展可用、并且配置启用时，走 SQL 向量检索路径。
+   - SQLite 或 pgvector 不可用时，自动回退到 Python cosine 路径。
+
+2. 安全约束保持不变（核心）
+   - SQL 向量检索在查询层就包含 `knowledge_base_id IN allowed_kb_ids` 约束。
+   - 不存在“全局召回后再过滤”的路径。
+   - 前端 `knowledge_base_codes` 仍只可收缩范围，不可扩权。
+   - 缓存 key 继续按用户/角色/部门/权限范围隔离，并加入检索引擎 token，避免跨引擎污染。
+
+3. 可观测性与 trace 更新
+   - `GET /api/v1/system/retrieval-config` 现在返回真实运行态：
+     - `retrieval_engine`
+     - `top_k`
+     - `pgvector_available`
+     - `sql_vector_search_enabled`
+   - `GET /api/v1/qa/{request_id}/trace` 新增 `retrieval_engine` 字段。
+   - 前端 `System Status` 与 `Developer Trace` 已展示检索引擎信息。
+
+4. 文档与限制声明更新
+   - README 已改为“PostgreSQL 优先 pgvector SQL、其他环境回退 Python cosine”的真实描述。
+   - 保持限制：`LLM_MODE=mock`、确定性 mock embedding、未接 Ollama、未启用外部 LLM、未实现上传流程。
 
 ## 本阶段（v0.1.8 Knowledge Base Viewer + Chunk Viewer + Retrieval Trace）完成项
 

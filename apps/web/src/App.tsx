@@ -1523,7 +1523,7 @@ export default function App() {
                   <div className="soft-card">
                     <div className="text-xs text-slate-500">{t.defaultTopK}</div>
                     <div className="mt-1 font-mono text-sm text-slate-800">
-                      {retrievalConfig?.default_top_k ?? t.noValue}
+                      {retrievalConfig?.top_k ?? retrievalConfig?.default_top_k ?? t.noValue}
                     </div>
                   </div>
                   <div className="soft-card">
@@ -1582,6 +1582,10 @@ export default function App() {
                       <div className="soft-card">
                         <div className="text-xs text-slate-500">{t.responseMode}</div>
                         <div className="mt-1 font-mono text-xs">{requestTrace.mode}</div>
+                      </div>
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">{t.retrievalEngine}</div>
+                        <div className="mt-1 font-mono text-xs">{requestTrace.retrieval_engine}</div>
                       </div>
                       <div className="soft-card">
                         <div className="text-xs text-slate-500">denied</div>

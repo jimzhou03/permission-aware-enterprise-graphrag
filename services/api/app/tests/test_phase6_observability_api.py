@@ -140,6 +140,9 @@ def test_retrieval_config_endpoint_reports_mock_mvp_runtime(client):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["embedding_provider"] == "deterministic-mock"
-    assert payload["retrieval_engine"] == "python-cosine-similarity-mvp"
+    assert payload["retrieval_engine"] == "python_cosine_fallback"
+    assert payload["top_k"] == payload["default_top_k"] == 5
+    assert payload["pgvector_available"] is False
+    assert payload["sql_vector_search_enabled"] is False
     assert payload["pgvector_sql_retrieval_enabled"] is False
     assert payload["generator_mode"] == "mock"
