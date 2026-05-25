@@ -70,6 +70,9 @@ class RetrievalConfigPublic(BaseModel):
     pgvector_field_available: bool
     cache_backend: str
     model_mode: str
+    function_calling_mode: str
+    llm_autonomous_tool_calling: bool
+    permission_authority: str
 
 
 class AuditLogPublic(ORMModel):

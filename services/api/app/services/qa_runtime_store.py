@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any
 
-from app.schemas.qa import RouteDecision
+from app.schemas.qa import FunctionTraceStep, RouteDecision
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,7 @@ class RouterTraceSnapshot:
     router_availability: str
     router_fallback_used: bool
     router_error: str | None
+    function_trace: list[FunctionTraceStep] = field(default_factory=list)
 
 
 class _QARuntimeStore:
@@ -32,6 +33,7 @@ class _QARuntimeStore:
             "router_availability": snapshot.router_availability,
             "router_fallback_used": snapshot.router_fallback_used,
             "router_error": snapshot.router_error,
+            "function_trace": [item.model_dump() for item in snapshot.function_trace],
         }
         expires_at = time.time() + self._ttl_seconds
         with self._lock:
@@ -56,6 +58,7 @@ class _QARuntimeStore:
                 router_availability=str(payload.get("router_availability", "not_checked")),
                 router_fallback_used=bool(payload.get("router_fallback_used", route.router_fallback_used)),
                 router_error=payload.get("router_error"),
+                function_trace=[FunctionTraceStep(**item) for item in payload.get("function_trace", [])],
             )
         except Exception:
             return None
@@ -66,4 +69,3 @@ class _QARuntimeStore:
 
 
 qa_runtime_store = _QARuntimeStore()
-

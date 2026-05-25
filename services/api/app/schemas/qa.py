@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 AskMode = Literal["auto", "rag", "graphrag"]
 ResponseMode = Literal["direct", "rag", "graphrag", "general"]
 RouterMode = Literal["rules", "ollama"]
+FunctionTraceStatus = Literal["success", "skipped", "denied", "error"]
 RouterLanguage = Literal["zh", "en", "unknown"]
 RouterIntent = Literal[
     "greeting",
@@ -56,6 +57,17 @@ class GraphPath(BaseModel):
     explanation: str
 
 
+class FunctionTraceStep(BaseModel):
+    tool_name: str
+    status: FunctionTraceStatus
+    input_summary: str
+    output_summary: str
+    duration_ms: int = 0
+    security_note: str
+    error_code: str | None = None
+    order_index: int
+
+
 class AskResponse(BaseModel):
     request_id: str
     answer: str
@@ -71,6 +83,7 @@ class AskResponse(BaseModel):
     retrieved_chunks: list[Citation] = Field(default_factory=list)
     citations: list[Citation] = Field(default_factory=list)
     graph_paths: list[GraphPath] = Field(default_factory=list)
+    function_trace_summary: list[str] = Field(default_factory=list)
 
 
 class QAAuditRecordResponse(BaseModel):
@@ -130,4 +143,5 @@ class QATraceResponse(BaseModel):
     cache_hit: bool
     model: str
     latency_ms: int
+    function_trace: list[FunctionTraceStep] = Field(default_factory=list)
     trace_limits: list[str] = Field(default_factory=list)

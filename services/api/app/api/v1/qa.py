@@ -12,6 +12,7 @@ from app.models import Document, DocumentChunk, KnowledgeBase, User
 from app.schemas.qa import (
     AskRequest,
     AskResponse,
+    FunctionTraceStep,
     QAAuditRecordResponse,
     QATraceResponse,
     RouteDecision,
@@ -56,6 +57,96 @@ def _default_router_decision(record_mode: str) -> RouteDecision:
         confidence=0.0,
         reason="router decision was not persisted for this historical request.",
     )
+
+
+def _default_function_trace(record_mode: str, denied: bool, cache_hit: bool) -> list[FunctionTraceStep]:
+    security_notes = {
+        "classify_query": "Router only classifies intent and mode; permission authority stays in backend RBAC.",
+        "resolve_user_permission_scope": "Allowed knowledge scope is resolved by backend RBAC and ACL only.",
+        "check_cache": "Cache keys are permission-scoped and cannot expand access boundaries.",
+        "search_allowed_chunks": "Retrieval runs only inside backend allowed_kb_ids before returning any chunk.",
+        "get_graph_paths": "Graph projection only uses already authorized citation chunk identifiers.",
+        "generate_answer": "Answer generation uses authorized retrieval output; autonomous tool calling is disabled.",
+        "save_audit_log": "Audit stores safe metadata and avoids unauthorized chunk content disclosure.",
+    }
+    steps: list[tuple[str, str, str, str, str | None]] = [
+        (
+            "classify_query",
+            "success",
+            "historical_reconstruction",
+            "router_trace_missing_runtime_snapshot",
+            None,
+        ),
+        (
+            "resolve_user_permission_scope",
+            "success",
+            "historical_reconstruction",
+            "permission_scope_reconstructed",
+            None,
+        ),
+    ]
+    if cache_hit:
+        steps.extend(
+            [
+                ("check_cache", "success", "historical_reconstruction", "cache_hit=true", None),
+                ("search_allowed_chunks", "skipped", "cache_hit=true", "cache_hit_skip_retrieval", None),
+                ("get_graph_paths", "skipped", "cache_hit=true", "cache_hit_skip_graph_projection", None),
+                ("generate_answer", "skipped", "cache_hit=true", "cached_answer", None),
+            ]
+        )
+    elif denied:
+        steps.extend(
+            [
+                (
+                    "check_cache",
+                    "skipped",
+                    "historical_reconstruction",
+                    "permission_denied_path",
+                    None,
+                ),
+                ("search_allowed_chunks", "denied", "historical_reconstruction", "permission_denied", None),
+                ("get_graph_paths", "skipped", "permission_denied", "denied_before_retrieval", None),
+                ("generate_answer", "skipped", "permission_denied", "permission_denied", None),
+            ]
+        )
+    elif record_mode == "general":
+        steps.extend(
+            [
+                ("check_cache", "success", "historical_reconstruction", "cache_hit=false_or_not_persisted", None),
+                ("search_allowed_chunks", "skipped", "mode=general", "router_need_rag=false", None),
+                ("get_graph_paths", "skipped", "mode=general", "general_mode_no_graph_projection", None),
+                ("generate_answer", "success", "general_fallback", "general_fallback_response", None),
+            ]
+        )
+    else:
+        steps.extend(
+            [
+                ("check_cache", "success", "historical_reconstruction", "cache_hit=false_or_not_persisted", None),
+                ("search_allowed_chunks", "success", "historical_reconstruction", "retrieval_executed", None),
+                (
+                    "get_graph_paths",
+                    "success" if record_mode == "graphrag" else "skipped",
+                    f"mode={record_mode}",
+                    "graph_projection_executed" if record_mode == "graphrag" else "graph_projection_not_requested",
+                    None,
+                ),
+                ("generate_answer", "success", "historical_reconstruction", "answer_generated", None),
+            ]
+        )
+    steps.append(("save_audit_log", "success", "historical_reconstruction", "audit_saved", None))
+    return [
+        FunctionTraceStep(
+            tool_name=tool_name,
+            status=status,  # type: ignore[arg-type]
+            input_summary=input_summary,
+            output_summary=output_summary,
+            duration_ms=0,
+            security_note=security_notes[tool_name],
+            error_code=error_code,
+            order_index=index,
+        )
+        for index, (tool_name, status, input_summary, output_summary, error_code) in enumerate(steps, start=1)
+    ]
 
 
 @router.post("/ask", response_model=AskResponse)
@@ -125,6 +216,12 @@ def get_request_trace(
     current_runtime = get_retrieval_runtime(db)
     current_router_status = get_router_status()
     route_snapshot = qa_runtime_store.get_router_trace(request_id)
+    route_decision = route_snapshot.route if route_snapshot else _default_router_decision(record.mode)
+    function_trace = (
+        route_snapshot.function_trace
+        if route_snapshot and route_snapshot.function_trace
+        else _default_function_trace(record.mode, denied=record.denied, cache_hit=record.cache_hit)
+    )
 
     hit_kb_ids = record.hit_kb_ids if isinstance(record.hit_kb_ids, list) else []
     hit_document_ids = record.hit_document_ids if isinstance(record.hit_document_ids, list) else []
@@ -185,6 +282,10 @@ def get_request_trace(
         trace_limits.append(
             "router diagnostics are available for recent runtime requests only; this trace shows reconstructed defaults."
         )
+    if not route_snapshot or not route_snapshot.function_trace:
+        trace_limits.append(
+            "function trace is reconstructed from audit metadata when runtime step snapshots are unavailable."
+        )
 
     return QATraceResponse(
         request_id=record.request_id,
@@ -215,9 +316,10 @@ def get_request_trace(
             route_snapshot.router_fallback_used if route_snapshot else current_router_status.fallback_used
         ),
         router_error=route_snapshot.router_error if route_snapshot else current_router_status.error,
-        router_decision=route_snapshot.route if route_snapshot else _default_router_decision(record.mode),
+        router_decision=route_decision,
         cache_hit=record.cache_hit,
         model=record.model,
         latency_ms=record.latency_ms,
+        function_trace=function_trace,
         trace_limits=trace_limits,
     )

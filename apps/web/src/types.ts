@@ -109,6 +109,7 @@ export interface AskResponse {
   retrieved_chunks: Citation[];
   citations: Citation[];
   graph_paths: GraphPath[];
+  function_trace_summary: string[];
 }
 
 export interface AuditLog {
@@ -141,6 +142,17 @@ export interface TraceRetrievedChunk {
   embedding_dimension: number;
 }
 
+export interface FunctionTraceStep {
+  tool_name: string;
+  status: "success" | "skipped" | "denied" | "error";
+  input_summary: string;
+  output_summary: string;
+  duration_ms: number;
+  security_note: string;
+  error_code: string | null;
+  order_index: number;
+}
+
 export interface RequestTrace {
   request_id: string;
   user_id: string | null;
@@ -168,6 +180,7 @@ export interface RequestTrace {
   cache_hit: boolean;
   model: string;
   latency_ms: number;
+  function_trace: FunctionTraceStep[];
   trace_limits: string[];
 }
 
@@ -189,4 +202,7 @@ export interface RetrievalConfig {
   pgvector_field_available: boolean;
   cache_backend: string;
   model_mode: string;
+  function_calling_mode: string;
+  llm_autonomous_tool_calling: boolean;
+  permission_authority: string;
 }

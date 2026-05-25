@@ -9,6 +9,7 @@ A permission-first internal knowledge assistant that enforces backend RBAC and s
 - Permission-aware RAG retrieval with knowledge base scope filtering.
 - Real pgvector SQL retrieval path for PostgreSQL deployments (with safe fallback).
 - Ollama local router (qwen2.5:0.5b-instruct) for lightweight classification with safe fallback to rules.
+- Backend-controlled Function Calling Trace for deterministic QA execution steps.
 - Knowledge Base Viewer + Document Viewer + Chunk Viewer (read-only, permission-scoped).
 - Retrieval Trace API and Developer Trace page for `request_id`, scope, chunk hits, deny/cache path.
 - GraphRAG scaffolding with Neo4j entity/path projection.
@@ -51,11 +52,24 @@ Permission boundary is backend-owned:
 1. Receive question and mode (`auto/rag/graphrag`).
 2. Route/classify question (`LOCAL_ROUTER_MODE=rules|ollama`).
 3. Resolve backend permission scope.
-4. Validate optional frontend KB selection against scope.
-5. Retrieve chunks only from authorized KBs.
-6. Optionally project graph evidence paths (GraphRAG mode).
-7. Generate final answer (`LLM_MODE=mock` by default).
-8. Persist audit record and cache payload.
+4. Check permission-scoped cache.
+5. Validate optional frontend KB selection against scope.
+6. Retrieve chunks only from authorized KBs.
+7. Optionally project graph evidence paths (GraphRAG mode).
+8. Generate final answer (`LLM_MODE=mock` by default) or return denial.
+9. Persist audit record and return structured function trace.
+
+Function Calling Trace (v0.2.2) is backend-controlled and deterministic:
+
+- `classify_query`
+- `resolve_user_permission_scope`
+- `check_cache`
+- `search_allowed_chunks`
+- `get_graph_paths`
+- `generate_answer`
+- `save_audit_log`
+
+This is not unrestricted autonomous tool calling. LLM/Ollama cannot decide permissions and cannot directly invoke backend tools.
 
 Retrieval engine behavior:
 
@@ -71,7 +85,7 @@ Router behavior:
 - If Ollama is unavailable/timeout/invalid-output, router safely falls back to rules.
 - Router never decides permission and never expands `allowed_kb_ids`.
 
-## Observability Endpoints (v0.2.1)
+## Observability Endpoints (v0.2.2)
 
 - `GET /api/v1/knowledge-bases`:
   Returns knowledge bases visible to the current user, including `display_name`, `language`, and scoped metadata.
@@ -80,9 +94,9 @@ Router behavior:
 - `GET /api/v1/documents/{document_id}/chunks`:
   Returns chunk list with preview/full content and embedding status only when the caller can access the document's KB.
 - `GET /api/v1/qa/{request_id}/trace`:
-  Returns structured retrieval trace. Includes router metadata (`router_mode`, `router_model`, fallback/error, router decision). Chunk content is filtered again by the current viewer's permission scope.
+  Returns structured retrieval trace and backend function calling trace. Includes router metadata (`router_mode`, `router_model`, fallback/error, router decision). Chunk content is filtered again by the current viewer's permission scope.
 - `GET /api/v1/system/retrieval-config`:
-  Returns safe runtime config for retrieval mode, router runtime, and embedding mode.
+  Returns safe runtime config for retrieval mode, router runtime, embedding mode, and function calling safety posture.
 
 ## Demo Accounts
 
@@ -168,15 +182,15 @@ npm run build
 
 - `LLM_MODE=mock` by default (deterministic mock generation path).
 - Embedding is deterministic mock embedding in MVP (`SHA256`-based vector projection).
+- Ollama is used only as local router/classifier; it is not the final answer generator.
+- External LLM APIs are not enabled for this demo.
+- MCP is not added yet.
 - Document upload/indexing management API is not implemented yet.
-- Ollama is used only as local router/classifier in v0.2.1; it is not the final answer generator.
-- External LLM API mode exists but is disabled by default.
 
 ## Roadmap
 
 - Admin knowledge base viewer polish.
 - Real document upload and indexing pipeline.
-- Function calling trace and tool-call observability.
 - MCP adapter layer.
 - Production deployment hardening (security, ops, reliability).
 

@@ -135,6 +135,15 @@ def test_trace_endpoint_filters_chunk_content_for_unauthorized_audit_reader(clie
     assert isinstance(trace_payload["router_fallback_used"], bool)
     assert trace_payload["router_decision"] is not None
     assert "need_rag" in trace_payload["router_decision"]
+    assert [item["tool_name"] for item in trace_payload["function_trace"]] == [
+        "classify_query",
+        "resolve_user_permission_scope",
+        "check_cache",
+        "search_allowed_chunks",
+        "get_graph_paths",
+        "generate_answer",
+        "save_audit_log",
+    ]
 
 
 def test_retrieval_config_endpoint_reports_mock_mvp_runtime(client):
@@ -156,3 +165,6 @@ def test_retrieval_config_endpoint_reports_mock_mvp_runtime(client):
     assert payload["router_model"] == "rules"
     assert payload["router_availability"] == "not_checked"
     assert payload["router_fallback_last"] is False
+    assert payload["function_calling_mode"] == "backend-controlled-trace"
+    assert payload["llm_autonomous_tool_calling"] is False
+    assert payload["permission_authority"] == "backend-rbac"

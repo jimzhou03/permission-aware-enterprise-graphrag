@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import User
-from app.schemas.qa import AskRequest, AskResponse, Citation, GraphPath, RouteDecision
+from app.schemas.qa import AskRequest, AskResponse, Citation, FunctionTraceStep, GraphPath, RouteDecision
 from app.services.audit_service import create_qa_audit_log
 from app.services.cache_service import build_cache_key_parts, cache_service
 from app.services.graph_service import build_graph_paths_for_citations
@@ -23,11 +23,74 @@ from app.services.rag_service import get_retrieval_runtime, retrieve_permission_
 
 settings = get_settings()
 
+TRACE_STEP_ORDER = [
+    "classify_query",
+    "resolve_user_permission_scope",
+    "check_cache",
+    "search_allowed_chunks",
+    "get_graph_paths",
+    "generate_answer",
+    "save_audit_log",
+]
+
+TRACE_STEP_SECURITY_NOTES = {
+    "classify_query": "Router only classifies intent and mode; permission authority stays in backend RBAC.",
+    "resolve_user_permission_scope": "Allowed knowledge scope is resolved by backend RBAC and ACL only.",
+    "check_cache": "Cache keys are permission-scoped and cannot expand access boundaries.",
+    "search_allowed_chunks": "Retrieval runs only inside backend allowed_kb_ids before returning any chunk.",
+    "get_graph_paths": "Graph projection only uses already authorized citation chunk identifiers.",
+    "generate_answer": "Answer generation uses authorized retrieval output; autonomous tool calling is disabled.",
+    "save_audit_log": "Audit stores safe metadata and avoids unauthorized chunk content disclosure.",
+}
+
 
 @dataclass
 class QAResult:
     response: AskResponse
     request_id: str
+
+
+class _FunctionTraceRecorder:
+    def __init__(self) -> None:
+        self._steps: dict[str, FunctionTraceStep] = {}
+        for index, name in enumerate(TRACE_STEP_ORDER, start=1):
+            self._steps[name] = FunctionTraceStep(
+                tool_name=name,
+                status="skipped",
+                input_summary="not_executed",
+                output_summary="not_executed",
+                duration_ms=0,
+                security_note=TRACE_STEP_SECURITY_NOTES.get(name, ""),
+                order_index=index,
+            )
+
+    def set_step(
+        self,
+        *,
+        tool_name: str,
+        status: str,
+        input_summary: str,
+        output_summary: str,
+        duration_ms: int,
+        error_code: str | None = None,
+    ) -> None:
+        existing = self._steps[tool_name]
+        self._steps[tool_name] = FunctionTraceStep(
+            tool_name=tool_name,
+            status=status,  # type: ignore[arg-type]
+            input_summary=input_summary,
+            output_summary=output_summary,
+            duration_ms=max(duration_ms, 0),
+            security_note=existing.security_note,
+            error_code=error_code,
+            order_index=existing.order_index,
+        )
+
+    def build(self) -> list[FunctionTraceStep]:
+        return [self._steps[name] for name in TRACE_STEP_ORDER]
+
+    def summary(self) -> list[str]:
+        return [f"{step.order_index}.{step.tool_name}:{step.status}" for step in self.build()]
 
 
 def _as_unique_strings(items: Iterable[str]) -> list[str]:
@@ -136,7 +199,12 @@ def _render_general_greeting(question: str) -> str:
     )
 
 
-def _record_router_trace(request_id: str, route: RouteDecision, router_availability: str) -> None:
+def _record_router_trace(
+    request_id: str,
+    route: RouteDecision,
+    router_availability: str,
+    function_trace: list[FunctionTraceStep],
+) -> None:
     qa_runtime_store.set_router_trace(
         request_id=request_id,
         snapshot=RouterTraceSnapshot(
@@ -146,80 +214,243 @@ def _record_router_trace(request_id: str, route: RouteDecision, router_availabil
             router_availability=router_availability,
             router_fallback_used=route.router_fallback_used,
             router_error=route.router_error,
+            function_trace=function_trace,
         ),
     )
+
+
+def _finalize_with_audit(
+    *,
+    db: Session,
+    start: float,
+    request_id: str,
+    user: User,
+    question: str,
+    response: AskResponse,
+    model: str,
+    router_availability: str,
+    trace_recorder: _FunctionTraceRecorder,
+) -> QAResult:
+    latency_ms = int((time.perf_counter() - start) * 1000)
+
+    save_input = f"request_id={request_id} denied={response.denied} cache_hit={response.cache_hit}"
+    save_start = time.perf_counter()
+    try:
+        create_qa_audit_log(
+            db=db,
+            request_id=request_id,
+            user_id=user.id,
+            question=question,
+            answer=response.answer,
+            denied=response.denied,
+            refusal_reason=response.refusal_reason or "",
+            hit_kb_ids=_as_unique_strings(str(item.kb_id) for item in response.citations),
+            hit_document_ids=_as_unique_strings(str(item.document_id) for item in response.citations),
+            hit_chunk_ids=_as_unique_strings(str(item.chunk_id) for item in response.citations),
+            mode=response.mode,
+            model=model,
+            latency_ms=latency_ms,
+            cache_hit=response.cache_hit,
+        )
+    except Exception:
+        save_duration_ms = int((time.perf_counter() - save_start) * 1000)
+        trace_recorder.set_step(
+            tool_name="save_audit_log",
+            status="error",
+            input_summary=save_input,
+            output_summary="audit_log_write_failed",
+            duration_ms=save_duration_ms,
+            error_code="audit_log_write_error",
+        )
+        _record_router_trace(
+            request_id=request_id,
+            route=response.route,
+            router_availability=router_availability,
+            function_trace=trace_recorder.build(),
+        )
+        raise
+
+    save_duration_ms = int((time.perf_counter() - save_start) * 1000)
+    trace_recorder.set_step(
+        tool_name="save_audit_log",
+        status="success",
+        input_summary=save_input,
+        output_summary=f"audit_saved latency_ms={latency_ms}",
+        duration_ms=save_duration_ms,
+    )
+    response.function_trace_summary = trace_recorder.summary()
+    _record_router_trace(
+        request_id=request_id,
+        route=response.route,
+        router_availability=router_availability,
+        function_trace=trace_recorder.build(),
+    )
+    return QAResult(response=response, request_id=request_id)
 
 
 def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
     start = time.perf_counter()
     request_id = f"qa_{uuid.uuid4().hex[:16]}"
-    route = route_question(payload.question, payload.mode)
+    trace_recorder = _FunctionTraceRecorder()
+
+    classify_input = f"mode={payload.mode} question_len={len(payload.question)}"
+    classify_start = time.perf_counter()
+    try:
+        route = route_question(payload.question, payload.mode)
+    except Exception:
+        classify_duration_ms = int((time.perf_counter() - classify_start) * 1000)
+        trace_recorder.set_step(
+            tool_name="classify_query",
+            status="error",
+            input_summary=classify_input,
+            output_summary="router_classification_failed",
+            duration_ms=classify_duration_ms,
+            error_code="router_error",
+        )
+        raise
+    classify_duration_ms = int((time.perf_counter() - classify_start) * 1000)
+    trace_recorder.set_step(
+        tool_name="classify_query",
+        status="success",
+        input_summary=classify_input,
+        output_summary=(
+            f"mode={route.mode} need_rag={route.need_rag} "
+            f"target_department={route.target_department or 'none'}"
+        ),
+        duration_ms=classify_duration_ms,
+    )
     router_availability = get_router_status().availability
 
-    allowed_kbs = list_allowed_knowledge_bases(db, user)
+    resolve_input = (
+        f"role={user.role.name if user.role else 'unknown'} "
+        f"department={user.department.code if user.department else 'none'} "
+        f"requested_kbs={len(payload.knowledge_base_codes)}"
+    )
+    resolve_start = time.perf_counter()
+    try:
+        allowed_kbs = list_allowed_knowledge_bases(db, user)
+    except Exception:
+        resolve_duration_ms = int((time.perf_counter() - resolve_start) * 1000)
+        trace_recorder.set_step(
+            tool_name="resolve_user_permission_scope",
+            status="error",
+            input_summary=resolve_input,
+            output_summary="permission_scope_resolution_failed",
+            duration_ms=resolve_duration_ms,
+            error_code="permission_scope_error",
+        )
+        raise
+    resolve_duration_ms = int((time.perf_counter() - resolve_start) * 1000)
     allowed_kb_ids = [kb.id for kb in allowed_kbs]
     allowed_kb_codes = {kb.code for kb in allowed_kbs}
+    trace_recorder.set_step(
+        tool_name="resolve_user_permission_scope",
+        status="success",
+        input_summary=resolve_input,
+        output_summary=f"allowed_kbs={len(allowed_kbs)}",
+        duration_ms=resolve_duration_ms,
+    )
     retrieval_runtime = get_retrieval_runtime(db)
 
     if payload.knowledge_base_codes:
         unauthorized = [code for code in payload.knowledge_base_codes if code not in allowed_kb_codes]
         if unauthorized:
+            trace_recorder.set_step(
+                tool_name="check_cache",
+                status="skipped",
+                input_summary="cache_lookup_not_started",
+                output_summary="permission_denied_before_cache",
+                duration_ms=0,
+            )
+            trace_recorder.set_step(
+                tool_name="search_allowed_chunks",
+                status="denied",
+                input_summary=f"requested_kbs={len(payload.knowledge_base_codes)}",
+                output_summary="requested_scope_outside_allowed_kb_ids",
+                duration_ms=0,
+            )
+            trace_recorder.set_step(
+                tool_name="get_graph_paths",
+                status="skipped",
+                input_summary=f"mode={route.mode}",
+                output_summary="denied_before_retrieval",
+                duration_ms=0,
+            )
+            trace_recorder.set_step(
+                tool_name="generate_answer",
+                status="skipped",
+                input_summary="denied_request",
+                output_summary="permission_denied",
+                duration_ms=0,
+            )
             response = _deny_response(
                 request_id=request_id,
                 reason=f"Requested knowledge base is outside allowed scope: {', '.join(unauthorized)}",
                 route_mode=route.mode,
                 route=route,
             )
-            _record_router_trace(request_id=request_id, route=route, router_availability=router_availability)
-            latency_ms = int((time.perf_counter() - start) * 1000)
-            create_qa_audit_log(
+            return _finalize_with_audit(
                 db=db,
+                start=start,
                 request_id=request_id,
-                user_id=user.id,
+                user=user,
                 question=payload.question,
-                answer=response.answer,
-                denied=True,
-                refusal_reason=response.refusal_reason or "",
-                hit_kb_ids=[],
-                hit_document_ids=[],
-                hit_chunk_ids=[],
-                mode=route.mode,
+                response=response,
                 model="permission-deny|retrieval=none",
-                latency_ms=latency_ms,
-                cache_hit=False,
+                router_availability=router_availability,
+                trace_recorder=trace_recorder,
             )
-            return QAResult(response=response, request_id=request_id)
 
     if route.target_department and route.target_department not in {"public"}:
         matches_target = [
             kb for kb in allowed_kbs if kb.department and kb.department.code == route.target_department
         ]
         if not matches_target and user.role and user.role.name != "admin":
+            trace_recorder.set_step(
+                tool_name="check_cache",
+                status="skipped",
+                input_summary="cache_lookup_not_started",
+                output_summary="permission_denied_before_cache",
+                duration_ms=0,
+            )
+            trace_recorder.set_step(
+                tool_name="search_allowed_chunks",
+                status="denied",
+                input_summary=f"target_department={route.target_department}",
+                output_summary="department_scope_not_allowed",
+                duration_ms=0,
+            )
+            trace_recorder.set_step(
+                tool_name="get_graph_paths",
+                status="skipped",
+                input_summary=f"mode={route.mode}",
+                output_summary="denied_before_retrieval",
+                duration_ms=0,
+            )
+            trace_recorder.set_step(
+                tool_name="generate_answer",
+                status="skipped",
+                input_summary="denied_request",
+                output_summary="permission_denied",
+                duration_ms=0,
+            )
             response = _deny_response(
                 request_id=request_id,
                 reason=f"User cannot access department scope: {route.target_department}",
                 route_mode=route.mode,
                 route=route,
             )
-            _record_router_trace(request_id=request_id, route=route, router_availability=router_availability)
-            latency_ms = int((time.perf_counter() - start) * 1000)
-            create_qa_audit_log(
+            return _finalize_with_audit(
                 db=db,
+                start=start,
                 request_id=request_id,
-                user_id=user.id,
+                user=user,
                 question=payload.question,
-                answer=response.answer,
-                denied=True,
-                refusal_reason=response.refusal_reason or "",
-                hit_kb_ids=[],
-                hit_document_ids=[],
-                hit_chunk_ids=[],
-                mode=route.mode,
+                response=response,
                 model="permission-deny|retrieval=none",
-                latency_ms=latency_ms,
-                cache_hit=False,
+                router_availability=router_availability,
+                trace_recorder=trace_recorder,
             )
-            return QAResult(response=response, request_id=request_id)
 
     cache_key_parts = build_cache_key_parts(
         user_id=str(user.id),
@@ -235,35 +466,100 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         model_profile=_model_profile(retrieval_runtime.cache_token),
         prompt_version=settings.prompt_version,
     )
-    cached_payload = cache_service.get_payload(cache_key_parts)
+    cache_input = (
+        f"mode={route.mode} scoped_kbs={len(payload.knowledge_base_codes)} "
+        f"allowed_kbs={len(allowed_kbs)}"
+    )
+    cache_start = time.perf_counter()
+    try:
+        cached_payload = cache_service.get_payload(cache_key_parts)
+    except Exception:
+        cache_duration_ms = int((time.perf_counter() - cache_start) * 1000)
+        trace_recorder.set_step(
+            tool_name="check_cache",
+            status="error",
+            input_summary=cache_input,
+            output_summary="cache_lookup_failed",
+            duration_ms=cache_duration_ms,
+            error_code="cache_lookup_error",
+        )
+        raise
+    cache_duration_ms = int((time.perf_counter() - cache_start) * 1000)
     if cached_payload is not None:
+        trace_recorder.set_step(
+            tool_name="check_cache",
+            status="success",
+            input_summary=cache_input,
+            output_summary="cache_hit=true",
+            duration_ms=cache_duration_ms,
+        )
+        trace_recorder.set_step(
+            tool_name="search_allowed_chunks",
+            status="skipped",
+            input_summary=f"mode={route.mode}",
+            output_summary="cache_hit_skip_retrieval",
+            duration_ms=0,
+        )
+        trace_recorder.set_step(
+            tool_name="get_graph_paths",
+            status="skipped",
+            input_summary=f"mode={route.mode}",
+            output_summary="cache_hit_skip_graph_projection",
+            duration_ms=0,
+        )
+        trace_recorder.set_step(
+            tool_name="generate_answer",
+            status="skipped",
+            input_summary="cache_hit=true",
+            output_summary="cached_answer",
+            duration_ms=0,
+        )
         cached_response = _response_from_cache_payload(request_id, cached_payload)
-        _record_router_trace(
-            request_id=request_id,
-            route=cached_response.route,
-            router_availability=router_availability,
-        )
-        latency_ms = int((time.perf_counter() - start) * 1000)
-        create_qa_audit_log(
+        return _finalize_with_audit(
             db=db,
+            start=start,
             request_id=request_id,
-            user_id=user.id,
+            user=user,
             question=payload.question,
-            answer=cached_response.answer,
-            denied=cached_response.denied,
-            refusal_reason=cached_response.refusal_reason or "",
-            hit_kb_ids=_as_unique_strings(str(item.kb_id) for item in cached_response.citations),
-            hit_document_ids=_as_unique_strings(str(item.document_id) for item in cached_response.citations),
-            hit_chunk_ids=_as_unique_strings(str(item.chunk_id) for item in cached_response.citations),
-            mode=cached_response.mode,
+            response=cached_response,
             model=_model_from_cache_payload(cached_payload, fallback_retrieval_engine=retrieval_runtime.retrieval_engine),
-            latency_ms=latency_ms,
-            cache_hit=True,
+            router_availability=router_availability,
+            trace_recorder=trace_recorder,
         )
-        return QAResult(response=cached_response, request_id=request_id)
+
+    trace_recorder.set_step(
+        tool_name="check_cache",
+        status="success",
+        input_summary=cache_input,
+        output_summary="cache_hit=false",
+        duration_ms=cache_duration_ms,
+    )
 
     if route.mode == "general":
+        trace_recorder.set_step(
+            tool_name="search_allowed_chunks",
+            status="skipped",
+            input_summary=f"mode={route.mode}",
+            output_summary="router_need_rag=false",
+            duration_ms=0,
+        )
+        trace_recorder.set_step(
+            tool_name="get_graph_paths",
+            status="skipped",
+            input_summary=f"mode={route.mode}",
+            output_summary="general_mode_no_graph_projection",
+            duration_ms=0,
+        )
+        answer_start = time.perf_counter()
         answer = _render_general_greeting(payload.question)
+        answer_duration_ms = int((time.perf_counter() - answer_start) * 1000)
+        trace_recorder.set_step(
+            tool_name="generate_answer",
+            status="success",
+            input_summary="general_fallback",
+            output_summary=f"answer_chars={len(answer)}",
+            duration_ms=answer_duration_ms,
+        )
         response = AskResponse(
             request_id=request_id,
             answer=answer,
@@ -280,40 +576,51 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
             citations=[],
             graph_paths=[],
         )
-        _record_router_trace(request_id=request_id, route=route, router_availability=router_availability)
-        latency_ms = int((time.perf_counter() - start) * 1000)
-        create_qa_audit_log(
+        result = _finalize_with_audit(
             db=db,
+            start=start,
             request_id=request_id,
-            user_id=user.id,
+            user=user,
             question=payload.question,
-            answer=answer,
-            denied=False,
-            refusal_reason="",
-            hit_kb_ids=[],
-            hit_document_ids=[],
-            hit_chunk_ids=[],
-            mode="general",
+            response=response,
             model="general-fallback|retrieval=none",
-            latency_ms=latency_ms,
-            cache_hit=False,
+            router_availability=router_availability,
+            trace_recorder=trace_recorder,
         )
         cache_service.set_payload(
             cache_key_parts,
             payload=_cache_payload_from_response(response, model="general-fallback|retrieval=none"),
             ttl_seconds=settings.cache_ttl_seconds,
         )
-        return QAResult(response=response, request_id=request_id)
+        return result
 
     scoped_codes = payload.knowledge_base_codes
-    retrieved = retrieve_permission_scoped_chunks(
-        db=db,
-        question=payload.question,
-        allowed_kb_ids=allowed_kb_ids,
-        scoped_kb_codes=scoped_codes,
-        top_k=settings.qa_top_k,
-        runtime=retrieval_runtime,
+    search_input = (
+        f"mode={route.mode} allowed_kbs={len(allowed_kb_ids)} "
+        f"scoped_kbs={len(scoped_codes)} top_k={settings.qa_top_k}"
     )
+    search_start = time.perf_counter()
+    try:
+        retrieved = retrieve_permission_scoped_chunks(
+            db=db,
+            question=payload.question,
+            allowed_kb_ids=allowed_kb_ids,
+            scoped_kb_codes=scoped_codes,
+            top_k=settings.qa_top_k,
+            runtime=retrieval_runtime,
+        )
+    except Exception:
+        search_duration_ms = int((time.perf_counter() - search_start) * 1000)
+        trace_recorder.set_step(
+            tool_name="search_allowed_chunks",
+            status="error",
+            input_summary=search_input,
+            output_summary="retrieval_failed",
+            duration_ms=search_duration_ms,
+            error_code="retrieval_error",
+        )
+        raise
+    search_duration_ms = int((time.perf_counter() - search_start) * 1000)
 
     citations: list[Citation] = [
         Citation(
@@ -328,20 +635,82 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         )
         for item in retrieved
     ]
+    hit_codes = {item.kb_code for item in citations}
+    trace_recorder.set_step(
+        tool_name="search_allowed_chunks",
+        status="success",
+        input_summary=search_input,
+        output_summary=f"hit_chunks={len(citations)} hit_kb_count={len(hit_codes)}",
+        duration_ms=search_duration_ms,
+    )
+
     graph_paths: list[GraphPath] = []
     if route.mode == "graphrag":
-        graph_paths = build_graph_paths_for_citations(
-            db=db,
-            citations=citations,
-            allowed_kb_ids=allowed_kb_ids,
+        graph_input = f"citations={len(citations)} allowed_kbs={len(allowed_kb_ids)}"
+        graph_start = time.perf_counter()
+        try:
+            graph_paths = build_graph_paths_for_citations(
+                db=db,
+                citations=citations,
+                allowed_kb_ids=allowed_kb_ids,
+            )
+        except Exception:
+            graph_duration_ms = int((time.perf_counter() - graph_start) * 1000)
+            trace_recorder.set_step(
+                tool_name="get_graph_paths",
+                status="error",
+                input_summary=graph_input,
+                output_summary="graph_projection_failed",
+                duration_ms=graph_duration_ms,
+                error_code="graph_projection_error",
+            )
+            raise
+        graph_duration_ms = int((time.perf_counter() - graph_start) * 1000)
+        trace_recorder.set_step(
+            tool_name="get_graph_paths",
+            status="success",
+            input_summary=graph_input,
+            output_summary=f"graph_paths={len(graph_paths)}",
+            duration_ms=graph_duration_ms,
+        )
+    else:
+        trace_recorder.set_step(
+            tool_name="get_graph_paths",
+            status="skipped",
+            input_summary=f"mode={route.mode}",
+            output_summary="graph_projection_not_requested",
+            duration_ms=0,
         )
 
-    generated = generate_answer(
-        question=payload.question,
-        citations=citations,
-        graph_paths=graph_paths,
-    )
+    generate_input = f"citations={len(citations)} graph_paths={len(graph_paths)} llm_mode={settings.llm_mode}"
+    generate_start = time.perf_counter()
+    try:
+        generated = generate_answer(
+            question=payload.question,
+            citations=citations,
+            graph_paths=graph_paths,
+        )
+    except Exception:
+        generate_duration_ms = int((time.perf_counter() - generate_start) * 1000)
+        trace_recorder.set_step(
+            tool_name="generate_answer",
+            status="error",
+            input_summary=generate_input,
+            output_summary="answer_generation_failed",
+            duration_ms=generate_duration_ms,
+            error_code="answer_generation_error",
+        )
+        raise
     answer = generated.answer
+    generate_duration_ms = int((time.perf_counter() - generate_start) * 1000)
+    trace_recorder.set_step(
+        tool_name="generate_answer",
+        status="success",
+        input_summary=generate_input,
+        output_summary=f"model={generated.model} answer_chars={len(answer)}",
+        duration_ms=generate_duration_ms,
+    )
+
     response = AskResponse(
         request_id=request_id,
         answer=answer,
@@ -358,23 +727,17 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         citations=citations,
         graph_paths=graph_paths,
     )
-    _record_router_trace(request_id=request_id, route=route, router_availability=router_availability)
-    latency_ms = int((time.perf_counter() - start) * 1000)
-    create_qa_audit_log(
+    model = _append_retrieval_engine(generated.model, retrieval_runtime.retrieval_engine)
+    result = _finalize_with_audit(
         db=db,
+        start=start,
         request_id=request_id,
-        user_id=user.id,
+        user=user,
         question=payload.question,
-        answer=answer,
-        denied=False,
-        refusal_reason="",
-        hit_kb_ids=_as_unique_strings(str(item.kb_id) for item in citations),
-        hit_document_ids=_as_unique_strings(str(item.document_id) for item in citations),
-        hit_chunk_ids=_as_unique_strings(str(item.chunk_id) for item in citations),
-        mode=route.mode,
-        model=_append_retrieval_engine(generated.model, retrieval_runtime.retrieval_engine),
-        latency_ms=latency_ms,
-        cache_hit=False,
+        response=response,
+        model=model,
+        router_availability=router_availability,
+        trace_recorder=trace_recorder,
     )
 
     ttl_seconds = settings.cache_refusal_ttl_seconds if response.denied else settings.cache_ttl_seconds
@@ -382,8 +745,8 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         cache_key_parts,
         payload=_cache_payload_from_response(
             response,
-            model=_append_retrieval_engine(generated.model, retrieval_runtime.retrieval_engine),
+            model=model,
         ),
         ttl_seconds=ttl_seconds,
     )
-    return QAResult(response=response, request_id=request_id)
+    return result

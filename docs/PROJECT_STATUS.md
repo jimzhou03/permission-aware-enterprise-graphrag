@@ -6,9 +6,62 @@
 
 - Docker 运行正常：前端 `http://localhost:5173`、后端 `http://localhost:8000/docs`、健康检查 `GET /healthz` 返回 `{"status":"ok"}`。
 - 模型模式保持 `LLM_MODE=mock`。
+- v0.2.2 已实现 Function Calling Trace（后端受控函数链路追踪，非自治工具调用）。
 - v0.2.1 已接入 Ollama Local Router（仅分类/路由，不参与最终答案生成）。
 - 未接入外部大模型 API。
 - v0.2.0 已实现 PostgreSQL + pgvector SQL 检索路径，并保留 SQLite/不可用环境安全回退。
+
+## 本阶段（v0.2.2 Function Calling Trace）完成项
+
+1. 后端受控函数链路模型
+   - QA 主流程新增确定性内部步骤追踪（非外部可调用工具）：
+     - `classify_query`
+     - `resolve_user_permission_scope`
+     - `check_cache`
+     - `search_allowed_chunks`
+     - `get_graph_paths`
+     - `generate_answer`
+     - `save_audit_log`
+   - 每步包含安全字段：
+     - `tool_name`
+     - `status` (`success|skipped|denied|error`)
+     - `input_summary`
+     - `output_summary`
+     - `duration_ms`
+     - `security_note`
+     - `error_code`（仅安全错误码）
+     - `order_index`
+
+2. QA / Trace / System Status 联动
+   - QA 响应新增 `function_trace_summary`（紧凑摘要，聊天主界面不展开原始工具 JSON）。
+   - `GET /api/v1/qa/{request_id}/trace` 新增完整 `function_trace`。
+   - `GET /api/v1/system/retrieval-config` 新增安全声明字段：
+     - `function_calling_mode=backend-controlled-trace`
+     - `llm_autonomous_tool_calling=false`
+     - `permission_authority=backend-rbac`
+
+3. 前端可观测性升级
+   - Developer Trace 新增 `Function Calling Trace` 区块，按顺序展示步骤状态、输入/输出摘要、耗时、安全说明、错误码。
+   - Raw trace JSON 仍保持折叠。
+   - Knowledge Chat 继续保持简洁，仅保留 `View function trace` 入口。
+   - System Status 新增函数调用安全姿态说明，不改变权限边界归属。
+
+4. 安全边界强化（不变更核心原则）
+   - 权限判定仍严格由后端 RBAC/ACL 决定。
+   - Ollama 仅参与路由分类，不参与权限判定与工具调用。
+   - 前端无法通过 `knowledge_base_codes` 扩权。
+   - trace 不暴露未授权 chunk 内容；检索仍先按 `allowed_kb_ids` 收敛。
+   - 默认最终答案生成仍为 `LLM_MODE=mock`；未启用外部 LLM API；未接入 MCP；未实现上传。
+
+5. 自动化测试补强
+   - 新增 Function Calling Trace 相关后端测试，覆盖：
+     - 授权 RAG 请求链路完整性
+     - general fallback 跳过检索
+     - cache hit 跳过检索/生成
+     - 拒绝路径无未授权 chunk 内容
+     - visitor/cn_staff/en_staff/bilingual_admin 权限边界与链路一致性
+     - 前端选择和 Ollama 路由均不能扩权
+   - 既有权限矩阵脚本与阶段性测试保持兼容。
 
 ## 本阶段（v0.2.1 Ollama Local Router）完成项
 

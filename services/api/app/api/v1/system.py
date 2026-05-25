@@ -39,4 +39,7 @@ def get_retrieval_config(
         pgvector_field_available=runtime.backend_name == "postgresql",
         cache_backend="redis" if settings.redis_url.startswith("redis://") else "memory",
         model_mode=settings.llm_mode,
+        function_calling_mode="backend-controlled-trace",
+        llm_autonomous_tool_calling=False,
+        permission_authority="backend-rbac",
     )

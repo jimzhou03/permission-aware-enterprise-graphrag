@@ -290,3 +290,6 @@ def test_retrieval_config_reports_ollama_router_runtime(client, monkeypatch):
     assert payload["router_model"] == local_router_service.settings.ollama_router_model
     assert payload["router_availability"] in {"available", "unavailable", "not_checked"}
     assert isinstance(payload["router_fallback_last"], bool)
+    assert payload["function_calling_mode"] == "backend-controlled-trace"
+    assert payload["llm_autonomous_tool_calling"] is False
+    assert payload["permission_authority"] == "backend-rbac"

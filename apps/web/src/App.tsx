@@ -542,6 +542,13 @@ export default function App() {
     return response.cache_hit ? t.cacheHit : t.cacheMiss;
   }
 
+  function traceStatusClass(status: string): string {
+    if (status === "success") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    if (status === "denied") return "border-amber-200 bg-amber-50 text-amber-700";
+    if (status === "error") return "border-red-200 bg-red-50 text-red-700";
+    return "border-slate-200 bg-slate-100 text-slate-600";
+  }
+
   function formatKbScope(codes: string[] | undefined): string {
     return codes && codes.length > 0 ? codes.join(", ") : t.defaultKbScope;
   }
@@ -1198,6 +1205,10 @@ export default function App() {
                                         {chatMessage.response.router_error ? (
                                           <div>router_error: {chatMessage.response.router_error}</div>
                                         ) : null}
+                                        <div>
+                                          function_trace_summary:{" "}
+                                          {(chatMessage.response.function_trace_summary ?? []).join(" | ") || "-"}
+                                        </div>
                                         <div>allowed_kb_ids(frontend): {knowledgeBases.map((kb) => kb.id).join(", ") || "-"}</div>
                                       </div>
                                     </details>
@@ -1578,6 +1589,24 @@ export default function App() {
                     <div className="mt-1 font-mono text-sm text-slate-800">{t.permissionEnforcementValue}</div>
                   </div>
                   <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.functionCallingMode}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.function_calling_mode ?? "backend-controlled-trace"}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.llmAutonomousToolCalling}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {formatBoolean(retrievalConfig?.llm_autonomous_tool_calling)}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.permissionAuthority}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.permission_authority ?? t.permissionEnforcementValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
                     <div className="text-xs text-slate-500">{t.cacheStatus}</div>
                     <div className="mt-1 font-mono text-sm text-slate-800">{formatCacheState(activeResponse)}</div>
                   </div>
@@ -1737,6 +1766,59 @@ export default function App() {
                         </pre>
                       </details>
                     </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">{tracePending ? t.working : t.traceUnavailable}</p>
+                  )}
+                </div>
+
+                <div className="glass-panel p-5">
+                  <h2 className="panel-title">{t.functionTraceTitle}</h2>
+                  {requestTrace ? (
+                    requestTrace.function_trace.length > 0 ? (
+                      <div className="space-y-3">
+                        {requestTrace.function_trace.map((step) => (
+                          <div key={`${requestTrace.request_id}_${step.order_index}_${step.tool_name}`} className="soft-card">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="font-mono text-xs text-slate-800">
+                                {step.order_index}. {step.tool_name}
+                              </div>
+                              <span
+                                className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${traceStatusClass(step.status)}`}
+                              >
+                                {step.status}
+                              </span>
+                            </div>
+                            <div className="mt-2 grid gap-2 md:grid-cols-2">
+                              <div>
+                                <div className="text-[11px] text-slate-500">{t.functionTraceInput}</div>
+                                <div className="mt-1 text-xs text-slate-700">{step.input_summary}</div>
+                              </div>
+                              <div>
+                                <div className="text-[11px] text-slate-500">{t.functionTraceOutput}</div>
+                                <div className="mt-1 text-xs text-slate-700">{step.output_summary}</div>
+                              </div>
+                              <div>
+                                <div className="text-[11px] text-slate-500">{t.functionTraceDuration}</div>
+                                <div className="mt-1 font-mono text-xs text-slate-700">
+                                  {step.duration_ms} {t.milliseconds}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-[11px] text-slate-500">{t.functionTraceSecurity}</div>
+                                <div className="mt-1 text-xs text-slate-700">{step.security_note}</div>
+                              </div>
+                            </div>
+                            {step.error_code ? (
+                              <div className="mt-2 text-xs text-red-700">
+                                {t.functionTraceErrorCode}: {step.error_code}
+                              </div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-slate-500">{t.traceUnavailable}</p>
+                    )
                   ) : (
                     <p className="text-sm text-slate-500">{tracePending ? t.working : t.traceUnavailable}</p>
                   )}
