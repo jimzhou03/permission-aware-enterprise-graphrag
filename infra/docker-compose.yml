@@ -31,6 +31,18 @@ services:
       timeout: 3s
       retries: 5
 
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: paegr-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - "8082:8081"
+    depends_on:
+      redis:
+        condition: service_healthy
+
   neo4j:
     image: neo4j:5
     container_name: paegr-neo4j
@@ -47,6 +59,16 @@ services:
       interval: 15s
       timeout: 5s
       retries: 10
+
+  adminer:
+    image: adminer:4
+    container_name: paegr-adminer
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   api:
     build:
@@ -92,4 +114,3 @@ volumes:
   pg_data:
   redis_data:
   neo4j_data:
-

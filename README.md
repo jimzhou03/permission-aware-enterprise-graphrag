@@ -1,5 +1,7 @@
 # Permission-Aware Enterprise GraphRAG Assistant
 
+[![CI](https://github.com/jimzhou03/permission-aware-enterprise-graphrag/actions/workflows/ci.yml/badge.svg)](https://github.com/jimzhou03/permission-aware-enterprise-graphrag/actions/workflows/ci.yml)
+
 Permission-Aware Enterprise GraphRAG Assistant is a full-stack enterprise AI knowledge assistant that combines JWT/RBAC, permission-scoped RAG retrieval, PostgreSQL + pgvector, Redis caching, Neo4j GraphRAG visualization, document upload/re-indexing, Ollama local routing, and auditable retrieval traces.
 
 This repository is a local runnable full-stack implementation and engineering showcase with production-inspired architecture and explicit security boundaries.
@@ -109,6 +111,64 @@ curl http://localhost:8000/healthz
 
 - Frontend: `http://localhost:5173`
 - Swagger: `http://localhost:8000/docs`
+- Neo4j Browser (local dev only): `http://127.0.0.1:7474`
+- Adminer / PostgreSQL UI (local dev only): `http://127.0.0.1:8081`
+- Redis Commander / Redis UI (local dev only): `http://127.0.0.1:8082`
+
+## Local Observability Dev Tools (Local Development Only)
+
+The following tools are for **local development observability only**.  
+They are not production admin backends.
+
+### Adminer (PostgreSQL UI)
+
+- URL: `http://127.0.0.1:8081`
+- System: `PostgreSQL`
+- Server: `postgres`
+- Username/Password/Database: read from `infra/.env` overrides (if set) or `infra/docker-compose.yml` defaults (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`)
+
+### Redis Commander (Redis UI)
+
+- URL: `http://127.0.0.1:8082`
+- Redis host: `redis`
+- Redis port: `6379`
+- Primary usage in this project: permission-aware cache inspection, KB version invalidation effect observation, temporary cache visibility
+
+### Neo4j Browser
+
+- URL: `http://127.0.0.1:7474`
+- Bolt: `bolt://127.0.0.1:7687`
+- Username/password: read from `infra/.env` overrides (if set) or `infra/docker-compose.yml` (`NEO4J_AUTH`, default `neo4j/password12345`)
+
+Common Cypher examples:
+
+```cypher
+MATCH (n) RETURN n LIMIT 100;
+```
+
+```cypher
+MATCH ()-[r]->() RETURN r LIMIT 100;
+```
+
+```cypher
+MATCH (kb:KnowledgeBase) RETURN kb LIMIT 50;
+MATCH (doc:Document) RETURN doc LIMIT 50;
+MATCH (c:Chunk) RETURN c LIMIT 50;
+MATCH (e:Entity) RETURN e LIMIT 50;
+```
+
+```cypher
+MATCH (c:Chunk {id: "<chunk_id>"})-[:MENTIONS]->(e:Entity)
+OPTIONAL MATCH (e)-[:RELATED_TO]-(related:Entity)
+RETURN c.id AS chunk_id, e.name AS entity, collect(DISTINCT related.name)[0..10] AS related_entities;
+```
+
+Request-level graph note:
+
+- Current Neo4j model does not persist `request_id` as a node.
+- For request-level GraphRAG analysis: use `qa_audit_logs.hit_chunk_ids` (PostgreSQL) or `GET /api/v1/qa/{request_id}/trace`, then query those chunk IDs in Neo4j.
+
+Detailed SQL / Redis CLI / Cypher cookbook: [docs/dev-observability.md](docs/dev-observability.md)
 
 ## Preconfigured Local Accounts
 
@@ -120,6 +180,22 @@ These are preconfigured local accounts for local validation and role-based walkt
 | `cn_staff` | [cn_staff@example.local](mailto:cn_staff@example.local) | `Passw0rd!123` | `cn-public` and `cn-internal` |
 | `en_staff` | [en_staff@example.local](mailto:en_staff@example.local) | `Passw0rd!123` | `en-public` and `en-internal` |
 | `visitor` | [visitor@example.local](mailto:visitor@example.local) | `Passw0rd!123` | `public-policy` only |
+
+## Demo Walkthrough
+
+1. Start services:
+   - `cd infra`
+   - `docker compose up -d --build`
+2. Login as `bilingual_admin@example.local`.
+3. Open `Knowledge Bases` and inspect Knowledge Base / Document / Chunk viewers.
+4. Send one Chinese department question in `Knowledge Chat`.
+5. Open `Developer Trace` and inspect retrieval/function trace steps.
+6. Open `GraphRAG` page and inspect graph overview/path view.
+7. Open `Audit Logs` and locate the latest `request_id`.
+8. Switch `visitor` / `cn_staff` / `en_staff` to validate permission isolation behavior.
+9. Open Adminer (`http://127.0.0.1:8081`) to inspect PostgreSQL tables and rows.
+10. Open Neo4j Browser (`http://127.0.0.1:7474`) to inspect graph nodes/relationships.
+11. Open Redis Commander (`http://127.0.0.1:8082`) to inspect permission-aware cache keys and TTL.
 
 ## Automated Tests
 
@@ -140,6 +216,65 @@ python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 
 The permission matrix script validates cross-role access boundaries, knowledge-base isolation, and overreach denial.
 
+## Automated Quality Gates
+
+GitHub Actions workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) enforces automated quality gates for every `push` and `pull_request` to `main`:
+
+- Frontend build (`apps/web`, `npm run build`).
+- Backend pytest (`docker compose exec -T api python -m pytest -q`).
+- Permission-aware access matrix (`python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000`).
+
+These checks keep the current project posture unchanged: `LLM_MODE=mock` default, no external LLM API as default generator path, and no MCP dependency in CI.
+
+## Real Embedding + Real LLM Generator (Optional Local Runtime)
+
+Default runtime remains mock-first for stability:
+
+- `EMBEDDING_MODE=mock`
+- `LLM_MODE=mock`
+
+This keeps CI and automated tests independent from external model services.
+
+To enable real local embedding + generation in local development:
+
+1. Edit root `.env` (do not commit secrets).
+2. Set embedding mode:
+   - `EMBEDDING_MODE=local`
+   - `LOCAL_EMBEDDING_BACKEND=ollama` (recommended lightweight path) or `sentence-transformers`
+   - `LOCAL_EMBEDDING_MODEL=nomic-embed-text` (ollama example)
+3. Set generator mode:
+   - `LLM_MODE=ollama` for local Ollama generation, or
+   - `LLM_MODE=openai-compatible` for OpenAI-compatible API endpoint.
+4. Keep router scope unchanged:
+   - `LOCAL_ROUTER_MODE=rules|ollama` still only classifies/query-routes and does not decide permissions.
+5. Rebuild API container and re-index data for embedding consistency when switching embedding mode/model.
+
+Example local Ollama setup:
+
+```bash
+ollama pull nomic-embed-text
+ollama pull qwen2.5:7b-instruct
+```
+
+```bash
+# .env example
+EMBEDDING_MODE=local
+LOCAL_EMBEDDING_BACKEND=ollama
+LOCAL_EMBEDDING_MODEL=nomic-embed-text
+LOCAL_EMBEDDING_BASE_URL=http://host.docker.internal:11434
+
+LLM_MODE=ollama
+LLM_OLLAMA_BASE_URL=http://host.docker.internal:11434
+LLM_OLLAMA_MODEL=qwen2.5:7b-instruct
+```
+
+Security and scope guarantees remain unchanged in real generator mode:
+
+- Backend deterministic RBAC resolves `allowed_kb_ids` first.
+- Retrieval runs only in authorized KB scope.
+- Generator receives only authorized retrieved chunks/citations.
+- Unauthorized chunks are excluded from prompt/answer/trace/cache/audit/graph outputs.
+
 ## Current Scope
 
 - Final answer generator defaults to `LLM_MODE=mock`.
@@ -153,7 +288,7 @@ The permission matrix script validates cross-role access boundaries, knowledge-b
 
 ## Roadmap
 
-- GitHub Actions CI.
+- Extend CI with additional static/security checks.
 - Real embedding model integration.
 - Real LLM generator integration.
 - PDF/DOCX ingestion.
