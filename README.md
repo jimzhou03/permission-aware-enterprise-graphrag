@@ -1,240 +1,175 @@
 # Permission-Aware Enterprise GraphRAG Assistant
 
-A permission-first internal knowledge assistant that enforces backend RBAC and scoped RAG retrieval before answer generation.
+Permission-Aware Enterprise GraphRAG Assistant is a full-stack enterprise AI knowledge assistant that combines JWT/RBAC, permission-scoped RAG retrieval, PostgreSQL + pgvector, Redis caching, Neo4j GraphRAG visualization, document upload/re-indexing, Ollama local routing, and auditable retrieval traces.
 
-## Feature Overview
+This repository is a local runnable full-stack implementation and engineering showcase with production-inspired architecture and explicit security boundaries.
 
-- JWT login with role and department claims.
-- Deterministic backend permission enforcement (`RBAC + KnowledgeBase ACL`).
-- Permission-aware RAG retrieval with knowledge base scope filtering.
-- Real pgvector SQL retrieval path for PostgreSQL deployments (with safe fallback).
-- Ollama local router (qwen2.5:0.5b-instruct) for lightweight classification with safe fallback to rules.
-- Backend-controlled Function Calling Trace for deterministic QA execution steps.
-- Markdown/TXT document upload + re-indexing (backend RBAC enforced).
-- Neo4j GraphRAG Visualization with permission-scoped graph status/overview/path APIs.
-- Knowledge Base Viewer + Document Viewer + Chunk Viewer (permission-scoped).
-- Retrieval Trace API and Developer Trace page for `request_id`, scope, chunk hits, deny/cache path.
-- GraphRAG scaffolding with Neo4j entity/path projection.
-- Permission-aware cache key design with `cache_hit` audit visibility.
-- Audit logging for every QA request.
-- Bilingual UI (Chinese/English) with product-style workspace navigation.
+## Why This Project
+
+Enterprise knowledge systems are permission-sensitive by default:
+
+- Internal knowledge bases usually contain role-restricted and department-restricted content.
+- Naive RAG pipelines may retrieve unauthorized chunks before applying access control.
+- Organizations need auditable retrieval behavior, role-based access, and safe model routing.
+- LLMs should not decide permissions.
+- Retrieval scope must be constrained before vector search.
+
+This project focuses on deterministic backend authorization, then retrieval, then generation.
+
+## Core Capabilities
+
+- JWT authentication.
+- RBAC and knowledge base ACL.
+- Bilingual department knowledge isolation.
+- Permission-scoped pgvector SQL retrieval.
+- Redis permission-aware cache and KB-version invalidation.
+- Markdown/TXT document upload and re-indexing.
+- Knowledge Base / Document / Chunk Viewer.
+- Ollama local router for lightweight classification.
+- Backend-controlled function calling trace.
+- Neo4j GraphRAG visualization.
+- Audit logs and retrieval trace.
+- Automated pytest and permission matrix validation script.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    Web["React + Vite Web App"] --> API["FastAPI API"]
-    API --> Auth["JWT / Auth Service"]
-    API --> Perm["Permission Service"]
-    Perm --> PG["PostgreSQL + pgvector fields"]
-    API --> Router["Local Router (rules / ollama)"]
-    API --> Cache["Redis Cache Service"]
-    API --> Graph["Neo4j Graph Service"]
-    API --> Audit["QA Audit Logs"]
-    API --> LLM["LLM Service (mock by default)"]
+    U[User] --> FE[React + TypeScript + Vite Frontend]
+    FE --> API[FastAPI API]
+
+    API --> AUTH[JWT / RBAC / ACL]
+    API --> ROUTER[Ollama Local Router\nclassification metadata only]
+    API --> CACHE[Redis Permission-Aware Cache]
+    API --> RETRIEVAL[PostgreSQL + pgvector Retrieval]
+    RETRIEVAL --> GRAPH[Neo4j GraphRAG]
+
+    API --> GEN[Mock Generator default\nFuture LLM Generator optional]
+
+    API --> TRACE[Audit Log / Retrieval Trace / Developer Trace]
+
+    AUTH --> API
+    ROUTER --> API
+    CACHE --> API
+    RETRIEVAL --> API
+    GRAPH --> API
+    GEN --> API
 ```
 
-## Permission Model
+## Security Model
 
-- `visitor`: `public-policy`
-- `cn_staff`: `cn-public`, `cn-internal`
-- `en_staff`: `en-public`, `en-internal`
-- `bilingual_admin`: `cn-public`, `cn-internal`, `en-public`, `en-internal`, `public-policy`
+- Permissions are computed by deterministic backend code.
+- `allowed_kb_ids` are resolved and enforced before retrieval.
+- Frontend selection can only narrow scope; it cannot expand permissions.
+- Ollama is used only to classify routing metadata.
+- The final generator does not decide access control.
+- Unauthorized chunks are excluded from answer payloads, trace payloads, cache usage paths, graph views, and audit payload outputs.
+- Graph visualization endpoints are also permission-scoped.
 
-Permission boundary is backend-owned:
+## RAG Pipeline
 
-1. JWT identity is resolved server-side.
-2. Backend calculates allowed scope (`allowed_kb_ids`).
-3. Requested KB scope is validated against allowed scope.
-4. Retrieval only runs inside authorized KBs.
-5. Overreach requests are denied and audited.
+1. Document upload.
+2. Parse Markdown/TXT.
+3. Chunking.
+4. Embedding.
+5. Store in PostgreSQL/pgvector-compatible schema.
+6. Permission-scoped retrieval.
+7. Answer generation.
+8. Audit and trace persistence.
 
-## RAG Retrieval Flow
+## GraphRAG Pipeline
 
-1. Receive question and mode (`auto/rag/graphrag`).
-2. Route/classify question (`LOCAL_ROUTER_MODE=rules|ollama`).
-3. Resolve backend permission scope.
-4. Check permission-scoped cache.
-5. Validate optional frontend KB selection against scope.
-6. Retrieve chunks only from authorized KBs.
-7. Optionally project graph evidence paths (GraphRAG mode).
-8. Generate final answer (`LLM_MODE=mock` by default) or return denial.
-9. Persist audit record and return structured function trace.
+1. PostgreSQL knowledge base / document / chunk data.
+2. Neo4j graph sync.
+3. Permission-scoped graph overview.
+4. GraphRAG path viewer.
+5. Developer Trace graph path inspection.
 
-Function Calling Trace (v0.2.2) is backend-controlled and deterministic:
+## Tech Stack
 
-- `classify_query`
-- `resolve_user_permission_scope`
-- `check_cache`
-- `search_allowed_chunks`
-- `get_graph_paths`
-- `generate_answer`
-- `save_audit_log`
-
-This is not unrestricted autonomous tool calling. LLM/Ollama cannot decide permissions and cannot directly invoke backend tools.
-
-Retrieval engine behavior:
-
-- PostgreSQL + pgvector available/enabled: `pgvector_sql`
-- SQLite or pgvector unavailable/disabled: `python_cosine_fallback`
-
-In both modes, retrieval is scoped in backend by `allowed_kb_ids` before any chunk is returned.
-
-Router behavior:
-
-- `LOCAL_ROUTER_MODE=rules` (default): deterministic rules router.
-- `LOCAL_ROUTER_MODE=ollama`: calls local Ollama model for classification only.
-- If Ollama is unavailable/timeout/invalid-output, router safely falls back to rules.
-- Router never decides permission and never expands `allowed_kb_ids`.
-
-## Document Upload Flow (v0.3.0)
-
-`upload -> parse -> chunk -> embed -> store -> viewer refresh -> permission-scoped retrieval`
-
-1. Upload endpoint receives `.md/.txt` file (UTF-8, max 1MB).
-2. Backend validates role permission and KB scope.
-3. Text is normalized (`\r\n`/blank lines) and chunked deterministically.
-4. Deterministic local embeddings are generated (`embedding_service`).
-5. Chunks are stored in PostgreSQL/pgvector-compatible schema.
-6. KB version increments to invalidate cache key scope (`kb_version_hash` changes).
-7. Document/Chunk viewer immediately reads the new data under RBAC scope.
-
-## Neo4j GraphRAG Visualization (v0.4.0)
-
-`PostgreSQL documents/chunks -> (optional) Neo4j sync -> permission-scoped graph overview -> QA graph path viewer`
-
-- `GET /api/v1/graph/status`:
-  Returns Neo4j runtime availability, graph sync status, fallback mode, and safe sync summary.
-- `GET /api/v1/graph/overview`:
-  Returns graph nodes/edges visible only inside current user's backend `allowed_kb_ids`.
-- `GET /api/v1/qa/{request_id}/graph`:
-  Returns request-level graph paths and graph nodes/edges with owner/admin-audit checks and viewer-scope filtering.
-- `POST /api/v1/graph/sync`:
-  Admin-write permission only. Triggers PostgreSQL -> Neo4j sync if Neo4j is available.
-
-Visualization is observability-oriented and enterprise-safe:
-
-- Graph permissions are enforced in backend RBAC (frontend cannot expand scope).
-- Unauthorized chunk/document/entity nodes are filtered before response.
-- Graph nodes expose metadata summary only, not full chunk content.
-
-## Observability Endpoints (v0.3.0)
-
-- `GET /api/v1/knowledge-bases`:
-  Returns knowledge bases visible to the current user, including `display_name`, `language`, and scoped metadata.
-- `GET /api/v1/knowledge-bases/{kb_id}/documents`:
-  Returns documents in a knowledge base only when the caller has access to that KB.
-- `POST /api/v1/knowledge-bases/{kb_id}/documents/upload`:
-  Uploads and indexes Markdown/TXT documents. Upload permission is enforced by backend RBAC + KB scope checks.
-- `GET /api/v1/documents/{document_id}/chunks`:
-  Returns chunk list with preview/full content and embedding status only when the caller can access the document's KB.
-- `POST /api/v1/documents/{document_id}/reindex`:
-  Rebuilds chunks/embeddings for an existing document with backend write permission checks.
-- `GET /api/v1/qa/{request_id}/trace`:
-  Returns structured retrieval trace and backend function calling trace. Includes router metadata (`router_mode`, `router_model`, fallback/error, router decision). Chunk content is filtered again by the current viewer's permission scope.
-- `GET /api/v1/system/retrieval-config`:
-  Returns safe runtime config for retrieval mode, router runtime, embedding mode, function-calling posture, upload/indexing capabilities, and GraphRAG/Neo4j status fields.
-
-## Demo Accounts
-
-| Role | Email | Password |
-| --- | --- | --- |
-| `bilingual_admin` | `bilingual_admin@example.local` | `Passw0rd!123` |
-| `cn_staff` | `cn_staff@example.local` | `Passw0rd!123` |
-| `en_staff` | `en_staff@example.local` | `Passw0rd!123` |
-| `visitor` | `visitor@example.local` | `Passw0rd!123` |
+| Layer | Stack |
+| --- | --- |
+| Frontend | React + TypeScript + Vite + Tailwind |
+| Backend | FastAPI + Pydantic + SQLAlchemy |
+| Database | PostgreSQL + pgvector |
+| Cache | Redis |
+| Graph | Neo4j |
+| Local model | Ollama `qwen2.5:0.5b-instruct` (router/classifier only) |
+| Testing | `pytest` + permission matrix script |
+| Deployment | Docker Compose |
 
 ## Quick Start
 
-### Docker Compose
-
-```powershell
-Copy-Item .env.example .env
-Set-Location infra
-docker compose up -d --build
+```bash
+cd infra
+docker compose build
+docker compose up -d
+curl http://localhost:8000/healthz
 ```
 
-Endpoints:
+- Frontend: `http://localhost:5173`
+- Swagger: `http://localhost:8000/docs`
 
-- Web: `http://127.0.0.1:5173`
-- API docs: `http://127.0.0.1:8000/docs`
-- Neo4j Browser: `http://127.0.0.1:7474`
+## Preconfigured Local Accounts
 
-### Local Development
+These are preconfigured local accounts for local validation and role-based walkthrough.
 
-Backend:
+| Role | Email | Password | Access Scope |
+| --- | --- | --- | --- |
+| `bilingual_admin` | [bilingual_admin@example.local](mailto:bilingual_admin@example.local) | `Passw0rd!123` | all bilingual and public knowledge bases |
+| `cn_staff` | [cn_staff@example.local](mailto:cn_staff@example.local) | `Passw0rd!123` | `cn-public` and `cn-internal` |
+| `en_staff` | [en_staff@example.local](mailto:en_staff@example.local) | `Passw0rd!123` | `en-public` and `en-internal` |
+| `visitor` | [visitor@example.local](mailto:visitor@example.local) | `Passw0rd!123` | `public-policy` only |
 
-```powershell
-Set-Location services/api
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python main.py
-```
+## Automated Tests
 
-Frontend:
-
-```powershell
-Set-Location apps/web
-npm install
-npm run dev
-```
-
-### Enable Ollama Router (optional)
-
-Run Ollama locally:
-
-```powershell
-ollama run qwen2.5:0.5b-instruct
-```
-
-Set environment:
-
-```powershell
-LOCAL_ROUTER_MODE=ollama
-OLLAMA_BASE_URL=http://host.docker.internal:11434
-OLLAMA_ROUTER_MODEL=qwen2.5:0.5b-instruct
-OLLAMA_ROUTER_TIMEOUT_SECONDS=8
-```
-
-For non-Docker local API runtime, `OLLAMA_BASE_URL=http://127.0.0.1:11434` also works.
-
-## Test Commands
-
-```powershell
-# backend unit tests
-Set-Location services/api
-.\.venv\Scripts\python -m pytest
-
-# permission matrix smoke test
-Set-Location C:\Users\lovane\Desktop\permission-aware-enterprise-graphrag
-.\services\api\.venv\Scripts\python scripts\test_permission_matrix.py --base-url http://127.0.0.1:8000
-
-# frontend build
-Set-Location apps/web
+```bash
+cd apps/web
 npm run build
 ```
 
-## Current Limitations
+```bash
+cd infra
+docker compose exec -T api python -m pytest -q
+```
 
-- `LLM_MODE=mock` by default (deterministic mock generation path).
-- Embedding is deterministic mock embedding in MVP (`SHA256`-based vector projection).
-- Upload currently supports Markdown/TXT only (`.md`, `.txt`, UTF-8).
-- PDF/DOCX/image upload and parsing are not implemented yet.
-- Ollama is used only as local router/classifier; it is not the final answer generator.
-- External LLM APIs are not enabled for this demo.
-- MCP is not added yet.
-- Graph visualization is observability/demo oriented and not a production graph analytics UI.
+```bash
+cd ..
+python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
+```
+
+The permission matrix script validates cross-role access boundaries, knowledge-base isolation, and overreach denial.
+
+## Current Scope
+
+- Final answer generator defaults to `LLM_MODE=mock`.
+- Ollama is router/classifier only.
+- Markdown/TXT upload is supported.
+- PDF/DOCX ingestion is planned.
+- MCP integration is planned.
+- Production hardening is planned.
+- Alembic migrations are planned.
+- This repository is a local runnable full-stack implementation and engineering showcase, not a hosted SaaS product.
 
 ## Roadmap
 
-- Admin knowledge base viewer polish.
-- Rich parser pipeline (PDF/DOCX/HTML) with strict security policy.
-- MCP adapter layer.
-- Production deployment hardening (security, ops, reliability).
+- GitHub Actions CI.
+- Real embedding model integration.
+- Real LLM generator integration.
+- PDF/DOCX ingestion.
+- User/role/permission admin panel.
+- Production hardening.
+- MCP adapter.
 
-## Security Notes
+## Screenshots
 
-- Do not commit real secrets or `.env`.
-- Use fictional sample data only.
-- Keep authorization decisions on backend services, never in frontend logic.
+- TODO: Login and role selection.
+- TODO: Knowledge Chat.
+- TODO: Knowledge Base / Chunk Viewer.
+- TODO: Upload and re-indexing.
+- TODO: Developer Trace.
+- TODO: GraphRAG visualization.
+
+## Project Status
+
+For implementation and release status, see [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
