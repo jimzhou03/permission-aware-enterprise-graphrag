@@ -6,8 +6,11 @@ import type {
   DocumentIngestionResult,
   DocumentChunk,
   DemoCase,
+  GraphOverview,
+  GraphStatus,
   KnowledgeBaseDocument,
   KnowledgeBase,
+  QAGraphTrace,
   RequestTrace,
   RetrievalConfig,
   LoginResponse
@@ -118,6 +121,10 @@ export async function getRequestTrace(token: string, requestId: string): Promise
   return request<RequestTrace>(`/qa/${requestId}/trace`, { method: "GET" }, token);
 }
 
+export async function getRequestGraphTrace(token: string, requestId: string): Promise<QAGraphTrace> {
+  return request<QAGraphTrace>(`/qa/${requestId}/graph`, { method: "GET" }, token);
+}
+
 export async function listDemoCases(): Promise<DemoCase[]> {
   const payload = await request<{ cases: DemoCase[] }>("/demo/overreach-cases", {
     method: "GET"
@@ -131,4 +138,24 @@ export async function listAuditLogs(token: string): Promise<AuditLog[]> {
 
 export async function getRetrievalConfig(token: string): Promise<RetrievalConfig> {
   return request<RetrievalConfig>("/system/retrieval-config", { method: "GET" }, token);
+}
+
+export async function getGraphStatus(token: string): Promise<GraphStatus> {
+  return request<GraphStatus>("/graph/status", { method: "GET" }, token);
+}
+
+export async function getGraphOverview(token: string): Promise<GraphOverview> {
+  return request<GraphOverview>("/graph/overview", { method: "GET" }, token);
+}
+
+export async function syncGraph(token: string): Promise<{
+  status: string;
+  fallback_used: boolean;
+  summary: Record<string, string | number | boolean | null>;
+}> {
+  return request<{ status: string; fallback_used: boolean; summary: Record<string, string | number | boolean | null> }>(
+    "/graph/sync",
+    { method: "POST" },
+    token
+  );
 }

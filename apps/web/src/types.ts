@@ -95,6 +95,77 @@ export interface GraphPath {
   explanation: string;
 }
 
+export type GraphNodeType =
+  | "knowledge_base"
+  | "document"
+  | "chunk"
+  | "entity"
+  | "department"
+  | "topic";
+
+export type GraphEdgeType =
+  | "CONTAINS"
+  | "HAS_CHUNK"
+  | "MENTIONS"
+  | "BELONGS_TO"
+  | "RELATED_TO"
+  | "DERIVED_FROM";
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  type: GraphNodeType;
+  kb_id: string | null;
+  kb_code: string | null;
+  title: string | null;
+  metadata_summary: string | null;
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: GraphEdgeType;
+  label: string;
+}
+
+export interface GraphStatus {
+  neo4j_configured: boolean;
+  neo4j_available: boolean;
+  graph_sync_enabled: boolean;
+  graph_sync_needed: boolean;
+  pending_sync_kb_codes: string[];
+  node_count: number | null;
+  relationship_count: number | null;
+  fallback_mode: string;
+  last_sync_summary: Record<string, string | number | boolean | null>;
+}
+
+export interface GraphOverview {
+  allowed_kb_ids: string[];
+  allowed_kb_codes: string[];
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  fallback_used: boolean;
+  generated_at: string;
+  security_notes: string[];
+}
+
+export interface QAGraphTrace {
+  request_id: string;
+  mode: string;
+  viewer_email: string | null;
+  viewer_role: string | null;
+  viewer_department: string | null;
+  allowed_kb_ids: string[];
+  allowed_kb_codes: string[];
+  graph_paths: GraphPath[];
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  fallback_used: boolean;
+  security_notes: string[];
+}
+
 export interface AskResponse {
   request_id: string;
   answer: string;
@@ -223,4 +294,15 @@ export interface RetrievalConfig {
   upload_max_size_bytes: number;
   upload_supported_types: string[];
   indexing_mode: string;
+  neo4j_configured: boolean;
+  neo4j_available: boolean;
+  graph_sync_enabled: boolean;
+  graph_sync_needed: boolean;
+  graph_pending_sync_kb_codes: string[];
+  graph_visualization_enabled: boolean;
+  graph_permission_scope: string;
+  graph_fallback_mode: string;
+  graph_node_count: number | null;
+  graph_relationship_count: number | null;
+  graph_last_sync_status: string | null;
 }

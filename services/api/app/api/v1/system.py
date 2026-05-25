@@ -5,6 +5,7 @@ from app.core.deps import get_current_user
 from app.core.database import get_db
 from app.models import User
 from app.schemas.common import RetrievalConfigPublic
+from app.services.graph_service import neo4j_service
 from app.services.ingestion_service import SUPPORTED_UPLOAD_MIME_TYPES, SUPPORTED_UPLOAD_SUFFIXES
 from app.services.local_router_service import get_router_status
 from app.services.rag_service import get_retrieval_runtime
@@ -22,6 +23,8 @@ def get_retrieval_config(
 ) -> RetrievalConfigPublic:
     runtime = get_retrieval_runtime(db)
     router_status = get_router_status()
+    graph_status = neo4j_service.get_status()
+    last_sync_status = graph_status.get("last_sync_summary", {}).get("status")
     return RetrievalConfigPublic(
         embedding_provider="deterministic-mock",
         embedding_dimension=settings.embedding_dimensions,
@@ -47,4 +50,15 @@ def get_retrieval_config(
         upload_max_size_bytes=settings.upload_max_size_bytes,
         upload_supported_types=sorted({*SUPPORTED_UPLOAD_SUFFIXES, *SUPPORTED_UPLOAD_MIME_TYPES}),
         indexing_mode="deterministic-local-embedding",
+        neo4j_configured=bool(graph_status.get("neo4j_configured")),
+        neo4j_available=bool(graph_status.get("neo4j_available")),
+        graph_sync_enabled=bool(graph_status.get("graph_sync_enabled")),
+        graph_sync_needed=bool(graph_status.get("graph_sync_needed")),
+        graph_pending_sync_kb_codes=list(graph_status.get("pending_sync_kb_codes", [])),
+        graph_visualization_enabled=True,
+        graph_permission_scope="backend-rbac",
+        graph_fallback_mode=str(graph_status.get("fallback_mode", "local_entity_projection")),
+        graph_node_count=graph_status.get("node_count"),
+        graph_relationship_count=graph_status.get("relationship_count"),
+        graph_last_sync_status=str(last_sync_status) if last_sync_status is not None else None,
     )

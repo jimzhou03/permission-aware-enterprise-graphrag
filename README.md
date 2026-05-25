@@ -11,6 +11,7 @@ A permission-first internal knowledge assistant that enforces backend RBAC and s
 - Ollama local router (qwen2.5:0.5b-instruct) for lightweight classification with safe fallback to rules.
 - Backend-controlled Function Calling Trace for deterministic QA execution steps.
 - Markdown/TXT document upload + re-indexing (backend RBAC enforced).
+- Neo4j GraphRAG Visualization with permission-scoped graph status/overview/path APIs.
 - Knowledge Base Viewer + Document Viewer + Chunk Viewer (permission-scoped).
 - Retrieval Trace API and Developer Trace page for `request_id`, scope, chunk hits, deny/cache path.
 - GraphRAG scaffolding with Neo4j entity/path projection.
@@ -98,6 +99,25 @@ Router behavior:
 6. KB version increments to invalidate cache key scope (`kb_version_hash` changes).
 7. Document/Chunk viewer immediately reads the new data under RBAC scope.
 
+## Neo4j GraphRAG Visualization (v0.4.0)
+
+`PostgreSQL documents/chunks -> (optional) Neo4j sync -> permission-scoped graph overview -> QA graph path viewer`
+
+- `GET /api/v1/graph/status`:
+  Returns Neo4j runtime availability, graph sync status, fallback mode, and safe sync summary.
+- `GET /api/v1/graph/overview`:
+  Returns graph nodes/edges visible only inside current user's backend `allowed_kb_ids`.
+- `GET /api/v1/qa/{request_id}/graph`:
+  Returns request-level graph paths and graph nodes/edges with owner/admin-audit checks and viewer-scope filtering.
+- `POST /api/v1/graph/sync`:
+  Admin-write permission only. Triggers PostgreSQL -> Neo4j sync if Neo4j is available.
+
+Visualization is observability-oriented and enterprise-safe:
+
+- Graph permissions are enforced in backend RBAC (frontend cannot expand scope).
+- Unauthorized chunk/document/entity nodes are filtered before response.
+- Graph nodes expose metadata summary only, not full chunk content.
+
 ## Observability Endpoints (v0.3.0)
 
 - `GET /api/v1/knowledge-bases`:
@@ -113,7 +133,7 @@ Router behavior:
 - `GET /api/v1/qa/{request_id}/trace`:
   Returns structured retrieval trace and backend function calling trace. Includes router metadata (`router_mode`, `router_model`, fallback/error, router decision). Chunk content is filtered again by the current viewer's permission scope.
 - `GET /api/v1/system/retrieval-config`:
-  Returns safe runtime config for retrieval mode, router runtime, embedding mode, function-calling posture, and upload/indexing capabilities.
+  Returns safe runtime config for retrieval mode, router runtime, embedding mode, function-calling posture, upload/indexing capabilities, and GraphRAG/Neo4j status fields.
 
 ## Demo Accounts
 
@@ -204,6 +224,7 @@ npm run build
 - Ollama is used only as local router/classifier; it is not the final answer generator.
 - External LLM APIs are not enabled for this demo.
 - MCP is not added yet.
+- Graph visualization is observability/demo oriented and not a production graph analytics UI.
 
 ## Roadmap
 

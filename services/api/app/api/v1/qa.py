@@ -9,9 +9,11 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_permission
 from app.models import Document, DocumentChunk, KnowledgeBase, User
+from app.schemas.graph import QAGraphResponse
 from app.schemas.qa import (
     AskRequest,
     AskResponse,
+    Citation,
     FunctionTraceStep,
     QAAuditRecordResponse,
     QATraceResponse,
@@ -20,6 +22,11 @@ from app.schemas.qa import (
 )
 from app.services.audit_service import get_qa_audit_by_request_id
 from app.services.auth_service import user_has_permission
+from app.services.graph_service import (
+    build_graph_elements_from_chunk_rows,
+    build_graph_paths_for_citations,
+    neo4j_service,
+)
 from app.services.local_router_service import get_router_status
 from app.services.permission_service import list_allowed_knowledge_bases
 from app.services.qa_service import ask_question
@@ -322,4 +329,114 @@ def get_request_trace(
         latency_ms=record.latency_ms,
         function_trace=function_trace,
         trace_limits=trace_limits,
+    )
+
+
+@router.get("/{request_id}/graph", response_model=QAGraphResponse)
+def get_request_graph(
+    request_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> QAGraphResponse:
+    record = get_qa_audit_by_request_id(db, request_id)
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request record not found")
+
+    is_owner = record.user_id is not None and record.user_id == current_user.id
+    can_read_audit = user_has_permission(db, current_user, "audit:read")
+    if not is_owner and not can_read_audit:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden to read this graph trace")
+
+    viewer_allowed_kbs = list_allowed_knowledge_bases(db, current_user)
+    viewer_allowed_kb_ids = {kb.id for kb in viewer_allowed_kbs}
+    request_user = record.user
+    request_allowed_kbs = list_allowed_knowledge_bases(db, request_user) if request_user else []
+    request_allowed_ids = [kb.id for kb in request_allowed_kbs]
+    allowed_kb_ids = [str(kb.id) for kb in request_allowed_kbs]
+    allowed_kb_codes = [kb.code for kb in request_allowed_kbs]
+
+    hit_chunk_ids = record.hit_chunk_ids if isinstance(record.hit_chunk_ids, list) else []
+    hit_chunk_uuid_list = _parse_uuid_list(hit_chunk_ids)
+    chunk_rows = db.execute(
+        select(DocumentChunk, Document, KnowledgeBase)
+        .join(Document, Document.id == DocumentChunk.document_id)
+        .join(KnowledgeBase, KnowledgeBase.id == DocumentChunk.knowledge_base_id)
+        .where(DocumentChunk.id.in_(hit_chunk_uuid_list))
+    ).all()
+    row_by_chunk_id = {str(chunk.id): (chunk, document, kb) for chunk, document, kb in chunk_rows}
+
+    authorized_rows: list[tuple[DocumentChunk, Document, KnowledgeBase]] = []
+    omitted_for_scope = 0
+    for chunk_id in hit_chunk_ids:
+        row = row_by_chunk_id.get(chunk_id)
+        if row is None:
+            continue
+        chunk, _, kb = row
+        if kb.id not in viewer_allowed_kb_ids:
+            omitted_for_scope += 1
+            continue
+        authorized_rows.append(row)
+
+    citations: list[Citation] = []
+    for chunk, document, kb in authorized_rows:
+        preview = chunk.content.strip().replace("\n", " ")
+        if len(preview) > 220:
+            preview = f"{preview[:220]}..."
+        citations.append(
+            Citation(
+                kb_id=kb.id,
+                kb_code=kb.code,
+                kb_name=kb.name,
+                document_id=document.id,
+                document_title=document.title,
+                chunk_id=chunk.id,
+                score=0.0,
+                excerpt=preview,
+            )
+        )
+
+    effective_allowed_ids = [kb_id for kb_id in request_allowed_ids if kb_id in viewer_allowed_kb_ids]
+    graph_paths = (
+        build_graph_paths_for_citations(db=db, citations=citations, allowed_kb_ids=effective_allowed_ids)
+        if record.mode == "graphrag" and citations
+        else []
+    )
+    nodes, edges = build_graph_elements_from_chunk_rows(
+        authorized_rows,
+        include_chunk_preview=True,
+    )
+
+    graph_status = neo4j_service.get_status()
+    local_projection_used = any(
+        "local entity projection" in item.explanation.lower()
+        for item in graph_paths
+    )
+    fallback_used = (not bool(graph_status.get("neo4j_available"))) or local_projection_used
+
+    security_notes = [
+        "Graph nodes and edges are filtered by current viewer backend RBAC scope.",
+        "Graph endpoint does not expose full chunk content.",
+    ]
+    if omitted_for_scope > 0:
+        security_notes.append(
+            f"{omitted_for_scope} chunk-linked graph segment(s) were omitted due to current viewer scope."
+        )
+    if hit_chunk_ids and not authorized_rows:
+        security_notes.append("No authorized graph segment is visible to current viewer for this request.")
+    if record.mode != "graphrag":
+        security_notes.append("Request mode is not graphrag; graph path projection is not requested.")
+
+    return QAGraphResponse(
+        request_id=record.request_id,
+        mode=record.mode,
+        viewer_email=current_user.email,
+        viewer_role=current_user.role.name if current_user.role else None,
+        viewer_department=current_user.department.code if current_user.department else None,
+        allowed_kb_ids=allowed_kb_ids,
+        allowed_kb_codes=allowed_kb_codes,
+        graph_paths=graph_paths,
+        nodes=nodes,
+        edges=edges,
+        fallback_used=fallback_used,
+        security_notes=security_notes,
     )

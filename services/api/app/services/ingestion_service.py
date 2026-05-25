@@ -11,6 +11,7 @@ from app.core.config import ROOT_DIR, get_settings
 from app.models import Document, DocumentChunk, IngestionJob, KnowledgeBase, User
 from app.services.embedding_service import embed_text
 from app.services.entity_service import extract_entities
+from app.services.graph_service import neo4j_service
 
 
 settings = get_settings()
@@ -440,6 +441,7 @@ def upload_document_to_knowledge_base(
     )
     document.version = 1
     kb_version = _touch_kb_version(kb)
+    neo4j_service.mark_sync_needed(kb_id=kb.id, kb_code=kb.code)
     _create_ingestion_event(
         db,
         action="document_upload",
@@ -487,6 +489,7 @@ def reindex_document_chunks(
     )
     document.version = max(1, int(document.version or 1)) + 1
     kb_version = _touch_kb_version(kb)
+    neo4j_service.mark_sync_needed(kb_id=kb.id, kb_code=kb.code)
     _create_ingestion_event(
         db,
         action="document_reindex",

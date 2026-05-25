@@ -3,6 +3,9 @@ import { useEffect, useMemo, useState } from "react";
 import {
   askQuestion,
   fetchAuthMe,
+  getGraphOverview,
+  getGraphStatus,
+  getRequestGraphTrace,
   getRequestTrace,
   getRetrievalConfig,
   getRequestDetail,
@@ -12,6 +15,7 @@ import {
   listKnowledgeBases,
   login,
   reindexDocument,
+  syncGraph,
   uploadKnowledgeBaseDocument
 } from "./api";
 import { LANGUAGE_STORAGE_KEY, OVERREACH_LABELS, UI_TEXT, type Language } from "./i18n";
@@ -20,8 +24,13 @@ import type {
   AskResponse,
   AuditLog,
   DocumentChunk,
+  GraphEdge,
+  GraphNode,
+  GraphOverview,
+  GraphStatus,
   KnowledgeBase,
   KnowledgeBaseDocument,
+  QAGraphTrace,
   RequestTrace,
   RetrievalConfig,
   UserPublic
@@ -33,7 +42,8 @@ type AppView =
   | "knowledge_bases"
   | "audit_logs"
   | "system_status"
-  | "developer_trace";
+  | "developer_trace"
+  | "graph_rag";
 
 type ChatMessage = {
   id: string;
@@ -65,6 +75,11 @@ type LocalAuditRecord = {
   createdAt: string;
   question: string;
   hitKbCodes: string[];
+};
+
+type PositionedGraphNode = GraphNode & {
+  x: number;
+  y: number;
 };
 
 const AUTH_SESSION_STORAGE_KEY = "paegr.auth.session";
@@ -331,6 +346,59 @@ function collectLocalAuditRecords(sessions: ChatSession[], untitledFallback: str
   );
 }
 
+const GRAPH_CANVAS_WIDTH = 960;
+const GRAPH_CANVAS_HEIGHT = 520;
+const GRAPH_TYPE_ORDER: GraphNode["type"][] = [
+  "department",
+  "knowledge_base",
+  "document",
+  "chunk",
+  "entity",
+  "topic"
+];
+const GRAPH_TYPE_COLUMN_X: Record<GraphNode["type"], number> = {
+  department: 90,
+  knowledge_base: 250,
+  document: 430,
+  chunk: 620,
+  entity: 810,
+  topic: 810
+};
+
+function graphNodeColor(nodeType: GraphNode["type"]): string {
+  if (nodeType === "department") return "#a78bfa";
+  if (nodeType === "knowledge_base") return "#0ea5e9";
+  if (nodeType === "document") return "#14b8a6";
+  if (nodeType === "chunk") return "#f59e0b";
+  if (nodeType === "entity") return "#ef4444";
+  return "#64748b";
+}
+
+function layoutGraphNodes(nodes: GraphNode[]): PositionedGraphNode[] {
+  const grouped = new Map<GraphNode["type"], GraphNode[]>();
+  for (const type of GRAPH_TYPE_ORDER) grouped.set(type, []);
+  for (const node of nodes) {
+    const current = grouped.get(node.type) ?? [];
+    current.push(node);
+    grouped.set(node.type, current);
+  }
+
+  const positioned: PositionedGraphNode[] = [];
+  for (const type of GRAPH_TYPE_ORDER) {
+    const items = (grouped.get(type) ?? []).sort((a, b) => a.label.localeCompare(b.label));
+    if (items.length === 0) continue;
+    const spacing = GRAPH_CANVAS_HEIGHT / (items.length + 1);
+    for (let index = 0; index < items.length; index += 1) {
+      positioned.push({
+        ...items[index],
+        x: GRAPH_TYPE_COLUMN_X[type],
+        y: Math.round((index + 1) * spacing)
+      });
+    }
+  }
+  return positioned;
+}
+
 export default function App() {
   const [language, setLanguage] = useState<Language>(getInitialLanguage);
   const [selectedDemoAccount, setSelectedDemoAccount] = useState<DemoAccountKey>("cn_staff");
@@ -345,7 +413,11 @@ export default function App() {
   const [selectedDocumentId, setSelectedDocumentId] = useState("");
   const [traceRequestId, setTraceRequestId] = useState("");
   const [requestTrace, setRequestTrace] = useState<RequestTrace | null>(null);
+  const [requestGraphTrace, setRequestGraphTrace] = useState<QAGraphTrace | null>(null);
   const [retrievalConfig, setRetrievalConfig] = useState<RetrievalConfig | null>(null);
+  const [graphStatus, setGraphStatus] = useState<GraphStatus | null>(null);
+  const [graphOverview, setGraphOverview] = useState<GraphOverview | null>(null);
+  const [selectedGraphNodeId, setSelectedGraphNodeId] = useState("");
   const [question, setQuestion] = useState("");
   const [mode, setMode] = useState<AskMode>("auto");
   const [selectedKbCodes, setSelectedKbCodes] = useState<string[]>([]);
@@ -360,6 +432,8 @@ export default function App() {
   const [activeView, setActiveView] = useState<AppView>("knowledge_chat");
   const [viewerPending, setViewerPending] = useState(false);
   const [tracePending, setTracePending] = useState(false);
+  const [graphPending, setGraphPending] = useState(false);
+  const [graphSyncPending, setGraphSyncPending] = useState(false);
   const [uploadTitle, setUploadTitle] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadPending, setUploadPending] = useState(false);
@@ -407,6 +481,23 @@ export default function App() {
     () => collectLocalAuditRecords(visibleChatSessions, t.untitledSession),
     [t.untitledSession, visibleChatSessions]
   );
+  const activeGraphNodes = useMemo(
+    () => graphOverview?.nodes ?? requestGraphTrace?.nodes ?? [],
+    [graphOverview?.nodes, requestGraphTrace?.nodes]
+  );
+  const activeGraphEdges = useMemo(
+    () => graphOverview?.edges ?? requestGraphTrace?.edges ?? [],
+    [graphOverview?.edges, requestGraphTrace?.edges]
+  );
+  const positionedGraphNodes = useMemo(() => layoutGraphNodes(activeGraphNodes), [activeGraphNodes]);
+  const graphNodeById = useMemo(() => {
+    const next = new Map<string, PositionedGraphNode>();
+    for (const node of positionedGraphNodes) {
+      next.set(node.id, node);
+    }
+    return next;
+  }, [positionedGraphNodes]);
+  const selectedGraphNode = selectedGraphNodeId ? graphNodeById.get(selectedGraphNodeId) ?? null : null;
 
   useEffect(() => {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
@@ -463,7 +554,11 @@ export default function App() {
       setSelectedDocumentId("");
       setTraceRequestId("");
       setRequestTrace(null);
+      setRequestGraphTrace(null);
       setRetrievalConfig(null);
+      setGraphStatus(null);
+      setGraphOverview(null);
+      setSelectedGraphNodeId("");
       return;
     }
     const storedSessions = readChatSessions(user.email);
@@ -505,6 +600,7 @@ export default function App() {
   useEffect(() => {
     if (!token || !traceRequestId) {
       setRequestTrace(null);
+      setRequestGraphTrace(null);
       setTracePending(false);
       return;
     }
@@ -512,10 +608,19 @@ export default function App() {
     setTracePending(true);
     async function loadTrace() {
       try {
-        const payload = await getRequestTrace(token, traceRequestId);
-        if (!cancelled) setRequestTrace(payload);
+        const [tracePayload, graphPayload] = await Promise.all([
+          getRequestTrace(token, traceRequestId),
+          getRequestGraphTrace(token, traceRequestId)
+        ]);
+        if (!cancelled) {
+          setRequestTrace(tracePayload);
+          setRequestGraphTrace(graphPayload);
+        }
       } catch {
-        if (!cancelled) setRequestTrace(null);
+        if (!cancelled) {
+          setRequestTrace(null);
+          setRequestGraphTrace(null);
+        }
       } finally {
         if (!cancelled) setTracePending(false);
       }
@@ -525,6 +630,46 @@ export default function App() {
       cancelled = true;
     };
   }, [token, traceRequestId]);
+
+  useEffect(() => {
+    if (!token) {
+      setGraphStatus(null);
+      setGraphOverview(null);
+      setGraphPending(false);
+      return;
+    }
+    if (activeView !== "graph_rag") return;
+    let cancelled = false;
+    setGraphPending(true);
+    async function loadGraphData() {
+      try {
+        const [statusPayload, overviewPayload] = await Promise.all([
+          getGraphStatus(token),
+          getGraphOverview(token)
+        ]);
+        if (cancelled) return;
+        setGraphStatus(statusPayload);
+        setGraphOverview(overviewPayload);
+      } catch {
+        if (cancelled) return;
+        setGraphStatus(null);
+        setGraphOverview(null);
+      } finally {
+        if (!cancelled) setGraphPending(false);
+      }
+    }
+    void loadGraphData();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeView, token]);
+
+  useEffect(() => {
+    if (!selectedGraphNodeId) return;
+    if (!graphNodeById.has(selectedGraphNodeId)) {
+      setSelectedGraphNodeId("");
+    }
+  }, [graphNodeById, selectedGraphNodeId]);
 
   const roleBadgeClass = useMemo(() => {
     const role = user?.role ?? "";
@@ -538,7 +683,8 @@ export default function App() {
     { key: "knowledge_bases", label: t.navKnowledgeBases },
     { key: "audit_logs", label: t.navAuditLogs },
     { key: "system_status", label: t.navSystemStatus },
-    { key: "developer_trace", label: t.navDeveloperTrace }
+    { key: "developer_trace", label: t.navDeveloperTrace },
+    { key: "graph_rag", label: t.navGraphRag }
   ];
 
   function formatBoolean(value: boolean | null | undefined): string {
@@ -566,6 +712,15 @@ export default function App() {
 
   function formatKbScope(codes: string[] | undefined): string {
     return codes && codes.length > 0 ? codes.join(", ") : t.defaultKbScope;
+  }
+
+  function graphTypeLabel(type: GraphNode["type"]): string {
+    if (type === "knowledge_base") return t.graphTypeKnowledgeBase;
+    if (type === "document") return t.graphTypeDocument;
+    if (type === "chunk") return t.graphTypeChunk;
+    if (type === "entity") return t.graphTypeEntity;
+    if (type === "department") return t.graphTypeDepartment;
+    return t.graphTypeTopic;
   }
 
   function resetAskState() {
@@ -605,7 +760,11 @@ export default function App() {
     setSelectedDocumentId("");
     setTraceRequestId("");
     setRequestTrace(null);
+    setRequestGraphTrace(null);
     setRetrievalConfig(null);
+    setGraphStatus(null);
+    setGraphOverview(null);
+    setSelectedGraphNodeId("");
     setUploadTitle("");
     setUploadFile(null);
     setUploadStatusMessage("");
@@ -821,6 +980,15 @@ export default function App() {
     }
   }
 
+  async function refreshGraphData(nextToken: string) {
+    const [statusPayload, overviewPayload] = await Promise.all([
+      getGraphStatus(nextToken),
+      getGraphOverview(nextToken)
+    ]);
+    setGraphStatus(statusPayload);
+    setGraphOverview(overviewPayload);
+  }
+
   function toggleKb(code: string) {
     setSelectedKbCodes((prev) =>
       prev.includes(code) ? prev.filter((item) => item !== code) : [...prev, code]
@@ -894,6 +1062,9 @@ export default function App() {
       const nextKnowledgeBases = await listKnowledgeBases(token);
       setKnowledgeBases(nextKnowledgeBases);
       await refreshKnowledgeBaseDocuments(selectedKnowledgeBase.id);
+      if (activeView === "graph_rag") {
+        await refreshGraphData(token);
+      }
       setChunksByDocumentId((prev) => {
         const next = { ...prev };
         delete next[result.document_id];
@@ -921,6 +1092,9 @@ export default function App() {
       const nextKnowledgeBases = await listKnowledgeBases(token);
       setKnowledgeBases(nextKnowledgeBases);
       await refreshKnowledgeBaseDocuments(selectedKnowledgeBase.id);
+      if (activeView === "graph_rag") {
+        await refreshGraphData(token);
+      }
       setChunksByDocumentId((prev) => {
         const next = { ...prev };
         delete next[documentId];
@@ -941,6 +1115,26 @@ export default function App() {
   function openTraceView(requestId: string) {
     setTraceRequestId(requestId);
     setActiveView("developer_trace");
+  }
+
+  function openGraphView(requestId: string) {
+    setTraceRequestId(requestId);
+    setActiveView("graph_rag");
+  }
+
+  async function onSyncGraph() {
+    if (!token) return;
+    setGraphSyncPending(true);
+    setMessage("");
+    try {
+      await syncGraph(token);
+      await refreshGraphData(token);
+      setMessage(`${t.graphSyncStatus}: success`);
+    } catch (error) {
+      setMessage(error instanceof Error ? `${t.askFailed} ${error.message}` : t.askFailed);
+    } finally {
+      setGraphSyncPending(false);
+    }
   }
 
   if (!sessionReady) {
@@ -1279,13 +1473,24 @@ export default function App() {
 
                                 {chatMessage.response ? (
                                   <div className="mt-3 space-y-2">
-                                    <button
-                                      className="btn-secondary px-2 py-1 text-xs"
-                                      type="button"
-                                      onClick={() => openTraceView(chatMessage.response!.request_id)}
-                                    >
-                                      {t.traceViewAction}
-                                    </button>
+                                    <div className="flex flex-wrap gap-2">
+                                      <button
+                                        className="btn-secondary px-2 py-1 text-xs"
+                                        type="button"
+                                        onClick={() => openTraceView(chatMessage.response!.request_id)}
+                                      >
+                                        {t.traceViewAction}
+                                      </button>
+                                      {chatMessage.response.graph_paths.length > 0 ? (
+                                        <button
+                                          className="btn-secondary px-2 py-1 text-xs"
+                                          type="button"
+                                          onClick={() => openGraphView(chatMessage.response!.request_id)}
+                                        >
+                                          {t.traceViewGraphAction}
+                                        </button>
+                                      ) : null}
+                                    </div>
                                     <details className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
                                       <summary className="cursor-pointer font-medium text-slate-700">
                                         {t.technicalDetails}
@@ -1794,6 +1999,48 @@ export default function App() {
                     </div>
                   </div>
                   <div className="soft-card">
+                    <div className="text-xs text-slate-500">Neo4j configured</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig ? formatBoolean(retrievalConfig.neo4j_configured) : t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">Neo4j availability</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig ? formatBoolean(retrievalConfig.neo4j_available) : t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.graphSyncStatus}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.graph_last_sync_status ?? t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.graphSyncNeeded}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.graph_pending_sync_kb_codes.join(", ") || t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.graphFallback}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.graph_fallback_mode ?? t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">GraphRAG visualization</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig ? formatBoolean(retrievalConfig.graph_visualization_enabled) : t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">GraphRAG permission scope</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.graph_permission_scope ?? t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
                     <div className="text-xs text-slate-500">{t.cacheStatus}</div>
                     <div className="mt-1 font-mono text-sm text-slate-800">{formatCacheState(activeResponse)}</div>
                   </div>
@@ -1813,6 +2060,218 @@ export default function App() {
                   </div>
                 </div>
                 <p className="mt-4 text-xs text-slate-500">{t.systemStatusHint}</p>
+              </section>
+            ) : null}
+
+            {activeView === "graph_rag" ? (
+              <section className="space-y-4">
+                <div className="glass-panel p-5">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="panel-title mb-0">{t.graphStatusPanelTitle}</h2>
+                    {canUploadDocuments ? (
+                      <button
+                        className="btn-secondary"
+                        type="button"
+                        disabled={graphSyncPending || !token}
+                        onClick={onSyncGraph}
+                      >
+                        {graphSyncPending ? t.working : t.graphSyncAction}
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <div className="soft-card">
+                      <div className="text-xs text-slate-500">Neo4j configured</div>
+                      <div className="mt-1 font-mono text-sm text-slate-800">
+                        {graphStatus ? formatBoolean(graphStatus.neo4j_configured) : t.noValue}
+                      </div>
+                    </div>
+                    <div className="soft-card">
+                      <div className="text-xs text-slate-500">Neo4j availability</div>
+                      <div className="mt-1 font-mono text-sm text-slate-800">
+                        {graphStatus ? formatBoolean(graphStatus.neo4j_available) : t.noValue}
+                      </div>
+                    </div>
+                    <div className="soft-card">
+                      <div className="text-xs text-slate-500">{t.graphNodeCount}</div>
+                      <div className="mt-1 font-mono text-sm text-slate-800">
+                        {graphStatus?.node_count ?? t.noValue}
+                      </div>
+                    </div>
+                    <div className="soft-card">
+                      <div className="text-xs text-slate-500">{t.graphEdgeCount}</div>
+                      <div className="mt-1 font-mono text-sm text-slate-800">
+                        {graphStatus?.relationship_count ?? t.noValue}
+                      </div>
+                    </div>
+                    <div className="soft-card">
+                      <div className="text-xs text-slate-500">{t.graphSyncStatus}</div>
+                      <div className="mt-1 font-mono text-sm text-slate-800">
+                        {String(graphStatus?.last_sync_summary?.status ?? t.noValue)}
+                      </div>
+                    </div>
+                    <div className="soft-card">
+                      <div className="text-xs text-slate-500">{t.graphSyncNeeded}</div>
+                      <div className="mt-1 font-mono text-sm text-slate-800">
+                        {graphStatus?.pending_sync_kb_codes.join(", ") || t.noValue}
+                      </div>
+                    </div>
+                    <div className="soft-card">
+                      <div className="text-xs text-slate-500">{t.graphFallback}</div>
+                      <div className="mt-1 font-mono text-sm text-slate-800">
+                        {graphStatus?.fallback_mode ?? t.noValue}
+                      </div>
+                    </div>
+                    <div className="soft-card">
+                      <div className="text-xs text-slate-500">{t.allowedKbSummary}</div>
+                      <div className="mt-1 font-mono text-sm text-slate-800">
+                        {graphOverview?.allowed_kb_codes.join(", ") || t.noValue}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="glass-panel p-5">
+                  <h2 className="panel-title">{t.graphOverviewPanelTitle}</h2>
+                  {graphPending ? (
+                    <p className="text-sm text-slate-500">{t.working}</p>
+                  ) : positionedGraphNodes.length > 0 ? (
+                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                        <div className="overflow-auto rounded-xl border border-slate-200 bg-white">
+                          <svg
+                            viewBox={`0 0 ${GRAPH_CANVAS_WIDTH} ${GRAPH_CANVAS_HEIGHT}`}
+                            className="h-[540px] w-full min-w-[840px]"
+                          >
+                            {activeGraphEdges.map((edge) => {
+                              const source = graphNodeById.get(edge.source);
+                              const target = graphNodeById.get(edge.target);
+                              if (!source || !target) return null;
+                              const midX = Math.round((source.x + target.x) / 2);
+                              const midY = Math.round((source.y + target.y) / 2);
+                              return (
+                                <g key={edge.id}>
+                                  <line x1={source.x} y1={source.y} x2={target.x} y2={target.y} stroke="#cbd5e1" strokeWidth={1.4} />
+                                  <text x={midX} y={midY - 4} textAnchor="middle" fontSize="9" fill="#64748b">
+                                    {edge.type}
+                                  </text>
+                                </g>
+                              );
+                            })}
+                            {positionedGraphNodes.map((node) => {
+                              const selected = selectedGraphNodeId === node.id;
+                              return (
+                                <g
+                                  key={node.id}
+                                  onClick={() => setSelectedGraphNodeId(node.id)}
+                                  style={{ cursor: "pointer" }}
+                                >
+                                  <circle
+                                    cx={node.x}
+                                    cy={node.y}
+                                    r={selected ? 17 : 14}
+                                    fill={graphNodeColor(node.type)}
+                                    opacity={selected ? 1 : 0.88}
+                                  />
+                                  <text x={node.x + 20} y={node.y + 4} fontSize="10" fill="#1e293b">
+                                    {node.label}
+                                  </text>
+                                </g>
+                              );
+                            })}
+                          </svg>
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          {t.graphNodeDetailTitle}
+                        </div>
+                        {selectedGraphNode ? (
+                          <div className="mt-3 space-y-2 text-xs text-slate-700">
+                            <div>
+                              <span className="text-slate-500">type:</span> {graphTypeLabel(selectedGraphNode.type)}
+                            </div>
+                            <div className="font-mono text-[11px]">
+                              <span className="text-slate-500">id:</span> {selectedGraphNode.id}
+                            </div>
+                            <div>
+                              <span className="text-slate-500">label:</span> {selectedGraphNode.label}
+                            </div>
+                            <div className="font-mono text-[11px]">
+                              <span className="text-slate-500">kb_code:</span> {selectedGraphNode.kb_code ?? t.noValue}
+                            </div>
+                            <div>{selectedGraphNode.metadata_summary ?? t.noValue}</div>
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-sm text-slate-500">{t.graphNoData}</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">{t.graphNoData}</p>
+                  )}
+                  {graphOverview?.security_notes.length ? (
+                    <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      {graphOverview.security_notes.map((note, index) => (
+                        <div key={`graph_overview_note_${index}`}>{note}</div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="glass-panel p-5">
+                  <h2 className="panel-title">{t.graphPathPanelTitle}</h2>
+                  {requestGraphTrace ? (
+                    <div className="space-y-3">
+                      {requestTrace ? (
+                        <div className="soft-card">
+                          <div className="text-xs text-slate-500">{t.traceQuestion}</div>
+                          <div className="mt-1 text-sm text-slate-800">{requestTrace.question}</div>
+                        </div>
+                      ) : null}
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">{t.traceAllowedScope}</div>
+                        <div className="mt-1 font-mono text-xs text-slate-800">
+                          {requestGraphTrace.allowed_kb_codes.join(", ") || t.noValue}
+                        </div>
+                      </div>
+                      {requestGraphTrace.graph_paths.length > 0 ? (
+                        <div className="space-y-2">
+                          {requestGraphTrace.graph_paths.map((item) => (
+                            <div key={`graph_page_${item.chunk_id}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                              <div className="font-mono text-[11px] text-slate-700">{item.chunk_id}</div>
+                              <div className="mt-1 text-sm text-slate-700">{item.path.join(" → ")}</div>
+                              <div className="mt-1 text-xs text-slate-500">{item.explanation}</div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-500">{t.graphNoPath}</p>
+                      )}
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">{t.graphFallback}</div>
+                        <div className="mt-1 font-mono text-xs text-slate-800">
+                          {String(requestGraphTrace.fallback_used)}
+                        </div>
+                      </div>
+                      {requestGraphTrace.security_notes.length > 0 ? (
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                          {requestGraphTrace.security_notes.map((note, index) => (
+                            <div key={`graph_request_note_${index}`}>{note}</div>
+                          ))}
+                        </div>
+                      ) : null}
+                      <details className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                        <summary className="cursor-pointer text-xs font-medium text-slate-700">{t.rawTraceJson}</summary>
+                        <pre className="answer-block mt-3 max-h-[280px]">
+                          {JSON.stringify(requestGraphTrace, null, 2)}
+                        </pre>
+                      </details>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">{tracePending ? t.working : t.graphNoPath}</p>
+                  )}
+                </div>
               </section>
             ) : null}
 
@@ -2006,6 +2465,66 @@ export default function App() {
                     ) : (
                       <p className="text-sm text-slate-500">{t.traceUnavailable}</p>
                     )
+                  ) : (
+                    <p className="text-sm text-slate-500">{tracePending ? t.working : t.traceUnavailable}</p>
+                  )}
+                </div>
+
+                <div className="glass-panel p-5">
+                  <h2 className="panel-title">{t.graphTraceTitle}</h2>
+                  {requestGraphTrace ? (
+                    <div className="space-y-3">
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        <div className="soft-card">
+                          <div className="text-xs text-slate-500">{t.traceRequestId}</div>
+                          <div className="mt-1 font-mono text-xs text-slate-800">{requestGraphTrace.request_id}</div>
+                        </div>
+                        <div className="soft-card">
+                          <div className="text-xs text-slate-500">{t.graphFallback}</div>
+                          <div className="mt-1 font-mono text-xs text-slate-800">
+                            {String(requestGraphTrace.fallback_used)}
+                          </div>
+                        </div>
+                        <div className="soft-card">
+                          <div className="text-xs text-slate-500">{t.graphNodeCount}</div>
+                          <div className="mt-1 font-mono text-xs text-slate-800">{requestGraphTrace.nodes.length}</div>
+                        </div>
+                        <div className="soft-card">
+                          <div className="text-xs text-slate-500">{t.graphEdgeCount}</div>
+                          <div className="mt-1 font-mono text-xs text-slate-800">{requestGraphTrace.edges.length}</div>
+                        </div>
+                      </div>
+                      {requestGraphTrace.graph_paths.length > 0 ? (
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            {t.graphPaths}
+                          </div>
+                          <div className="mt-2 space-y-1 text-xs text-slate-700">
+                            {requestGraphTrace.graph_paths.map((item) => (
+                              <div key={`graph_path_${item.chunk_id}`} className="rounded-lg border border-slate-200 bg-white px-2 py-1">
+                                <div className="font-mono text-[11px] text-slate-600">{item.chunk_id}</div>
+                                <div className="mt-1">{item.path.join(" → ")}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-500">{t.graphNoPath}</p>
+                      )}
+                      {requestGraphTrace.security_notes.length > 0 ? (
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                          {requestGraphTrace.security_notes.map((note, index) => (
+                            <div key={`graph_note_${index}`}>{note}</div>
+                          ))}
+                        </div>
+                      ) : null}
+                      <details className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                        <summary className="cursor-pointer text-xs font-medium text-slate-700">{t.rawTraceJson}</summary>
+                        <pre className="answer-block mt-3 max-h-[300px]">
+                          {JSON.stringify(requestGraphTrace, null, 2)}
+                        </pre>
+                      </details>
+                    </div>
                   ) : (
                     <p className="text-sm text-slate-500">{tracePending ? t.working : t.traceUnavailable}</p>
                   )}

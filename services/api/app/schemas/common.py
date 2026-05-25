@@ -91,6 +91,17 @@ class RetrievalConfigPublic(BaseModel):
     upload_max_size_bytes: int
     upload_supported_types: list[str] = Field(default_factory=list)
     indexing_mode: str
+    neo4j_configured: bool
+    neo4j_available: bool
+    graph_sync_enabled: bool
+    graph_sync_needed: bool
+    graph_pending_sync_kb_codes: list[str] = Field(default_factory=list)
+    graph_visualization_enabled: bool
+    graph_permission_scope: str
+    graph_fallback_mode: str
+    graph_node_count: int | None = None
+    graph_relationship_count: int | None = None
+    graph_last_sync_status: str | None = None
 
 
 class AuditLogPublic(ORMModel):

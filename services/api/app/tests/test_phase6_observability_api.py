@@ -173,3 +173,9 @@ def test_retrieval_config_endpoint_reports_mock_mvp_runtime(client):
     assert ".md" in payload["upload_supported_types"]
     assert "text/plain" in payload["upload_supported_types"]
     assert payload["indexing_mode"] == "deterministic-local-embedding"
+    assert isinstance(payload["neo4j_configured"], bool)
+    assert isinstance(payload["neo4j_available"], bool)
+    assert isinstance(payload["graph_sync_enabled"], bool)
+    assert isinstance(payload["graph_sync_needed"], bool)
+    assert payload["graph_visualization_enabled"] is True
+    assert payload["graph_permission_scope"] == "backend-rbac"

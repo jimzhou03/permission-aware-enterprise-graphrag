@@ -666,11 +666,15 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
             )
             raise
         graph_duration_ms = int((time.perf_counter() - graph_start) * 1000)
+        fallback_used = any(
+            "local entity projection" in item.explanation.lower()
+            for item in graph_paths
+        )
         trace_recorder.set_step(
             tool_name="get_graph_paths",
             status="success",
             input_summary=graph_input,
-            output_summary=f"graph_paths={len(graph_paths)}",
+            output_summary=f"graph_paths={len(graph_paths)} fallback={str(fallback_used).lower()}",
             duration_ms=graph_duration_ms,
         )
     else:

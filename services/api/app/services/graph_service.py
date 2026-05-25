@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from threading import Lock
 from typing import Any
 from uuid import UUID
 
@@ -8,7 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models import Department, DocumentChunk, KnowledgeBase
+from app.models import Department, Document, DocumentChunk, KnowledgeBase
+from app.schemas.graph import GraphEdgePublic, GraphNodePublic
 from app.schemas.qa import Citation, GraphPath
 from app.services.entity_service import extract_entities
 
@@ -32,9 +35,18 @@ class Neo4jService:
     def __init__(self) -> None:
         self._driver = None
         self._disabled = False
+        self._lock = Lock()
+        self._last_sync_summary: dict[str, Any] = {}
+        self._sync_needed_kbs: dict[str, str] = {}
+
+    def _neo4j_configured(self) -> bool:
+        return bool(settings.neo4j_uri.strip() and settings.neo4j_user.strip() and settings.neo4j_password.strip())
 
     def _driver_or_none(self):
         if self._disabled:
+            return None
+        if not self._neo4j_configured():
+            self._disabled = True
             return None
         if self._driver is not None:
             return self._driver
@@ -59,6 +71,57 @@ class Neo4jService:
             self._disabled = True
             return None
 
+    def mark_sync_needed(self, *, kb_id: UUID, kb_code: str) -> None:
+        with self._lock:
+            self._sync_needed_kbs[str(kb_id)] = kb_code
+
+    def _clear_sync_needed(self, kb_ids: list[str]) -> None:
+        with self._lock:
+            for kb_id in kb_ids:
+                self._sync_needed_kbs.pop(kb_id, None)
+
+    def _set_last_sync_summary(self, payload: dict[str, Any]) -> None:
+        safe_payload: dict[str, Any] = {}
+        for key, value in payload.items():
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                safe_payload[key] = value
+        with self._lock:
+            self._last_sync_summary = safe_payload
+
+    def get_status(self) -> dict[str, Any]:
+        configured = self._neo4j_configured() and GraphDatabase is not None
+        node_count: int | None = None
+        relationship_count: int | None = None
+        driver = self._driver_or_none() if configured else None
+        available = driver is not None
+        if driver is not None:
+            try:
+                with driver.session() as session:
+                    node_count = int(session.run("MATCH (n) RETURN count(n) AS count").single()["count"])
+                    relationship_count = int(
+                        session.run("MATCH ()-[r]->() RETURN count(r) AS count").single()["count"]
+                    )
+            except Exception:  # noqa: BLE001
+                available = False
+                node_count = None
+                relationship_count = None
+
+        with self._lock:
+            pending_sync_codes = sorted(set(self._sync_needed_kbs.values()))
+            last_sync_summary = dict(self._last_sync_summary)
+
+        return {
+            "neo4j_configured": configured,
+            "neo4j_available": available,
+            "graph_sync_enabled": bool(settings.sync_neo4j_on_startup),
+            "graph_sync_needed": bool(pending_sync_codes),
+            "pending_sync_kb_codes": pending_sync_codes,
+            "node_count": node_count,
+            "relationship_count": relationship_count,
+            "fallback_mode": "local_entity_projection" if not available else "neo4j",
+            "last_sync_summary": last_sync_summary,
+        }
+
     def close(self) -> None:
         if self._driver is not None:
             try:
@@ -67,10 +130,25 @@ class Neo4jService:
                 pass
             self._driver = None
 
-    def sync_from_postgres(self, db: Session) -> None:
+    def clear_for_tests(self) -> None:
+        self.close()
+        self._disabled = False
+        with self._lock:
+            self._last_sync_summary = {}
+            self._sync_needed_kbs = {}
+
+    def sync_from_postgres(self, db: Session) -> dict[str, Any]:
+        start_at = datetime.now(timezone.utc)
         driver = self._driver_or_none()
         if driver is None:
-            return
+            summary = {
+                "status": "neo4j_unavailable",
+                "success": False,
+                "started_at": start_at.isoformat(),
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            }
+            self._set_last_sync_summary(summary)
+            return summary
 
         departments = list(db.scalars(select(Department)).all())
         knowledge_bases = list(db.scalars(select(KnowledgeBase).where(KnowledgeBase.is_active.is_(True))).all())
@@ -159,6 +237,18 @@ class Neo4jService:
                         left=left,
                         right=right,
                     )
+        summary = {
+            "status": "success",
+            "success": True,
+            "started_at": start_at.isoformat(),
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "department_count": len(departments),
+            "knowledge_base_count": len(knowledge_bases),
+            "chunk_count": len(chunks),
+        }
+        self._set_last_sync_summary(summary)
+        self._clear_sync_needed([str(kb.id) for kb in knowledge_bases])
+        return summary
 
     def query_chunk_graph(
         self,
@@ -205,8 +295,191 @@ def _chunk_entities(chunk: DocumentChunk) -> list[str]:
     return extract_entities(chunk.content, limit=6)
 
 
-def sync_neo4j_graph(db: Session) -> None:
-    neo4j_service.sync_from_postgres(db)
+def _chunk_preview(text: str, max_length: int = 120) -> str:
+    normalized = " ".join(text.strip().split())
+    if len(normalized) <= max_length:
+        return normalized
+    return f"{normalized[:max_length]}..."
+
+
+def _graph_node_id(node_type: str, raw: str) -> str:
+    return f"{node_type}:{raw}"
+
+
+def build_graph_elements_from_chunk_rows(
+    chunk_rows: list[tuple[DocumentChunk, Document, KnowledgeBase]],
+    *,
+    include_chunk_preview: bool,
+    max_entities_per_chunk: int = 3,
+) -> tuple[list[GraphNodePublic], list[GraphEdgePublic]]:
+    node_map: dict[str, GraphNodePublic] = {}
+    edge_map: dict[str, GraphEdgePublic] = {}
+
+    def add_node(node: GraphNodePublic) -> None:
+        if node.id not in node_map:
+            node_map[node.id] = node
+
+    def add_edge(edge: GraphEdgePublic) -> None:
+        if edge.id not in edge_map:
+            edge_map[edge.id] = edge
+
+    for chunk, document, kb in chunk_rows:
+        department_code = kb.department.code if kb.department else "public"
+        department_node_id = _graph_node_id("department", department_code)
+        kb_node_id = _graph_node_id("knowledge_base", str(kb.id))
+        doc_node_id = _graph_node_id("document", str(document.id))
+        chunk_node_id = _graph_node_id("chunk", str(chunk.id))
+
+        add_node(
+            GraphNodePublic(
+                id=department_node_id,
+                label=department_code,
+                type="department",
+                metadata_summary="department node",
+            )
+        )
+        add_node(
+            GraphNodePublic(
+                id=kb_node_id,
+                label=kb.code,
+                type="knowledge_base",
+                kb_id=str(kb.id),
+                kb_code=kb.code,
+                title=kb.name,
+                metadata_summary=f"version={kb.version} visibility={kb.visibility}",
+            )
+        )
+        add_node(
+            GraphNodePublic(
+                id=doc_node_id,
+                label=document.title,
+                type="document",
+                kb_id=str(kb.id),
+                kb_code=kb.code,
+                title=document.title,
+                metadata_summary=f"source={document.source_label}",
+            )
+        )
+        add_node(
+            GraphNodePublic(
+                id=chunk_node_id,
+                label=f"chunk #{chunk.ordinal}",
+                type="chunk",
+                kb_id=str(kb.id),
+                kb_code=kb.code,
+                title=str(chunk.id),
+                metadata_summary=(
+                    f"chunk_id={chunk.id} preview={_chunk_preview(chunk.content)}"
+                    if include_chunk_preview
+                    else f"chunk_id={chunk.id}"
+                ),
+            )
+        )
+
+        add_edge(
+            GraphEdgePublic(
+                id=f"{department_node_id}|BELONGS_TO|{kb_node_id}",
+                source=department_node_id,
+                target=kb_node_id,
+                type="BELONGS_TO",
+                label="BELONGS_TO",
+            )
+        )
+        add_edge(
+            GraphEdgePublic(
+                id=f"{kb_node_id}|CONTAINS|{doc_node_id}",
+                source=kb_node_id,
+                target=doc_node_id,
+                type="CONTAINS",
+                label="CONTAINS",
+            )
+        )
+        add_edge(
+            GraphEdgePublic(
+                id=f"{doc_node_id}|HAS_CHUNK|{chunk_node_id}",
+                source=doc_node_id,
+                target=chunk_node_id,
+                type="HAS_CHUNK",
+                label="HAS_CHUNK",
+            )
+        )
+
+        entities = _chunk_entities(chunk)[: max(1, max_entities_per_chunk)]
+        previous_entity_node_id: str | None = None
+        for entity in entities:
+            entity_node_id = _graph_node_id("entity", entity)
+            add_node(
+                GraphNodePublic(
+                    id=entity_node_id,
+                    label=entity,
+                    type="entity",
+                    kb_id=str(kb.id),
+                    kb_code=kb.code,
+                    title=entity,
+                    metadata_summary="entity extracted from authorized chunk",
+                )
+            )
+            add_edge(
+                GraphEdgePublic(
+                    id=f"{chunk_node_id}|MENTIONS|{entity_node_id}",
+                    source=chunk_node_id,
+                    target=entity_node_id,
+                    type="MENTIONS",
+                    label="MENTIONS",
+                )
+            )
+            if previous_entity_node_id:
+                add_edge(
+                    GraphEdgePublic(
+                        id=f"{previous_entity_node_id}|RELATED_TO|{entity_node_id}",
+                        source=previous_entity_node_id,
+                        target=entity_node_id,
+                        type="RELATED_TO",
+                        label="RELATED_TO",
+                    )
+                )
+            previous_entity_node_id = entity_node_id
+
+    return list(node_map.values()), list(edge_map.values())
+
+
+def build_permission_scoped_overview(
+    db: Session,
+    *,
+    allowed_kb_ids: list[UUID],
+    max_chunks: int = 220,
+) -> tuple[list[GraphNodePublic], list[GraphEdgePublic], list[str]]:
+    if not allowed_kb_ids:
+        return [], [], ["No allowed knowledge base is available for this user."]
+
+    chunk_rows = list(
+        db.execute(
+            select(DocumentChunk, Document, KnowledgeBase)
+            .join(Document, Document.id == DocumentChunk.document_id)
+            .join(KnowledgeBase, KnowledgeBase.id == DocumentChunk.knowledge_base_id)
+            .where(DocumentChunk.knowledge_base_id.in_(allowed_kb_ids))
+            .order_by(Document.created_at.desc(), DocumentChunk.ordinal.asc())
+        ).all()
+    )
+    total_chunks = len(chunk_rows)
+    limited_rows = chunk_rows[:max_chunks]
+    nodes, edges = build_graph_elements_from_chunk_rows(
+        limited_rows,
+        include_chunk_preview=True,
+    )
+    notes = [
+        "Graph overview only includes nodes and edges from backend RBAC allowed_kb_ids.",
+        "Chunk node metadata contains preview only and never exposes full unauthorized content.",
+    ]
+    if total_chunks > len(limited_rows):
+        notes.append(
+            f"Graph overview is truncated to {len(limited_rows)} authorized chunks from {total_chunks} total chunks."
+        )
+    return nodes, edges, notes
+
+
+def sync_neo4j_graph(db: Session) -> dict[str, Any]:
+    return neo4j_service.sync_from_postgres(db)
 
 
 def build_graph_paths_for_citations(

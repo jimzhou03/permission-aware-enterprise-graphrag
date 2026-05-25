@@ -6,11 +6,49 @@
 
 - Docker 运行正常：前端 `http://localhost:5173`、后端 `http://localhost:8000/docs`、健康检查 `GET /healthz` 返回 `{"status":"ok"}`。
 - 模型模式保持 `LLM_MODE=mock`。
+- v0.4.0 已实现 Neo4j GraphRAG 可视化与权限感知图谱接口（status/overview/request-graph）。
 - v0.3.0 已实现 Markdown/TXT 文档上传与重建索引（后端 RBAC 严格校验）。
 - v0.2.2 已实现 Function Calling Trace（后端受控函数链路追踪，非自治工具调用）。
 - v0.2.1 已接入 Ollama Local Router（仅分类/路由，不参与最终答案生成）。
 - 未接入外部大模型 API。
 - v0.2.0 已实现 PostgreSQL + pgvector SQL 检索路径，并保留 SQLite/不可用环境安全回退。
+
+## 本阶段（v0.4.0 Neo4j GraphRAG Visualization）完成项
+
+1. 后端图谱可观测接口（只读安全）
+   - 新增 `GET /api/v1/graph/status`：返回 Neo4j 配置/可用性、同步状态、fallback 模式、安全同步摘要。
+   - 新增 `GET /api/v1/graph/overview`：返回当前用户权限范围内的图谱节点/边（KB->Document->Chunk->Entity）。
+   - 新增 `GET /api/v1/qa/{request_id}/graph`：返回请求级图路径与节点/边，支持 owner/admin-audit 读取并按当前查看者权限再次过滤。
+   - 新增 `POST /api/v1/graph/sync`：管理员写权限触发 PostgreSQL -> Neo4j 同步（Neo4j 不可用时安全回退）。
+
+2. 权限边界与安全约束（保持强化）
+   - 图谱可见性完全由后端 RBAC + `allowed_kb_ids` 决定，前端不能扩权。
+   - 请求级图接口对未授权查看者不会返回内部 chunk/document/entity 元数据。
+   - 图节点只暴露 `metadata_summary`，不返回完整未授权 chunk 内容。
+   - Ollama 仍仅用于分类路由，不参与权限判定与最终答案生成。
+
+3. Graph 同步状态与上传联动
+   - 上传/重建索引后标记目标 KB `graph_sync_needed`（运行时安全标记）。
+   - 同步成功后清理待同步 KB 标记，并在 graph status 中更新 `last_sync_summary`。
+   - `System Status` 与 retrieval-config 增加 Neo4j/GraphRAG 运行态字段。
+
+4. 前端可视化与产品导航
+   - 新增产品页签：`GraphRAG`（中文为 `GraphRAG 图谱`）。
+   - 图谱页包含：Graph Status、Graph Overview（SVG 轻量可视化）、Graph Path Viewer。
+   - 节点点击可查看安全元数据；Raw JSON 继续折叠展示。
+   - Knowledge Chat 在存在图路径时新增 `查看图路径 / View graph path` 快捷入口。
+   - Developer Trace 新增 `GraphRAG追踪` 区块，展示 fallback、graph paths、node/edge 数量与安全说明。
+
+5. 中文本地化修复
+   - 中文模式产品导航改为：`知识问答`、`知识库`、`审计日志`、`系统状态`、`开发者追踪`。
+   - 同步修正文案：`文档上传`、`文档查看器`、`分块查看器`、`函数调用追踪`、`GraphRAG追踪`。
+
+6. 当前限制（v0.4.0）
+   - 图谱可视化仍为可观测性/演示导向，不是生产级图分析 UI。
+   - 最终答案生成器默认仍是 `LLM_MODE=mock`。
+   - Ollama 仅用于本地路由分类。
+   - 外部 LLM API 未启用，MCP 未接入。
+   - 文档上传仍仅支持 Markdown/TXT，不支持 PDF/DOCX。
 
 ## 本阶段（v0.3.0 Document Upload + Re-indexing）完成项
 
