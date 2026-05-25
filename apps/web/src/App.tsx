@@ -12,6 +12,12 @@ import { LANGUAGE_STORAGE_KEY, OVERREACH_LABELS, UI_TEXT, type Language } from "
 import type { AskMode, AskResponse, AuditLog, KnowledgeBase, UserPublic } from "./types";
 
 type DemoAccountKey = "cn_staff" | "en_staff" | "bilingual_admin" | "visitor";
+type AppView =
+  | "knowledge_chat"
+  | "knowledge_bases"
+  | "audit_logs"
+  | "system_status"
+  | "developer_trace";
 
 type ChatMessage = {
   id: string;
@@ -31,6 +37,18 @@ type ChatSession = {
   createdAt: string;
   updatedAt: string;
   messages: ChatMessage[];
+};
+
+type LocalAuditRecord = {
+  sessionId: string;
+  sessionTitle: string;
+  requestId: string;
+  mode: string;
+  denied: boolean;
+  cacheHit: boolean;
+  createdAt: string;
+  question: string;
+  hitKbCodes: string[];
 };
 
 const AUTH_SESSION_STORAGE_KEY = "paegr.auth.session";
@@ -147,6 +165,12 @@ function isChatMessage(value: unknown): value is ChatMessage {
   );
 }
 
+function sortSessions(sessions: ChatSession[]): ChatSession[] {
+  return [...sessions].sort(
+    (first, second) => new Date(second.updatedAt).getTime() - new Date(first.updatedAt).getTime()
+  );
+}
+
 function normalizeChatSessions(value: unknown): ChatSession[] {
   if (!Array.isArray(value)) return [];
   const sessions = value.flatMap((item) => {
@@ -158,7 +182,6 @@ function normalizeChatSessions(value: unknown): ChatSession[] {
     ) {
       return [];
     }
-
     const messages = Array.isArray(session.messages) ? session.messages.filter(isChatMessage) : [];
     return [
       {
@@ -170,7 +193,6 @@ function normalizeChatSessions(value: unknown): ChatSession[] {
       }
     ];
   });
-
   return sortSessions(sessions).slice(0, MAX_STORED_SESSIONS);
 }
 
@@ -194,12 +216,6 @@ function saveChatSessions(email: string, sessions: ChatSession[]): void {
   window.localStorage.setItem(
     getChatHistoryStorageKey(email),
     JSON.stringify(sortSessions(sessions).slice(0, MAX_STORED_SESSIONS))
-  );
-}
-
-function sortSessions(sessions: ChatSession[]): ChatSession[] {
-  return [...sessions].sort(
-    (first, second) => new Date(second.updatedAt).getTime() - new Date(first.updatedAt).getTime()
   );
 }
 
@@ -266,6 +282,45 @@ function formatDateTime(value: string, language: Language): string {
   });
 }
 
+function inferLanguageByKbCode(code: string): string {
+  if (code.startsWith("cn-")) return "zh";
+  if (code.startsWith("en-")) return "en";
+  return "unknown";
+}
+
+function collectLocalAuditRecords(sessions: ChatSession[], untitledFallback: string): LocalAuditRecord[] {
+  const records: LocalAuditRecord[] = [];
+  for (const session of sessions) {
+    const sessionTitle = getSessionTitle(session, untitledFallback);
+    for (let index = 0; index < session.messages.length; index += 1) {
+      const current = session.messages[index];
+      if (current.role !== "assistant" || !current.response) continue;
+      let question = "";
+      for (let back = index - 1; back >= 0; back -= 1) {
+        const prev = session.messages[back];
+        if (prev.role === "user") {
+          question = prev.content;
+          break;
+        }
+      }
+      records.push({
+        sessionId: session.id,
+        sessionTitle,
+        requestId: current.response.request_id,
+        mode: current.response.mode,
+        denied: current.response.denied,
+        cacheHit: current.response.cache_hit,
+        createdAt: current.createdAt,
+        question,
+        hitKbCodes: [...new Set(current.response.citations.map((item) => item.kb_code))]
+      });
+    }
+  }
+  return records.sort(
+    (first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime()
+  );
+}
+
 export default function App() {
   const [language, setLanguage] = useState<Language>(getInitialLanguage);
   const [selectedDemoAccount, setSelectedDemoAccount] = useState<DemoAccountKey>("cn_staff");
@@ -285,6 +340,7 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [sessionReady, setSessionReady] = useState(false);
   const [securityOpen, setSecurityOpen] = useState(false);
+  const [activeView, setActiveView] = useState<AppView>("knowledge_chat");
 
   const t = UI_TEXT[language];
   const overreachLabels: Record<string, string> = OVERREACH_LABELS[language];
@@ -306,6 +362,10 @@ export default function App() {
     if (!activeResponse) return [];
     return [...new Set(activeResponse.citations.map((item) => item.kb_code))];
   }, [activeResponse]);
+  const localAuditRecords = useMemo(
+    () => collectLocalAuditRecords(visibleChatSessions, t.untitledSession),
+    [t.untitledSession, visibleChatSessions]
+  );
 
   useEffect(() => {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
@@ -313,19 +373,16 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-
     async function restoreSession() {
       const stored = readAuthSession();
       if (!stored) {
         if (!cancelled) setSessionReady(true);
         return;
       }
-
       if (!cancelled) {
         setPending(true);
         setMessage(UI_TEXT[getInitialLanguage()].restoringSession);
       }
-
       try {
         const me = await fetchAuthMe(stored.access_token);
         const kbs = await listKnowledgeBases(stored.access_token);
@@ -348,7 +405,6 @@ export default function App() {
         }
       }
     }
-
     void restoreSession();
     return () => {
       cancelled = true;
@@ -362,7 +418,6 @@ export default function App() {
       setActiveSessionId("");
       return;
     }
-
     const storedSessions = readChatSessions(user.email);
     const nextSessions = storedSessions.length > 0 ? storedSessions : [createEmptyChatSession()];
     setHistoryOwnerEmail(user.email);
@@ -381,6 +436,14 @@ export default function App() {
     if (role === "visitor") return "bg-amber-100 text-amber-800 border-amber-200";
     return "bg-slate-100 text-slate-800 border-slate-200";
   }, [user?.role]);
+
+  const navItems: Array<{ key: AppView; label: string }> = [
+    { key: "knowledge_chat", label: t.navKnowledgeChat },
+    { key: "knowledge_bases", label: t.navKnowledgeBases },
+    { key: "audit_logs", label: t.navAuditLogs },
+    { key: "system_status", label: t.navSystemStatus },
+    { key: "developer_trace", label: t.navDeveloperTrace }
+  ];
 
   function formatBoolean(value: boolean | null | undefined): string {
     if (value === null || value === undefined) return t.noValue;
@@ -431,6 +494,7 @@ export default function App() {
     setHistoryOwnerEmail("");
     setChatSessions([]);
     setActiveSessionId("");
+    setActiveView("knowledge_chat");
     resetAskState();
   }
 
@@ -474,7 +538,6 @@ export default function App() {
         )
       ).slice(0, MAX_STORED_SESSIONS);
     });
-
     return targetId;
   }
 
@@ -528,7 +591,6 @@ export default function App() {
     setPending(true);
     setQuestion("");
     setMessage("");
-
     try {
       const { response, detail } = await requestAnswer(token, nextQuestion, askMode, kbCodes);
       appendAssistantMessageToSession(
@@ -578,6 +640,7 @@ export default function App() {
 
   function selectChatSession(sessionId: string) {
     setActiveSessionId(sessionId);
+    setActiveView("knowledge_chat");
     setMessage("");
   }
 
@@ -604,6 +667,7 @@ export default function App() {
       setHistoryOwnerEmail(session.user.email);
       setChatSessions(nextSessions);
       setActiveSessionId(scenarioSession.id);
+      setActiveView("developer_trace");
       setQuestion("");
       setMode("auto");
       setSelectedKbCodes([]);
@@ -680,7 +744,6 @@ export default function App() {
                 {t.productName}
               </h1>
               <p className="mt-2 text-sm text-slate-600">{t.loginPageTagline}</p>
-
               <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-600">
                   {t.capabilityTitle}
@@ -706,7 +769,6 @@ export default function App() {
                     {(Object.keys(DEMO_ACCOUNTS) as DemoAccountKey[]).map((key) => {
                       const account = DEMO_ACCOUNTS[key];
                       const isSelected = selectedDemoAccount === key;
-
                       return (
                         <button
                           key={key}
@@ -811,11 +873,31 @@ export default function App() {
           </div>
         </header>
 
-        <div className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)_360px]">
+        <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
           <aside className="space-y-4">
-            <section className="glass-panel p-5">
+            <section className="glass-panel p-4">
+              <h2 className="panel-title">{t.navTitle}</h2>
+              <div className="space-y-2">
+                {navItems.map((item) => (
+                  <button
+                    key={item.key}
+                    className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition ${
+                      activeView === item.key
+                        ? "border-accent-300 bg-accent-50 text-accent-800"
+                        : "border-slate-200 bg-slate-50 text-slate-700 hover:border-accent-200 hover:bg-white"
+                    }`}
+                    onClick={() => setActiveView(item.key)}
+                    type="button"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="glass-panel p-4">
               <h2 className="panel-title">{t.currentSession}</h2>
-              <div className="grid gap-2 text-xs text-slate-700">
+              <div className="space-y-1 text-xs text-slate-700">
                 <div>
                   {t.currentUser}: <span className="font-mono">{user?.email ?? t.noValue}</span>
                 </div>
@@ -823,367 +905,257 @@ export default function App() {
                   {t.currentRole}: <span className="font-mono">{user?.role ?? t.noValue}</span>
                 </div>
                 <div>
-                  {t.currentDepartment}:{" "}
-                  <span className="font-mono">{user?.department ?? t.noValue}</span>
-                </div>
-              </div>
-            </section>
-
-            <section className="glass-panel p-5">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <h2 className="panel-title mb-0">{t.recentSessions}</h2>
-                <button className="btn-secondary px-2 py-1 text-xs" onClick={startNewSession} type="button">
-                  {t.newSession}
-                </button>
-              </div>
-              <div className="space-y-2">
-                {visibleChatSessions.length === 0 ? (
-                  <p className="text-sm text-slate-500">{t.noRecentSessions}</p>
-                ) : (
-                  visibleChatSessions.map((session) => {
-                    const isActive = activeChatSession?.id === session.id;
-                    return (
-                      <button
-                        key={session.id}
-                        className={`w-full rounded-xl border px-3 py-2 text-left transition ${
-                          isActive
-                            ? "border-accent-300 bg-accent-50"
-                            : "border-slate-200 bg-slate-50 hover:border-accent-200 hover:bg-white"
-                        }`}
-                        onClick={() => selectChatSession(session.id)}
-                        type="button"
-                      >
-                        <div className="truncate text-sm font-medium text-slate-800">
-                          {getSessionTitle(session, t.untitledSession)}
-                        </div>
-                        <div className="mt-1 text-[11px] text-slate-500">
-                          {formatDateTime(session.updatedAt, language)} · {session.messages.length}
-                        </div>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-              <button
-                className="btn-secondary mt-3 w-full"
-                disabled={!activeChatSession || activeChatSession.messages.length === 0}
-                onClick={clearCurrentSession}
-                type="button"
-              >
-                {t.clearCurrentSession}
-              </button>
-              <p className="mt-2 text-[11px] leading-5 text-slate-500">{t.historyStoredLocally}</p>
-            </section>
-
-            <section className="glass-panel p-5">
-              <h2 className="panel-title">{t.accessibleKnowledgeBases}</h2>
-              <div className="flex flex-wrap gap-2">
-                {knowledgeBases.map((kb) => (
-                  <span key={kb.id} className="tag-pill">
-                    {kb.code}
-                  </span>
-                ))}
-              </div>
-              <p className="mt-2 text-[11px] leading-5 text-slate-500">{t.allowedKbHint}</p>
-
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-600">
-                  {t.modelStatus}
-                </p>
-                <div className="space-y-1 text-xs text-slate-700">
-                  <div>{t.routerStatus}</div>
-                  <div>{t.generatorStatus}</div>
-                  <div>
-                    {t.cacheLayer}: {formatCacheState(activeResponse)}
-                  </div>
+                  {t.currentDepartment}: <span className="font-mono">{user?.department ?? t.noValue}</span>
                 </div>
               </div>
             </section>
           </aside>
 
-          <main className="min-h-[calc(100vh-140px)]">
-            <section className="glass-panel flex min-h-[680px] flex-col overflow-hidden">
-              <div className="border-b border-slate-200 px-5 py-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h2 className="text-base font-semibold text-slate-900">{t.askQuestionSection}</h2>
-                    <p className="mt-1 max-w-2xl truncate text-xs text-slate-500">
-                      {activeChatSession ? getSessionTitle(activeChatSession, t.untitledSession) : t.untitledSession}
-                    </p>
-                  </div>
-                  <div className={`risk-badge ${deniedThisRequest ? "is-risk" : "is-normal"}`}>
-                    {deniedThisRequest ? t.riskAlert : t.normalState}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5 md:px-6">
-                {!activeChatSession || activeChatSession.messages.length === 0 ? (
-                  <div className="flex min-h-[360px] items-center justify-center text-center">
-                    <div>
-                      <p className="text-sm text-slate-500">{t.emptyConversation}</p>
+          <main className="space-y-4">
+            {activeView === "knowledge_chat" ? (
+              <section className="glass-panel overflow-hidden">
+                <div className="grid gap-0 xl:grid-cols-[280px_minmax(0,1fr)]">
+                  <div className="border-b border-slate-200 bg-slate-50 p-4 xl:border-b-0 xl:border-r">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <h2 className="panel-title mb-0">{t.recentSessions}</h2>
+                      <button className="btn-secondary px-2 py-1 text-xs" onClick={startNewSession} type="button">
+                        {t.newSession}
+                      </button>
                     </div>
-                  </div>
-                ) : (
-                  activeChatSession.messages.map((chatMessage) => {
-                    const isUserMessage = chatMessage.role === "user";
-                    return (
-                      <div
-                        key={chatMessage.id}
-                        className={`flex ${isUserMessage ? "justify-end" : "justify-start"}`}
-                      >
-                        <article
-                          className={`max-w-[88%] rounded-2xl border px-4 py-3 shadow-sm md:max-w-[78%] ${
-                            isUserMessage
-                              ? "border-accent-200 bg-accent-600 text-white"
-                              : chatMessage.error
-                                ? "border-red-200 bg-red-50 text-red-800"
-                                : "border-slate-200 bg-white text-slate-800"
-                          }`}
-                        >
-                          <div
-                            className={`mb-2 flex flex-wrap items-center gap-2 text-[11px] ${
-                              isUserMessage ? "text-accent-50" : "text-slate-500"
-                            }`}
-                          >
-                            <span className="font-semibold">
-                              {isUserMessage ? t.userMessageLabel : t.assistantMessageLabel}
-                            </span>
-                            <span>{formatDateTime(chatMessage.createdAt, language)}</span>
-                            {chatMessage.mode ? <span className="font-mono">{chatMessage.mode}</span> : null}
-                          </div>
-                          <div className="whitespace-pre-wrap text-sm leading-6">{chatMessage.content}</div>
-
-                          {isUserMessage ? (
-                            <div className="mt-2 text-[11px] text-accent-50">
-                              {t.selectedKbScope}: {formatKbScope(chatMessage.kbCodes)}
-                            </div>
-                          ) : null}
-
-                          {chatMessage.response?.denied ? (
-                            <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                              <div className="text-[11px] font-semibold uppercase tracking-wide">
-                                {t.riskAlert}
+                    <div className="space-y-2">
+                      {visibleChatSessions.length === 0 ? (
+                        <p className="text-sm text-slate-500">{t.noRecentSessions}</p>
+                      ) : (
+                        visibleChatSessions.map((session) => {
+                          const isActive = activeChatSession?.id === session.id;
+                          return (
+                            <button
+                              key={session.id}
+                              className={`w-full rounded-xl border px-3 py-2 text-left transition ${
+                                isActive
+                                  ? "border-accent-300 bg-accent-50"
+                                  : "border-slate-200 bg-white hover:border-accent-200"
+                              }`}
+                              onClick={() => selectChatSession(session.id)}
+                              type="button"
+                            >
+                              <div className="truncate text-sm font-medium text-slate-800">
+                                {getSessionTitle(session, t.untitledSession)}
                               </div>
-                              <div className="mt-1">{chatMessage.response.refusal_reason ?? t.requestDeniedPrefix}</div>
-                            </div>
-                          ) : null}
-
-                          {chatMessage.response && chatMessage.response.citations.length > 0 ? (
-                            <div className="mt-3 border-t border-slate-200 pt-3">
-                              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                {t.citations}
-                              </p>
-                              <div className="space-y-2">
-                                {chatMessage.response.citations.map((item) => (
-                                  <div key={item.chunk_id} className="rounded-xl bg-slate-50 px-3 py-2">
-                                    <div className="font-mono text-[11px] text-slate-700">
-                                      {item.kb_code} / {item.document_title} / {t.score}={item.score}
-                                    </div>
-                                    <p className="mt-1 text-xs leading-5 text-slate-600">{item.excerpt}</p>
-                                  </div>
-                                ))}
+                              <div className="mt-1 text-[11px] text-slate-500">
+                                {formatDateTime(session.updatedAt, language)} · {session.messages.length}
                               </div>
-                            </div>
-                          ) : null}
-
-                          {chatMessage.response ? (
-                            <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-                              <span
-                                className={`rounded-full px-2 py-1 ${
-                                  isUserMessage ? "bg-accent-500 text-white" : "bg-slate-100 text-slate-600"
-                                }`}
-                              >
-                                {t.requestId}: {chatMessage.response.request_id}
-                              </span>
-                              <span
-                                className={`rounded-full px-2 py-1 ${
-                                  isUserMessage ? "bg-accent-500 text-white" : "bg-slate-100 text-slate-600"
-                                }`}
-                              >
-                                {t.cacheStatus}: {formatCacheState(chatMessage.response)}
-                              </span>
-                            </div>
-                          ) : null}
-                        </article>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              <form className="border-t border-slate-200 bg-slate-50 p-4" onSubmit={onAsk}>
-                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
-                  <textarea
-                    className="soft-textarea min-h-24 bg-white"
-                    value={question}
-                    onChange={(event) => setQuestion(event.target.value)}
-                    placeholder={t.askQuestionPlaceholder}
-                  />
-                  <div className="space-y-2">
-                    <label className="block space-y-1">
-                      <span className="text-xs font-medium text-slate-600">{t.mode}</span>
-                      <select
-                        className="field"
-                        value={mode}
-                        onChange={(event) => setMode(event.target.value as AskMode)}
-                      >
-                        <option value="auto">auto</option>
-                        <option value="rag">rag</option>
-                        <option value="graphrag">graphrag</option>
-                      </select>
-                    </label>
-                    <button className="btn-primary w-full" disabled={!token || pending || !question.trim()}>
-                      {pending ? t.working : t.sendQuestion}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-3">
-                  <p className="mb-2 text-xs font-medium text-slate-600">{t.kbScopeOptional}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {knowledgeBases.map((kb) => (
-                      <label key={kb.id} className="tag-check bg-white">
-                        <input
-                          type="checkbox"
-                          checked={selectedKbCodes.includes(kb.code)}
-                          onChange={() => toggleKb(kb.code)}
-                        />
-                        <span className="font-mono text-xs">{kb.code}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </form>
-
-              {message ? <div className="border-t border-slate-200 px-4 py-3 notification-line">{message}</div> : null}
-            </section>
-          </main>
-
-          <section className="space-y-4">
-            <div className="glass-panel p-5">
-              <h2 className="panel-title">{t.auditPanelTitle}</h2>
-              {activeResponse ? (
-                <div className="space-y-3">
-                  <div className="grid gap-2 text-xs text-slate-700">
-                    <div className="flex items-center justify-between gap-3">
-                      <span>{t.requestId}</span>
-                      <span className="truncate font-mono">{activeResponse.request_id}</span>
+                            </button>
+                          );
+                        })
+                      )}
                     </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span>{t.responseMode}</span>
-                      <span className="font-mono">{activeResponse.mode}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span>{t.deniedCurrentRequest}</span>
-                      <span className={`font-mono ${deniedThisRequest ? "text-red-700" : "text-emerald-700"}`}>
-                        {formatBoolean(activeResponse.denied)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span>{t.cacheStatus}</span>
-                      <span className="font-mono">{formatCacheState(activeResponse)}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span>{t.model}</span>
-                      <span className="truncate font-mono">{activeRequestDetail?.model ?? t.noValue}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span>{t.latency}</span>
-                      <span className="font-mono">
-                        {activeRequestDetail ? `${activeRequestDetail.latency_ms} ${t.milliseconds}` : t.noValue}
-                      </span>
-                    </div>
-                  </div>
-                  <p className="text-[11px] leading-5 text-slate-500">{t.cacheFieldHint}</p>
-                </div>
-              ) : (
-                <p className="text-sm text-slate-500">{t.noAuditForSession}</p>
-              )}
-            </div>
-
-            <div className="glass-panel p-5">
-              <h2 className="panel-title">{t.authorizationPanelTitle}</h2>
-              <div className="space-y-3 text-xs text-slate-700">
-                <div>
-                  <p className="mb-2 font-medium text-slate-600">{t.hitKnowledgeBases}</p>
-                  <div className="flex flex-wrap gap-2">
-                    {latestHitKbCodes.length > 0 ? (
-                      latestHitKbCodes.map((code) => (
-                        <span key={code} className="tag-pill hit">
-                          {code}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-slate-500">{t.noValue}</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className={deniedThisRequest ? "risk-panel" : "rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2"}>
-                  <div className={`text-[11px] font-semibold uppercase tracking-wide ${deniedThisRequest ? "text-red-700" : "text-emerald-700"}`}>
-                    {deniedThisRequest ? t.riskAlert : t.notDenied}
-                  </div>
-                  {deniedThisRequest ? (
-                    <p className="mt-1 text-sm text-red-700">
-                      {activeResponse?.refusal_reason ?? t.requestDeniedPrefix}
-                    </p>
-                  ) : null}
-                </div>
-
-                {activeRequestDetail ? (
-                  <details className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <summary className="cursor-pointer text-xs font-medium text-slate-700">
-                      {t.rawAuditJson}
-                    </summary>
-                    <pre className="answer-block mt-3 max-h-[260px]">
-                      {JSON.stringify(activeRequestDetail, null, 2)}
-                    </pre>
-                  </details>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="glass-panel p-5">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="panel-title mb-0">{t.securityTestScenarios}</h2>
-                <button
-                  className="btn-secondary"
-                  type="button"
-                  onClick={() => setSecurityOpen((prev) => !prev)}
-                >
-                  {securityOpen ? t.collapseScenarios : t.expandScenarios}
-                </button>
-              </div>
-
-              {securityOpen ? (
-                <div className="mt-3 space-y-2">
-                  {OVERREACH_SCENARIOS.map((scenario) => (
                     <button
-                      key={scenario.id}
-                      className="scenario-card"
+                      className="btn-secondary mt-3 w-full"
+                      disabled={!activeChatSession || activeChatSession.messages.length === 0}
+                      onClick={clearCurrentSession}
                       type="button"
-                      disabled={pending}
-                      onClick={() => runOverreachScenario(scenario)}
                     >
-                      <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{scenario.account}</div>
-                      <div className="mt-1 text-sm text-slate-800">{overreachLabels[scenario.id] ?? scenario.id}</div>
+                      {t.clearCurrentSession}
                     </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+                    <p className="mt-2 text-[11px] text-slate-500">{t.historyStoredLocally}</p>
+                  </div>
 
-            {user?.role?.includes("admin") ? (
-              <div className="glass-panel p-5">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <h2 className="panel-title mb-0">{t.adminAuditLogs}</h2>
-                  <button className="btn-secondary" onClick={onLoadAdminAudit} disabled={pending} type="button">
-                    {t.loadAuditLogs}
-                  </button>
+                  <div className="flex min-h-[700px] flex-col">
+                    <div className="border-b border-slate-200 px-5 py-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <h2 className="text-base font-semibold text-slate-900">{t.askQuestionSection}</h2>
+                          <p className="mt-1 text-xs text-slate-500">{t.chatPageDescription}</p>
+                        </div>
+                        <div className={`risk-badge ${deniedThisRequest ? "is-risk" : "is-normal"}`}>
+                          {deniedThisRequest ? t.riskAlert : t.normalState}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5 md:px-6">
+                      {!activeChatSession || activeChatSession.messages.length === 0 ? (
+                        <div className="flex min-h-[320px] items-center justify-center text-center">
+                          <p className="text-sm text-slate-500">{t.emptyConversation}</p>
+                        </div>
+                      ) : (
+                        activeChatSession.messages.map((chatMessage) => {
+                          const isUserMessage = chatMessage.role === "user";
+                          return (
+                            <div key={chatMessage.id} className={`flex ${isUserMessage ? "justify-end" : "justify-start"}`}>
+                              <article
+                                className={`max-w-[90%] rounded-2xl border px-4 py-3 shadow-sm md:max-w-[80%] ${
+                                  isUserMessage
+                                    ? "border-accent-200 bg-accent-600 text-white"
+                                    : chatMessage.error
+                                      ? "border-red-200 bg-red-50 text-red-800"
+                                      : "border-slate-200 bg-white text-slate-800"
+                                }`}
+                              >
+                                <div
+                                  className={`mb-2 flex flex-wrap items-center gap-2 text-[11px] ${
+                                    isUserMessage ? "text-accent-50" : "text-slate-500"
+                                  }`}
+                                >
+                                  <span className="font-semibold">
+                                    {isUserMessage ? t.userMessageLabel : t.assistantMessageLabel}
+                                  </span>
+                                  <span>{formatDateTime(chatMessage.createdAt, language)}</span>
+                                  {chatMessage.mode ? <span className="font-mono">{chatMessage.mode}</span> : null}
+                                </div>
+                                <div className="whitespace-pre-wrap text-sm leading-6">{chatMessage.content}</div>
+
+                                {isUserMessage ? (
+                                  <div className="mt-2 text-[11px] text-accent-50">
+                                    {t.selectedKbScope}: {formatKbScope(chatMessage.kbCodes)}
+                                  </div>
+                                ) : null}
+
+                                {chatMessage.response?.denied ? (
+                                  <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                    <div className="text-[11px] font-semibold uppercase tracking-wide">{t.riskAlert}</div>
+                                    <div className="mt-1">{chatMessage.response.refusal_reason ?? t.requestDeniedPrefix}</div>
+                                  </div>
+                                ) : null}
+
+                                {chatMessage.response && chatMessage.response.citations.length > 0 ? (
+                                  <div className="mt-3 border-t border-slate-200 pt-3">
+                                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                      {t.citations}
+                                    </p>
+                                    <div className="space-y-2">
+                                      {chatMessage.response.citations.map((item) => (
+                                        <div key={item.chunk_id} className="rounded-xl bg-slate-50 px-3 py-2">
+                                          <div className="font-mono text-[11px] text-slate-700">
+                                            {item.kb_code} / {item.document_title} / {t.score}={item.score}
+                                          </div>
+                                          <p className="mt-1 text-xs leading-5 text-slate-600">{item.excerpt}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : null}
+
+                                {chatMessage.response ? (
+                                  <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                                    <summary className="cursor-pointer font-medium text-slate-700">
+                                      {t.technicalDetails}
+                                    </summary>
+                                    <div className="mt-2 space-y-1 font-mono text-[11px]">
+                                      <div>request_id: {chatMessage.response.request_id}</div>
+                                      <div>cache_hit: {String(chatMessage.response.cache_hit)}</div>
+                                      <div>mode: {chatMessage.response.mode}</div>
+                                      <div>allowed_kb_ids(frontend): {knowledgeBases.map((kb) => kb.id).join(", ") || "-"}</div>
+                                    </div>
+                                  </details>
+                                ) : null}
+                              </article>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <form className="border-t border-slate-200 bg-slate-50 p-4" onSubmit={onAsk}>
+                      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
+                        <textarea
+                          className="soft-textarea min-h-24 bg-white"
+                          value={question}
+                          onChange={(event) => setQuestion(event.target.value)}
+                          placeholder={t.askQuestionPlaceholder}
+                        />
+                        <div className="space-y-2">
+                          <label className="block space-y-1">
+                            <span className="text-xs font-medium text-slate-600">{t.mode}</span>
+                            <select
+                              className="field"
+                              value={mode}
+                              onChange={(event) => setMode(event.target.value as AskMode)}
+                            >
+                              <option value="auto">auto</option>
+                              <option value="rag">rag</option>
+                              <option value="graphrag">graphrag</option>
+                            </select>
+                          </label>
+                          <button className="btn-primary w-full" disabled={!token || pending || !question.trim()}>
+                            {pending ? t.working : t.sendQuestion}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mt-3">
+                        <p className="mb-2 text-xs font-medium text-slate-600">{t.kbScopeOptional}</p>
+                        <div className="flex flex-wrap gap-2">
+                          {knowledgeBases.map((kb) => (
+                            <label key={kb.id} className="tag-check bg-white">
+                              <input
+                                type="checkbox"
+                                checked={selectedKbCodes.includes(kb.code)}
+                                onChange={() => toggleKb(kb.code)}
+                              />
+                              <span className="font-mono text-xs">{kb.code}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </form>
+
+                    {message ? <div className="border-t border-slate-200 px-4 py-3 notification-line">{message}</div> : null}
+                  </div>
                 </div>
-                {auditLogs.length > 0 ? (
-                  <div className="max-h-[260px] overflow-y-auto overflow-x-auto">
+              </section>
+            ) : null}
+
+            {activeView === "knowledge_bases" ? (
+              <section className="glass-panel p-5">
+                <h2 className="panel-title">{t.knowledgeBasesPageTitle}</h2>
+                <p className="mb-4 text-sm text-slate-600">{t.knowledgeBasesPageHint}</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-600">
+                        <th className="px-2 py-2">kb_id</th>
+                        <th className="px-2 py-2">kb_code</th>
+                        <th className="px-2 py-2">{t.kbDisplayName}</th>
+                        <th className="px-2 py-2">{t.kbLanguage}</th>
+                        <th className="px-2 py-2">{t.kbDepartment}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {knowledgeBases.map((kb) => (
+                        <tr key={kb.id} className="border-b border-slate-100">
+                          <td className="px-2 py-2 font-mono text-xs">{kb.id}</td>
+                          <td className="px-2 py-2 font-mono text-xs">{kb.code}</td>
+                          <td className="px-2 py-2">{kb.name}</td>
+                          <td className="px-2 py-2">
+                            {inferLanguageByKbCode(kb.code) === "zh"
+                              ? t.languageChinese
+                              : inferLanguageByKbCode(kb.code) === "en"
+                                ? t.languageEnglish
+                                : t.noValue}
+                          </td>
+                          <td className="px-2 py-2 font-mono text-xs">{kb.department ?? t.noValue}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {knowledgeBases.length === 0 ? (
+                  <p className="mt-3 text-sm text-slate-500">{t.noKnowledgeBases}</p>
+                ) : null}
+              </section>
+            ) : null}
+
+            {activeView === "audit_logs" ? (
+              <section className="glass-panel p-5">
+                <h2 className="panel-title">{t.auditLogsPageTitle}</h2>
+                <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-sm font-medium text-slate-700">{t.localAuditRecords}</p>
+                  <p className="mt-1 text-xs text-slate-500">{t.localAuditRecordsHint}</p>
+                </div>
+                {localAuditRecords.length > 0 ? (
+                  <div className="max-h-[320px] overflow-y-auto overflow-x-auto">
                     <table className="w-full border-collapse text-left text-xs">
                       <thead>
                         <tr className="border-b border-slate-200 text-slate-600">
@@ -1191,26 +1163,201 @@ export default function App() {
                           <th className="px-2 py-2">{t.tableMode}</th>
                           <th className="px-2 py-2">{t.tableDenied}</th>
                           <th className="px-2 py-2">{t.tableCacheHit}</th>
+                          <th className="px-2 py-2">{t.hitKnowledgeBases}</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {auditLogs.map((row) => (
-                          <tr key={row.request_id} className="border-b border-slate-100">
-                            <td className="px-2 py-2 font-mono">{row.request_id}</td>
+                        {localAuditRecords.map((row) => (
+                          <tr key={`${row.sessionId}_${row.requestId}`} className="border-b border-slate-100">
+                            <td className="px-2 py-2 font-mono">{row.requestId}</td>
                             <td className="px-2 py-2 font-mono">{row.mode}</td>
                             <td className="px-2 py-2">{formatBoolean(row.denied)}</td>
-                            <td className="px-2 py-2">{formatBoolean(row.cache_hit)}</td>
+                            <td className="px-2 py-2">{formatBoolean(row.cacheHit)}</td>
+                            <td className="px-2 py-2 font-mono">{row.hitKbCodes.join(", ") || t.noValue}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
                 ) : (
-                  <p className="text-sm text-slate-500">{t.noRequestDetailLoaded}</p>
+                  <p className="text-sm text-slate-500">{t.noLocalAuditRecords}</p>
                 )}
-              </div>
+
+                <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-slate-700">{t.adminAuditLogs}</p>
+                    {user?.role?.includes("admin") ? (
+                      <button className="btn-secondary" onClick={onLoadAdminAudit} disabled={pending} type="button">
+                        {t.loadAuditLogs}
+                      </button>
+                    ) : null}
+                  </div>
+                  {user?.role?.includes("admin") ? (
+                    auditLogs.length > 0 ? (
+                      <div className="max-h-[260px] overflow-y-auto overflow-x-auto">
+                        <table className="w-full border-collapse text-left text-xs">
+                          <thead>
+                            <tr className="border-b border-slate-200 text-slate-600">
+                              <th className="px-2 py-2">{t.requestId}</th>
+                              <th className="px-2 py-2">{t.tableMode}</th>
+                              <th className="px-2 py-2">{t.tableDenied}</th>
+                              <th className="px-2 py-2">{t.tableCacheHit}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {auditLogs.map((row) => (
+                              <tr key={row.request_id} className="border-b border-slate-100">
+                                <td className="px-2 py-2 font-mono">{row.request_id}</td>
+                                <td className="px-2 py-2 font-mono">{row.mode}</td>
+                                <td className="px-2 py-2">{formatBoolean(row.denied)}</td>
+                                <td className="px-2 py-2">{formatBoolean(row.cache_hit)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-500">{t.adminAuditLogsHint}</p>
+                    )
+                  ) : (
+                    <p className="text-xs text-slate-500">{t.auditViewerPlanned}</p>
+                  )}
+                </div>
+              </section>
             ) : null}
-          </section>
+
+            {activeView === "system_status" ? (
+              <section className="glass-panel p-5">
+                <h2 className="panel-title">{t.systemStatusPageTitle}</h2>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.routerMode}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">{t.routerModeValue}</div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.generatorMode}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">{t.generatorModeValue}</div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.cacheStatus}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">{formatCacheState(activeResponse)}</div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.currentRole}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">{user?.role ?? t.noValue}</div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.currentDepartment}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">{user?.department ?? t.noValue}</div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.allowedKbSummary}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {knowledgeBases.map((kb) => kb.code).join(", ") || t.noValue}
+                    </div>
+                  </div>
+                </div>
+                <p className="mt-4 text-xs text-slate-500">{t.systemStatusHint}</p>
+              </section>
+            ) : null}
+
+            {activeView === "developer_trace" ? (
+              <section className="space-y-4">
+                <div className="glass-panel p-5">
+                  <h2 className="panel-title">{t.developerTracePageTitle}</h2>
+                  {activeResponse ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">request_id</div>
+                        <div className="mt-1 font-mono text-xs">{activeResponse.request_id}</div>
+                      </div>
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">cache_hit</div>
+                        <div className="mt-1 font-mono text-xs">{String(activeResponse.cache_hit)}</div>
+                      </div>
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">{t.responseMode}</div>
+                        <div className="mt-1 font-mono text-xs">{activeResponse.mode}</div>
+                      </div>
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">denied</div>
+                        <div className="mt-1 font-mono text-xs">{String(activeResponse.denied)}</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">{t.noAuditForSession}</p>
+                  )}
+                </div>
+
+                <div className="glass-panel p-5">
+                  <h2 className="panel-title">{t.requestMeta}</h2>
+                  {activeResponse ? (
+                    <div className="space-y-3">
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">retrieved_chunks</div>
+                        <div className="mt-2 space-y-1 text-xs">
+                          {activeResponse.retrieved_chunks.length > 0 ? (
+                            activeResponse.retrieved_chunks.map((item) => (
+                              <div key={item.chunk_id} className="font-mono">
+                                {item.kb_code} / {item.chunk_id} / score={item.score}
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-slate-500">{t.noValue}</div>
+                          )}
+                        </div>
+                      </div>
+                      <details className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                        <summary className="cursor-pointer text-xs font-medium text-slate-700">
+                          {t.rawAskResponse}
+                        </summary>
+                        <pre className="answer-block mt-3 max-h-[300px]">
+                          {JSON.stringify(activeResponse, null, 2)}
+                        </pre>
+                      </details>
+                      {activeRequestDetail ? (
+                        <details className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                          <summary className="cursor-pointer text-xs font-medium text-slate-700">
+                            {t.rawAuditJson}
+                          </summary>
+                          <pre className="answer-block mt-3 max-h-[300px]">
+                            {JSON.stringify(activeRequestDetail, null, 2)}
+                          </pre>
+                        </details>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">{t.noAuditForSession}</p>
+                  )}
+                </div>
+
+                <div className="glass-panel p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="panel-title mb-0">{t.securityTestScenarios}</h2>
+                    <button className="btn-secondary" type="button" onClick={() => setSecurityOpen((prev) => !prev)}>
+                      {securityOpen ? t.collapseScenarios : t.expandScenarios}
+                    </button>
+                  </div>
+                  {securityOpen ? (
+                    <div className="mt-3 space-y-2">
+                      {OVERREACH_SCENARIOS.map((scenario) => (
+                        <button
+                          key={scenario.id}
+                          className="scenario-card"
+                          type="button"
+                          disabled={pending}
+                          onClick={() => runOverreachScenario(scenario)}
+                        >
+                          <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{scenario.account}</div>
+                          <div className="mt-1 text-sm text-slate-800">{overreachLabels[scenario.id] ?? scenario.id}</div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+          </main>
         </div>
       </div>
     </div>
