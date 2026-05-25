@@ -3,13 +3,27 @@ import { useEffect, useMemo, useState } from "react";
 import {
   askQuestion,
   fetchAuthMe,
+  getRequestTrace,
+  getRetrievalConfig,
   getRequestDetail,
+  listDocumentChunks,
   listAuditLogs,
+  listKnowledgeBaseDocuments,
   listKnowledgeBases,
   login
 } from "./api";
 import { LANGUAGE_STORAGE_KEY, OVERREACH_LABELS, UI_TEXT, type Language } from "./i18n";
-import type { AskMode, AskResponse, AuditLog, KnowledgeBase, UserPublic } from "./types";
+import type {
+  AskMode,
+  AskResponse,
+  AuditLog,
+  DocumentChunk,
+  KnowledgeBase,
+  KnowledgeBaseDocument,
+  RequestTrace,
+  RetrievalConfig,
+  UserPublic
+} from "./types";
 
 type DemoAccountKey = "cn_staff" | "en_staff" | "bilingual_admin" | "visitor";
 type AppView =
@@ -282,12 +296,6 @@ function formatDateTime(value: string, language: Language): string {
   });
 }
 
-function inferLanguageByKbCode(code: string): string {
-  if (code.startsWith("cn-")) return "zh";
-  if (code.startsWith("en-")) return "en";
-  return "unknown";
-}
-
 function collectLocalAuditRecords(sessions: ChatSession[], untitledFallback: string): LocalAuditRecord[] {
   const records: LocalAuditRecord[] = [];
   for (const session of sessions) {
@@ -329,6 +337,13 @@ export default function App() {
   const [token, setToken] = useState<string>("");
   const [user, setUser] = useState<UserPublic | null>(null);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [kbDocumentsByKbId, setKbDocumentsByKbId] = useState<Record<string, KnowledgeBaseDocument[]>>({});
+  const [chunksByDocumentId, setChunksByDocumentId] = useState<Record<string, DocumentChunk[]>>({});
+  const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
+  const [selectedDocumentId, setSelectedDocumentId] = useState("");
+  const [traceRequestId, setTraceRequestId] = useState("");
+  const [requestTrace, setRequestTrace] = useState<RequestTrace | null>(null);
+  const [retrievalConfig, setRetrievalConfig] = useState<RetrievalConfig | null>(null);
   const [question, setQuestion] = useState("");
   const [mode, setMode] = useState<AskMode>("auto");
   const [selectedKbCodes, setSelectedKbCodes] = useState<string[]>([]);
@@ -341,6 +356,8 @@ export default function App() {
   const [sessionReady, setSessionReady] = useState(false);
   const [securityOpen, setSecurityOpen] = useState(false);
   const [activeView, setActiveView] = useState<AppView>("knowledge_chat");
+  const [viewerPending, setViewerPending] = useState(false);
+  const [tracePending, setTracePending] = useState(false);
 
   const t = UI_TEXT[language];
   const overreachLabels: Record<string, string> = OVERREACH_LABELS[language];
@@ -356,8 +373,23 @@ export default function App() {
   );
   const activeAuditMessage = useMemo(() => getLatestAuditMessage(activeChatSession), [activeChatSession]);
   const activeResponse = activeAuditMessage?.response ?? null;
-  const activeRequestDetail = activeAuditMessage?.requestDetail ?? null;
   const deniedThisRequest = activeResponse?.denied ?? false;
+  const selectedKnowledgeBase = useMemo(
+    () => knowledgeBases.find((kb) => kb.id === selectedKnowledgeBaseId) ?? null,
+    [knowledgeBases, selectedKnowledgeBaseId]
+  );
+  const selectedKnowledgeBaseDocuments = useMemo(
+    () => kbDocumentsByKbId[selectedKnowledgeBaseId] ?? [],
+    [kbDocumentsByKbId, selectedKnowledgeBaseId]
+  );
+  const selectedDocument = useMemo(
+    () => selectedKnowledgeBaseDocuments.find((item) => item.id === selectedDocumentId) ?? null,
+    [selectedDocumentId, selectedKnowledgeBaseDocuments]
+  );
+  const selectedDocumentChunks = useMemo(
+    () => chunksByDocumentId[selectedDocumentId] ?? [],
+    [chunksByDocumentId, selectedDocumentId]
+  );
   const latestHitKbCodes = useMemo(() => {
     if (!activeResponse) return [];
     return [...new Set(activeResponse.citations.map((item) => item.kb_code))];
@@ -416,6 +448,13 @@ export default function App() {
       setHistoryOwnerEmail("");
       setChatSessions([]);
       setActiveSessionId("");
+      setKbDocumentsByKbId({});
+      setChunksByDocumentId({});
+      setSelectedKnowledgeBaseId("");
+      setSelectedDocumentId("");
+      setTraceRequestId("");
+      setRequestTrace(null);
+      setRetrievalConfig(null);
       return;
     }
     const storedSessions = readChatSessions(user.email);
@@ -429,6 +468,54 @@ export default function App() {
     if (!user?.email || historyOwnerEmail !== user.email) return;
     saveChatSessions(user.email, chatSessions);
   }, [chatSessions, historyOwnerEmail, user?.email]);
+
+  useEffect(() => {
+    if (!token) {
+      setRetrievalConfig(null);
+      return;
+    }
+    let cancelled = false;
+    async function loadRetrievalConfig() {
+      try {
+        const config = await getRetrievalConfig(token);
+        if (!cancelled) setRetrievalConfig(config);
+      } catch {
+        if (!cancelled) setRetrievalConfig(null);
+      }
+    }
+    void loadRetrievalConfig();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    setTraceRequestId(activeResponse?.request_id ?? "");
+  }, [activeResponse?.request_id]);
+
+  useEffect(() => {
+    if (!token || !traceRequestId) {
+      setRequestTrace(null);
+      setTracePending(false);
+      return;
+    }
+    let cancelled = false;
+    setTracePending(true);
+    async function loadTrace() {
+      try {
+        const payload = await getRequestTrace(token, traceRequestId);
+        if (!cancelled) setRequestTrace(payload);
+      } catch {
+        if (!cancelled) setRequestTrace(null);
+      } finally {
+        if (!cancelled) setTracePending(false);
+      }
+    }
+    void loadTrace();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, traceRequestId]);
 
   const roleBadgeClass = useMemo(() => {
     const role = user?.role ?? "";
@@ -490,6 +577,13 @@ export default function App() {
     setToken("");
     setUser(null);
     setKnowledgeBases([]);
+    setKbDocumentsByKbId({});
+    setChunksByDocumentId({});
+    setSelectedKnowledgeBaseId("");
+    setSelectedDocumentId("");
+    setTraceRequestId("");
+    setRequestTrace(null);
+    setRetrievalConfig(null);
     setMessage("");
     setHistoryOwnerEmail("");
     setChatSessions([]);
@@ -704,6 +798,46 @@ export default function App() {
     setSelectedKbCodes((prev) =>
       prev.includes(code) ? prev.filter((item) => item !== code) : [...prev, code]
     );
+  }
+
+  async function onSelectKnowledgeBase(kbId: string) {
+    if (!token) return;
+    setSelectedKnowledgeBaseId(kbId);
+    setSelectedDocumentId("");
+    if (kbDocumentsByKbId[kbId]) return;
+    setViewerPending(true);
+    try {
+      const documents = await listKnowledgeBaseDocuments(token, kbId);
+      setKbDocumentsByKbId((prev) => ({ ...prev, [kbId]: documents }));
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? `${t.askFailed} ${error.message}` : t.askFailed
+      );
+    } finally {
+      setViewerPending(false);
+    }
+  }
+
+  async function onSelectDocument(documentId: string) {
+    if (!token) return;
+    setSelectedDocumentId(documentId);
+    if (chunksByDocumentId[documentId]) return;
+    setViewerPending(true);
+    try {
+      const chunks = await listDocumentChunks(token, documentId);
+      setChunksByDocumentId((prev) => ({ ...prev, [documentId]: chunks }));
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? `${t.askFailed} ${error.message}` : t.askFailed
+      );
+    } finally {
+      setViewerPending(false);
+    }
+  }
+
+  function openTraceView(requestId: string) {
+    setTraceRequestId(requestId);
+    setActiveView("developer_trace");
   }
 
   if (!sessionReady) {
@@ -1030,6 +1164,9 @@ export default function App() {
                                           <div className="font-mono text-[11px] text-slate-700">
                                             {item.kb_code} / {item.document_title} / {t.score}={item.score}
                                           </div>
+                                          <div className="mt-1 font-mono text-[11px] text-slate-500">
+                                            chunk_id: {item.chunk_id}
+                                          </div>
                                           <p className="mt-1 text-xs leading-5 text-slate-600">{item.excerpt}</p>
                                         </div>
                                       ))}
@@ -1038,17 +1175,26 @@ export default function App() {
                                 ) : null}
 
                                 {chatMessage.response ? (
-                                  <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-                                    <summary className="cursor-pointer font-medium text-slate-700">
-                                      {t.technicalDetails}
-                                    </summary>
-                                    <div className="mt-2 space-y-1 font-mono text-[11px]">
-                                      <div>request_id: {chatMessage.response.request_id}</div>
-                                      <div>cache_hit: {String(chatMessage.response.cache_hit)}</div>
-                                      <div>mode: {chatMessage.response.mode}</div>
-                                      <div>allowed_kb_ids(frontend): {knowledgeBases.map((kb) => kb.id).join(", ") || "-"}</div>
-                                    </div>
-                                  </details>
+                                  <div className="mt-3 space-y-2">
+                                    <button
+                                      className="btn-secondary px-2 py-1 text-xs"
+                                      type="button"
+                                      onClick={() => openTraceView(chatMessage.response!.request_id)}
+                                    >
+                                      {t.traceViewAction}
+                                    </button>
+                                    <details className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                                      <summary className="cursor-pointer font-medium text-slate-700">
+                                        {t.technicalDetails}
+                                      </summary>
+                                      <div className="mt-2 space-y-1 font-mono text-[11px]">
+                                        <div>request_id: {chatMessage.response.request_id}</div>
+                                        <div>cache_hit: {String(chatMessage.response.cache_hit)}</div>
+                                        <div>mode: {chatMessage.response.mode}</div>
+                                        <div>allowed_kb_ids(frontend): {knowledgeBases.map((kb) => kb.id).join(", ") || "-"}</div>
+                                      </div>
+                                    </details>
+                                  </div>
                                 ) : null}
                               </article>
                             </div>
@@ -1111,39 +1257,153 @@ export default function App() {
               <section className="glass-panel p-5">
                 <h2 className="panel-title">{t.knowledgeBasesPageTitle}</h2>
                 <p className="mb-4 text-sm text-slate-600">{t.knowledgeBasesPageHint}</p>
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-slate-600">
-                        <th className="px-2 py-2">kb_id</th>
-                        <th className="px-2 py-2">kb_code</th>
-                        <th className="px-2 py-2">{t.kbDisplayName}</th>
-                        <th className="px-2 py-2">{t.kbLanguage}</th>
-                        <th className="px-2 py-2">{t.kbDepartment}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {knowledgeBases.map((kb) => (
-                        <tr key={kb.id} className="border-b border-slate-100">
-                          <td className="px-2 py-2 font-mono text-xs">{kb.id}</td>
-                          <td className="px-2 py-2 font-mono text-xs">{kb.code}</td>
-                          <td className="px-2 py-2">{kb.name}</td>
-                          <td className="px-2 py-2">
-                            {inferLanguageByKbCode(kb.code) === "zh"
-                              ? t.languageChinese
-                              : inferLanguageByKbCode(kb.code) === "en"
-                                ? t.languageEnglish
-                                : t.noValue}
-                          </td>
-                          <td className="px-2 py-2 font-mono text-xs">{kb.department ?? t.noValue}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <p className="mb-4 text-xs text-slate-500">{t.allowedScopeHint}</p>
+
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,520px)_minmax(0,1fr)]">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-left text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-200 text-slate-600">
+                            <th className="px-2 py-2">kb_id</th>
+                            <th className="px-2 py-2">{t.knowledgeBaseCode}</th>
+                            <th className="px-2 py-2">{t.kbDisplayName}</th>
+                            <th className="px-2 py-2">{t.kbLanguage}</th>
+                            <th className="px-2 py-2">{t.kbDepartment}</th>
+                            <th className="px-2 py-2"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {knowledgeBases.map((kb) => {
+                            const selected = selectedKnowledgeBaseId === kb.id;
+                            return (
+                              <tr key={kb.id} className={`border-b border-slate-100 ${selected ? "bg-white" : ""}`}>
+                                <td className="px-2 py-2 font-mono text-xs">{kb.id}</td>
+                                <td className="px-2 py-2 font-mono text-xs">{kb.code}</td>
+                                <td className="px-2 py-2">{kb.display_name || kb.name}</td>
+                                <td className="px-2 py-2">
+                                  {kb.language === "zh"
+                                    ? t.languageChinese
+                                    : kb.language === "en"
+                                      ? t.languageEnglish
+                                      : kb.language}
+                                </td>
+                                <td className="px-2 py-2 font-mono text-xs">{kb.department ?? t.noValue}</td>
+                                <td className="px-2 py-2">
+                                  <button
+                                    className="btn-secondary px-2 py-1 text-xs"
+                                    type="button"
+                                    onClick={() => onSelectKnowledgeBase(kb.id)}
+                                  >
+                                    {t.selectKnowledgeBase}
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {knowledgeBases.length === 0 ? (
+                      <p className="mt-3 text-sm text-slate-500">{t.noKnowledgeBases}</p>
+                    ) : null}
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-slate-700">{t.documentsPanelTitle}</p>
+                        <div className="text-xs text-slate-500">
+                          {t.selectedKnowledgeBase}:{" "}
+                          <span className="font-mono text-slate-700">
+                            {selectedKnowledgeBase?.code ?? t.noValue}
+                          </span>
+                        </div>
+                      </div>
+                      {selectedKnowledgeBase ? (
+                        selectedKnowledgeBaseDocuments.length > 0 ? (
+                          <div className="overflow-x-auto">
+                            <table className="w-full border-collapse text-left text-xs">
+                              <thead>
+                                <tr className="border-b border-slate-200 text-slate-600">
+                                  <th className="px-2 py-2">{t.documentTitle}</th>
+                                  <th className="px-2 py-2">{t.documentSource}</th>
+                                  <th className="px-2 py-2">{t.chunkCount}</th>
+                                  <th className="px-2 py-2">{t.createdAt}</th>
+                                  <th className="px-2 py-2"></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {selectedKnowledgeBaseDocuments.map((doc) => (
+                                  <tr key={doc.id} className="border-b border-slate-100">
+                                    <td className="px-2 py-2">{doc.title}</td>
+                                    <td className="px-2 py-2 font-mono">{doc.source}</td>
+                                    <td className="px-2 py-2">{doc.chunk_count}</td>
+                                    <td className="px-2 py-2">{formatDateTime(doc.created_at, language)}</td>
+                                    <td className="px-2 py-2">
+                                      <button
+                                        className="btn-secondary px-2 py-1 text-xs"
+                                        type="button"
+                                        onClick={() => onSelectDocument(doc.id)}
+                                      >
+                                        {t.viewChunks}
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-slate-500">
+                            {viewerPending ? t.working : t.noDocumentsInKnowledgeBase}
+                          </p>
+                        )
+                      ) : (
+                        <p className="text-sm text-slate-500">{t.noKnowledgeBaseSelected}</p>
+                      )}
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-slate-700">{t.chunkViewerTitle}</p>
+                        <div className="text-xs text-slate-500">
+                          {t.selectedDocument}:{" "}
+                          <span className="font-mono text-slate-700">
+                            {selectedDocument?.id ?? t.noValue}
+                          </span>
+                        </div>
+                      </div>
+                      {selectedDocument ? (
+                        selectedDocumentChunks.length > 0 ? (
+                          <div className="space-y-2">
+                            {selectedDocumentChunks.map((chunk) => (
+                              <details key={chunk.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                <summary className="cursor-pointer">
+                                  <div className="grid gap-1 text-xs md:grid-cols-[72px_minmax(0,1fr)_170px_150px]">
+                                    <div className="font-mono text-slate-600">{t.chunkIndex}: {chunk.chunk_index}</div>
+                                    <div className="font-mono text-slate-700">{t.chunkId}: {chunk.id}</div>
+                                    <div className="text-slate-600">{t.embeddingStatus}: {chunk.has_embedding ? t.embeddingPresent : t.embeddingMissing}</div>
+                                    <div className="text-slate-600">{t.embeddingDimension}: {chunk.embedding_dimension}</div>
+                                  </div>
+                                  <p className="mt-1 text-sm text-slate-700">{chunk.content_preview}</p>
+                                </summary>
+                                <div className="mt-2 border-t border-slate-200 pt-2">
+                                  <p className="mb-1 text-xs text-slate-500">{t.fullChunkContent}</p>
+                                  <pre className="answer-block text-xs">{chunk.content}</pre>
+                                </div>
+                              </details>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-slate-500">{viewerPending ? t.working : t.noChunksInDocument}</p>
+                        )
+                      ) : (
+                        <p className="text-sm text-slate-500">{t.noDocumentSelected}</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                {knowledgeBases.length === 0 ? (
-                  <p className="mt-3 text-sm text-slate-500">{t.noKnowledgeBases}</p>
-                ) : null}
               </section>
             ) : null}
 
@@ -1232,11 +1492,55 @@ export default function App() {
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <div className="soft-card">
                     <div className="text-xs text-slate-500">{t.routerMode}</div>
-                    <div className="mt-1 font-mono text-sm text-slate-800">{t.routerModeValue}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.router_mode ?? t.routerModeValue}
+                    </div>
                   </div>
                   <div className="soft-card">
                     <div className="text-xs text-slate-500">{t.generatorMode}</div>
-                    <div className="mt-1 font-mono text-sm text-slate-800">{t.generatorModeValue}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.generator_mode ?? t.generatorModeValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.embeddingMode}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.embedding_provider ?? t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.embeddingDimension}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.embedding_dimension ?? t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.retrievalEngine}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.retrieval_engine ?? t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.defaultTopK}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.default_top_k ?? t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.pgvectorStatus}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig
+                        ? retrievalConfig.pgvector_sql_retrieval_enabled
+                          ? t.yes
+                          : t.no
+                        : t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.cacheBackend}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.cache_backend ?? t.noValue}
+                    </div>
                   </div>
                   <div className="soft-card">
                     <div className="text-xs text-slate-500">{t.cacheStatus}</div>
@@ -1264,42 +1568,76 @@ export default function App() {
             {activeView === "developer_trace" ? (
               <section className="space-y-4">
                 <div className="glass-panel p-5">
-                  <h2 className="panel-title">{t.developerTracePageTitle}</h2>
-                  {activeResponse ? (
-                    <div className="grid gap-3 md:grid-cols-2">
+                  <h2 className="panel-title">{t.latestRetrievalTrace}</h2>
+                  {requestTrace ? (
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                       <div className="soft-card">
-                        <div className="text-xs text-slate-500">request_id</div>
-                        <div className="mt-1 font-mono text-xs">{activeResponse.request_id}</div>
+                        <div className="text-xs text-slate-500">{t.traceRequestId}</div>
+                        <div className="mt-1 font-mono text-xs">{requestTrace.request_id}</div>
                       </div>
                       <div className="soft-card">
                         <div className="text-xs text-slate-500">cache_hit</div>
-                        <div className="mt-1 font-mono text-xs">{String(activeResponse.cache_hit)}</div>
+                        <div className="mt-1 font-mono text-xs">{String(requestTrace.cache_hit)}</div>
                       </div>
                       <div className="soft-card">
                         <div className="text-xs text-slate-500">{t.responseMode}</div>
-                        <div className="mt-1 font-mono text-xs">{activeResponse.mode}</div>
+                        <div className="mt-1 font-mono text-xs">{requestTrace.mode}</div>
                       </div>
                       <div className="soft-card">
                         <div className="text-xs text-slate-500">denied</div>
-                        <div className="mt-1 font-mono text-xs">{String(activeResponse.denied)}</div>
+                        <div className="mt-1 font-mono text-xs">{String(requestTrace.denied)}</div>
+                      </div>
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">{t.model}</div>
+                        <div className="mt-1 font-mono text-xs">{requestTrace.model || t.noValue}</div>
+                      </div>
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">{t.latency}</div>
+                        <div className="mt-1 font-mono text-xs">
+                          {requestTrace.latency_ms} {t.milliseconds}
+                        </div>
                       </div>
                     </div>
                   ) : (
-                    <p className="text-sm text-slate-500">{t.noAuditForSession}</p>
+                    <p className="text-sm text-slate-500">{tracePending ? t.working : t.traceUnavailable}</p>
                   )}
                 </div>
 
                 <div className="glass-panel p-5">
-                  <h2 className="panel-title">{t.requestMeta}</h2>
-                  {activeResponse ? (
+                  <h2 className="panel-title">{t.tracePathTitle}</h2>
+                  {requestTrace ? (
                     <div className="space-y-3">
                       <div className="soft-card">
-                        <div className="text-xs text-slate-500">retrieved_chunks</div>
+                        <div className="text-xs text-slate-500">{t.traceQuestion}</div>
+                        <div className="mt-1 text-sm text-slate-800">{requestTrace.question}</div>
+                      </div>
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">{t.traceIdentity}</div>
+                        <div className="mt-1 font-mono text-xs text-slate-800">
+                          {requestTrace.user_email ?? t.noValue} / {requestTrace.role ?? t.noValue} /{" "}
+                          {requestTrace.department ?? t.noValue}
+                        </div>
+                      </div>
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">{t.traceAllowedScope}</div>
+                        <div className="mt-1 font-mono text-xs text-slate-800">
+                          {requestTrace.allowed_kb_codes.join(", ") || t.noValue}
+                        </div>
+                      </div>
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">{t.traceMode}</div>
+                        <div className="mt-1 font-mono text-xs text-slate-800">{requestTrace.mode}</div>
+                      </div>
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">{t.traceChunks}</div>
                         <div className="mt-2 space-y-1 text-xs">
-                          {activeResponse.retrieved_chunks.length > 0 ? (
-                            activeResponse.retrieved_chunks.map((item) => (
-                              <div key={item.chunk_id} className="font-mono">
-                                {item.kb_code} / {item.chunk_id} / score={item.score}
+                          {requestTrace.retrieved_chunks.length > 0 ? (
+                            requestTrace.retrieved_chunks.map((item) => (
+                              <div key={item.chunk_id} className="rounded-lg border border-slate-200 bg-white px-2 py-1">
+                                <div className="font-mono text-[11px] text-slate-700">
+                                  {item.kb_code} / {item.document_title} / {item.chunk_id}
+                                </div>
+                                <div className="mt-1 text-slate-600">{item.content_preview}</div>
                               </div>
                             ))
                           ) : (
@@ -1307,27 +1645,40 @@ export default function App() {
                           )}
                         </div>
                       </div>
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">{t.traceDecision}</div>
+                        <div className="mt-1 text-sm text-slate-800">
+                          {requestTrace.denied
+                            ? requestTrace.refusal_reason || t.requestDeniedPrefix
+                            : requestTrace.answer}
+                        </div>
+                      </div>
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">{t.traceAuditRef}</div>
+                        <div className="mt-1 space-y-1 font-mono text-xs text-slate-800">
+                          <div>request_id: {requestTrace.request_id}</div>
+                          <div>cache_hit: {String(requestTrace.cache_hit)}</div>
+                          <div>hit_chunk_ids: {requestTrace.hit_chunk_ids.join(", ") || t.noValue}</div>
+                        </div>
+                      </div>
+                      {requestTrace.trace_limits.length > 0 ? (
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                          {requestTrace.trace_limits.map((line, index) => (
+                            <div key={`${requestTrace.request_id}_limit_${index}`}>{line}</div>
+                          ))}
+                        </div>
+                      ) : null}
                       <details className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                         <summary className="cursor-pointer text-xs font-medium text-slate-700">
-                          {t.rawAskResponse}
+                          {t.rawTraceJson}
                         </summary>
                         <pre className="answer-block mt-3 max-h-[300px]">
-                          {JSON.stringify(activeResponse, null, 2)}
+                          {JSON.stringify(requestTrace, null, 2)}
                         </pre>
                       </details>
-                      {activeRequestDetail ? (
-                        <details className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                          <summary className="cursor-pointer text-xs font-medium text-slate-700">
-                            {t.rawAuditJson}
-                          </summary>
-                          <pre className="answer-block mt-3 max-h-[300px]">
-                            {JSON.stringify(activeRequestDetail, null, 2)}
-                          </pre>
-                        </details>
-                      ) : null}
                     </div>
                   ) : (
-                    <p className="text-sm text-slate-500">{t.noAuditForSession}</p>
+                    <p className="text-sm text-slate-500">{tracePending ? t.working : t.traceUnavailable}</p>
                   )}
                 </div>
 

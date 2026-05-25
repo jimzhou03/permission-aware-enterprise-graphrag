@@ -21,11 +21,48 @@ class UserPublic(ORMModel):
 class KnowledgeBasePublic(ORMModel):
     id: UUID
     code: str
+    display_name: str
     name: str
+    language: str
     description: str
     department: str | None
     visibility: str
     version: int
+
+
+class KnowledgeBaseDocumentPublic(ORMModel):
+    id: UUID
+    knowledge_base_id: UUID
+    knowledge_base_code: str
+    title: str
+    source: str
+    created_at: datetime
+    chunk_count: int
+
+
+class DocumentChunkPublic(ORMModel):
+    id: UUID
+    document_id: UUID
+    knowledge_base_id: UUID
+    knowledge_base_code: str
+    chunk_index: int
+    content_preview: str
+    content: str
+    has_embedding: bool
+    embedding_dimension: int
+
+
+class RetrievalConfigPublic(BaseModel):
+    embedding_provider: str
+    embedding_dimension: int
+    retrieval_engine: str
+    default_top_k: int
+    generator_mode: str
+    router_mode: str
+    pgvector_sql_retrieval_enabled: bool
+    pgvector_field_available: bool
+    cache_backend: str
+    model_mode: str
 
 
 class AuditLogPublic(ORMModel):

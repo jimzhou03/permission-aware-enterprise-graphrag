@@ -3,8 +3,12 @@ import type {
   AskMode,
   AskResponse,
   AuditLog,
+  DocumentChunk,
   DemoCase,
+  KnowledgeBaseDocument,
   KnowledgeBase,
+  RequestTrace,
+  RetrievalConfig,
   LoginResponse
 } from "./types";
 
@@ -48,6 +52,17 @@ export async function fetchAuthMe(token: string): Promise<AuthMeResponse> {
   return request<AuthMeResponse>("/auth/me", { method: "GET" }, token);
 }
 
+export async function listKnowledgeBaseDocuments(
+  token: string,
+  kbId: string
+): Promise<KnowledgeBaseDocument[]> {
+  return request<KnowledgeBaseDocument[]>(`/knowledge-bases/${kbId}/documents`, { method: "GET" }, token);
+}
+
+export async function listDocumentChunks(token: string, documentId: string): Promise<DocumentChunk[]> {
+  return request<DocumentChunk[]>(`/documents/${documentId}/chunks`, { method: "GET" }, token);
+}
+
 export async function askQuestion(
   token: string,
   question: string,
@@ -68,6 +83,10 @@ export async function getRequestDetail(token: string, requestId: string): Promis
   return request<AuditLog>(`/qa/${requestId}`, { method: "GET" }, token);
 }
 
+export async function getRequestTrace(token: string, requestId: string): Promise<RequestTrace> {
+  return request<RequestTrace>(`/qa/${requestId}/trace`, { method: "GET" }, token);
+}
+
 export async function listDemoCases(): Promise<DemoCase[]> {
   const payload = await request<{ cases: DemoCase[] }>("/demo/overreach-cases", {
     method: "GET"
@@ -77,4 +96,8 @@ export async function listDemoCases(): Promise<DemoCase[]> {
 
 export async function listAuditLogs(token: string): Promise<AuditLog[]> {
   return request<AuditLog[]>("/admin/audit-logs", { method: "GET" }, token);
+}
+
+export async function getRetrievalConfig(token: string): Promise<RetrievalConfig> {
+  return request<RetrievalConfig>("/system/retrieval-config", { method: "GET" }, token);
 }

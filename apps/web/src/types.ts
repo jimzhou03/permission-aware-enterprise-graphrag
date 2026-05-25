@@ -26,11 +26,35 @@ export interface AuthMeResponse {
 export interface KnowledgeBase {
   id: string;
   code: string;
+  display_name: string;
   name: string;
+  language: string;
   description: string;
   department: string | null;
   visibility: string;
   version: number;
+}
+
+export interface KnowledgeBaseDocument {
+  id: string;
+  knowledge_base_id: string;
+  knowledge_base_code: string;
+  title: string;
+  source: string;
+  created_at: string;
+  chunk_count: number;
+}
+
+export interface DocumentChunk {
+  id: string;
+  document_id: string;
+  knowledge_base_id: string;
+  knowledge_base_code: string;
+  chunk_index: number;
+  content_preview: string;
+  content: string;
+  has_embedding: boolean;
+  embedding_dimension: number;
 }
 
 export interface DemoCase {
@@ -91,4 +115,54 @@ export interface AuditLog {
   model: string;
   cache_hit: boolean;
   latency_ms: number;
+}
+
+export interface TraceRetrievedChunk {
+  chunk_id: string;
+  kb_id: string;
+  kb_code: string;
+  kb_name: string;
+  document_id: string;
+  document_title: string;
+  chunk_index: number;
+  content_preview: string;
+  content: string;
+  has_embedding: boolean;
+  embedding_dimension: number;
+}
+
+export interface RequestTrace {
+  request_id: string;
+  user_id: string | null;
+  user_email: string | null;
+  role: string | null;
+  department: string | null;
+  question: string;
+  answer: string;
+  mode: string;
+  denied: boolean;
+  refusal_reason: string;
+  allowed_kb_ids: string[];
+  allowed_kb_codes: string[];
+  hit_kb_ids: string[];
+  hit_document_ids: string[];
+  hit_chunk_ids: string[];
+  retrieved_chunks: TraceRetrievedChunk[];
+  cache_hit: boolean;
+  model: string;
+  latency_ms: number;
+  trace_limits: string[];
+}
+
+export interface RetrievalConfig {
+  embedding_provider: string;
+  embedding_dimension: number;
+  retrieval_engine: string;
+  default_top_k: number;
+  generator_mode: string;
+  router_mode: string;
+  pgvector_sql_retrieval_enabled: boolean;
+  pgvector_field_available: boolean;
+  cache_backend: string;
+  model_mode: string;
 }

@@ -7,6 +7,8 @@ A permission-first internal knowledge assistant that enforces backend RBAC and s
 - JWT login with role and department claims.
 - Deterministic backend permission enforcement (`RBAC + KnowledgeBase ACL`).
 - Permission-aware RAG retrieval with knowledge base scope filtering.
+- Knowledge Base Viewer + Document Viewer + Chunk Viewer (read-only, permission-scoped).
+- Retrieval Trace API and Developer Trace page for `request_id`, scope, chunk hits, deny/cache path.
 - GraphRAG scaffolding with Neo4j entity/path projection.
 - Permission-aware cache key design with `cache_hit` audit visibility.
 - Audit logging for every QA request.
@@ -50,6 +52,19 @@ Permission boundary is backend-owned:
 5. Optionally project graph evidence paths (GraphRAG mode).
 6. Generate answer (`LLM_MODE=mock` by default).
 7. Persist audit record and cache payload.
+
+## Observability Endpoints (v0.1.8)
+
+- `GET /api/v1/knowledge-bases`:
+  Returns knowledge bases visible to the current user, including `display_name`, `language`, and scoped metadata.
+- `GET /api/v1/knowledge-bases/{kb_id}/documents`:
+  Returns documents in a knowledge base only when the caller has access to that KB.
+- `GET /api/v1/documents/{document_id}/chunks`:
+  Returns chunk list with preview/full content and embedding status only when the caller can access the document's KB.
+- `GET /api/v1/qa/{request_id}/trace`:
+  Returns structured retrieval trace. Chunk content is filtered again by the current viewer's permission scope.
+- `GET /api/v1/system/retrieval-config`:
+  Returns safe runtime config for retrieval mode and embedding mode.
 
 ## Demo Accounts
 
@@ -116,6 +131,7 @@ npm run build
 
 - `LLM_MODE=mock` by default (deterministic mock generation path).
 - Embedding is deterministic mock embedding in MVP (`SHA256`-based vector projection).
+- Retrieval engine is permission-scoped Python cosine similarity (MVP), not production SQL vector execution.
 - `pgvector` field exists in schema, but production-grade SQL vector similarity retrieval is future work.
 - Ollama router is implemented as optional code path but not connected by default.
 - External LLM API mode exists but is disabled by default.

@@ -1,13 +1,40 @@
 # Project Status
 
-最后更新：2026-05-24
+最后更新：2026-05-25
 
 ## 当前状态
 
 - Docker 运行正常：前端 `http://localhost:5173`、后端 `http://localhost:8000/docs`、健康检查 `GET /healthz` 返回 `{"status":"ok"}`。
 - 模型模式保持 `LLM_MODE=mock`。
 - 未接入 Ollama，未接入外部大模型 API。
-- v0.1.6 已实现双语部门知识隔离（`cn_staff / en_staff / bilingual_admin / visitor`）。
+- v0.1.8 已实现知识库可观测视图（Knowledge Base / Document / Chunk / Retrieval Trace）。
+
+## 本阶段（v0.1.8 Knowledge Base Viewer + Chunk Viewer + Retrieval Trace）完成项
+
+1. 后端只读可观测接口（权限复核）
+   - `GET /api/v1/knowledge-bases`：返回当前用户可见知识库，补充 `display_name`、`language` 字段。
+   - `GET /api/v1/knowledge-bases/{kb_id}/documents`：仅在调用者有该 KB 访问权限时返回文档列表。
+   - `GET /api/v1/documents/{document_id}/chunks`：仅在调用者有文档所属 KB 权限时返回 chunk 详情。
+   - `GET /api/v1/qa/{request_id}/trace`：返回结构化 RAG trace，并对 chunk 内容按当前查看者权限再次过滤。
+   - `GET /api/v1/system/retrieval-config`：返回安全检索配置（mock embedding、Python cosine similarity MVP、router/generator mode 等）。
+
+2. 前端产品化可观测视图增强
+   - Knowledge Bases 页面升级为：知识库列表 + 文档浏览器 + chunk 浏览器。
+   - Chunk Viewer 展示：`chunk_index`、`chunk_id`、内容预览、embedding 状态、embedding 维度，完整内容折叠展开。
+   - Knowledge Chat 在引用区展示 `chunk_id`，并新增 `View trace` 快捷入口。
+   - Developer Trace 页面改为结构化“最新检索链路”展示，并保留折叠的 `Raw trace JSON`。
+   - System Status 页面增加检索配置卡片（embedding/retrieval/top_k/pgvector/cache backend）与当前会话状态。
+
+3. 安全边界保持不变
+   - 未改动 RBAC 主逻辑，未放宽权限检查。
+   - 仍保持 `allowed_kb_ids` 先过滤再检索 chunk。
+   - 仍保持 `LLM_MODE=mock`，未接入 Ollama，未接入外部 LLM API。
+   - 未引入 MCP，未实现真实文档上传，未启用生产级 pgvector SQL 检索路径。
+
+4. 测试与验证
+   - 后端：`docker compose exec -T api python -m pytest -q` 通过（`21 passed`）。
+   - 前端：`npm run build` 通过。
+   - 权限矩阵：`python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000` 通过（`8/8 PASS`）。
 
 ## 本阶段（v0.1.6 双语部门知识隔离）完成项
 

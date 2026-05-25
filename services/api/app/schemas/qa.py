@@ -67,3 +67,40 @@ class QAAuditRecordResponse(BaseModel):
     model: str
     cache_hit: bool
     latency_ms: int
+
+
+class TraceRetrievedChunk(BaseModel):
+    chunk_id: UUID
+    kb_id: UUID
+    kb_code: str
+    kb_name: str
+    document_id: UUID
+    document_title: str
+    chunk_index: int
+    content_preview: str
+    content: str
+    has_embedding: bool
+    embedding_dimension: int
+
+
+class QATraceResponse(BaseModel):
+    request_id: str
+    user_id: UUID | None
+    user_email: str | None = None
+    role: str | None = None
+    department: str | None = None
+    question: str
+    answer: str
+    mode: str
+    denied: bool
+    refusal_reason: str
+    allowed_kb_ids: list[str] = Field(default_factory=list)
+    allowed_kb_codes: list[str] = Field(default_factory=list)
+    hit_kb_ids: list[str] = Field(default_factory=list)
+    hit_document_ids: list[str] = Field(default_factory=list)
+    hit_chunk_ids: list[str] = Field(default_factory=list)
+    retrieved_chunks: list[TraceRetrievedChunk] = Field(default_factory=list)
+    cache_hit: bool
+    model: str
+    latency_ms: int
+    trace_limits: list[str] = Field(default_factory=list)
