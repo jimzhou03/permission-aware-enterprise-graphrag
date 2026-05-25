@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,9 +49,18 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
 
     local_router_mode: Literal["rules", "ollama"] = "rules"
-    local_router_base_url: str = "http://localhost:11434/v1"
-    local_router_api_key: str = "ollama"
-    local_router_model: str = "qwen2.5:0.5b-instruct"
+    ollama_base_url: str = Field(
+        default="http://host.docker.internal:11434",
+        validation_alias=AliasChoices("OLLAMA_BASE_URL", "LOCAL_ROUTER_BASE_URL"),
+    )
+    ollama_router_model: str = Field(
+        default="qwen2.5:0.5b-instruct",
+        validation_alias=AliasChoices("OLLAMA_ROUTER_MODEL", "LOCAL_ROUTER_MODEL"),
+    )
+    ollama_router_timeout_seconds: float = Field(
+        default=8.0,
+        validation_alias=AliasChoices("OLLAMA_ROUTER_TIMEOUT_SECONDS", "LOCAL_ROUTER_TIMEOUT_SECONDS"),
+    )
 
     seed_on_startup: bool = True
     sync_neo4j_on_startup: bool = False

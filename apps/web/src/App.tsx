@@ -1191,6 +1191,13 @@ export default function App() {
                                         <div>request_id: {chatMessage.response.request_id}</div>
                                         <div>cache_hit: {String(chatMessage.response.cache_hit)}</div>
                                         <div>mode: {chatMessage.response.mode}</div>
+                                        <div>
+                                          router: {chatMessage.response.router_mode}/{chatMessage.response.router_model}
+                                        </div>
+                                        <div>router_fallback_used: {String(chatMessage.response.router_fallback_used)}</div>
+                                        {chatMessage.response.router_error ? (
+                                          <div>router_error: {chatMessage.response.router_error}</div>
+                                        ) : null}
                                         <div>allowed_kb_ids(frontend): {knowledgeBases.map((kb) => kb.id).join(", ") || "-"}</div>
                                       </div>
                                     </details>
@@ -1497,6 +1504,30 @@ export default function App() {
                     </div>
                   </div>
                   <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.routerModel}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.router_model ?? t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.routerAvailability}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.router_availability ?? t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.routerFallback}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig ? formatBoolean(retrievalConfig.router_fallback_last) : t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.routerError}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.router_error_last ?? t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
                     <div className="text-xs text-slate-500">{t.generatorMode}</div>
                     <div className="mt-1 font-mono text-sm text-slate-800">
                       {retrievalConfig?.generator_mode ?? t.generatorModeValue}
@@ -1541,6 +1572,10 @@ export default function App() {
                     <div className="mt-1 font-mono text-sm text-slate-800">
                       {retrievalConfig?.cache_backend ?? t.noValue}
                     </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.permissionEnforcement}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">{t.permissionEnforcementValue}</div>
                   </div>
                   <div className="soft-card">
                     <div className="text-xs text-slate-500">{t.cacheStatus}</div>
@@ -1588,6 +1623,14 @@ export default function App() {
                         <div className="mt-1 font-mono text-xs">{requestTrace.retrieval_engine}</div>
                       </div>
                       <div className="soft-card">
+                        <div className="text-xs text-slate-500">{t.routerMode}</div>
+                        <div className="mt-1 font-mono text-xs">{requestTrace.router_mode}</div>
+                      </div>
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">{t.routerModel}</div>
+                        <div className="mt-1 font-mono text-xs">{requestTrace.router_model}</div>
+                      </div>
+                      <div className="soft-card">
                         <div className="text-xs text-slate-500">denied</div>
                         <div className="mt-1 font-mono text-xs">{String(requestTrace.denied)}</div>
                       </div>
@@ -1620,6 +1663,19 @@ export default function App() {
                         <div className="mt-1 font-mono text-xs text-slate-800">
                           {requestTrace.user_email ?? t.noValue} / {requestTrace.role ?? t.noValue} /{" "}
                           {requestTrace.department ?? t.noValue}
+                        </div>
+                      </div>
+                      <div className="soft-card">
+                        <div className="text-xs text-slate-500">{t.traceRouterStep}</div>
+                        <div className="mt-1 space-y-1 font-mono text-xs text-slate-800">
+                          <div>language: {requestTrace.router_decision?.language ?? t.noValue}</div>
+                          <div>intent: {requestTrace.router_decision?.intent ?? t.noValue}</div>
+                          <div>target_department: {requestTrace.router_decision?.target_department ?? t.noValue}</div>
+                          <div>need_rag: {String(requestTrace.router_decision?.need_rag ?? false)}</div>
+                          <div>confidence: {requestTrace.router_decision?.confidence ?? t.noValue}</div>
+                          <div>fallback: {String(requestTrace.router_fallback_used)}</div>
+                          <div>availability: {requestTrace.router_availability}</div>
+                          {requestTrace.router_error ? <div>router_error: {requestTrace.router_error}</div> : null}
                         </div>
                       </div>
                       <div className="soft-card">

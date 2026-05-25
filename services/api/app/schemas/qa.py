@@ -6,6 +6,16 @@ from pydantic import BaseModel, Field
 
 AskMode = Literal["auto", "rag", "graphrag"]
 ResponseMode = Literal["direct", "rag", "graphrag", "general"]
+RouterMode = Literal["rules", "ollama"]
+RouterLanguage = Literal["zh", "en", "unknown"]
+RouterIntent = Literal[
+    "greeting",
+    "policy_question",
+    "knowledge_lookup",
+    "security_test",
+    "unsupported",
+]
+RouterTargetDepartment = Literal["cn", "en", "hr", "finance", "tech", "public", "unknown"]
 
 
 class AskRequest(BaseModel):
@@ -21,6 +31,12 @@ class RouteDecision(BaseModel):
     need_rag: bool = False
     confidence: float
     reason: str
+    language: RouterLanguage = "unknown"
+    intent: RouterIntent = "knowledge_lookup"
+    router_mode: RouterMode = "rules"
+    router_model: str = "rules"
+    router_fallback_used: bool = False
+    router_error: str | None = None
 
 
 class Citation(BaseModel):
@@ -48,6 +64,10 @@ class AskResponse(BaseModel):
     cache_hit: bool
     mode: ResponseMode
     route: RouteDecision
+    router_mode: RouterMode = "rules"
+    router_model: str = "rules"
+    router_fallback_used: bool = False
+    router_error: str | None = None
     retrieved_chunks: list[Citation] = Field(default_factory=list)
     citations: list[Citation] = Field(default_factory=list)
     graph_paths: list[GraphPath] = Field(default_factory=list)
@@ -101,6 +121,12 @@ class QATraceResponse(BaseModel):
     hit_chunk_ids: list[str] = Field(default_factory=list)
     retrieved_chunks: list[TraceRetrievedChunk] = Field(default_factory=list)
     retrieval_engine: str
+    router_mode: RouterMode = "rules"
+    router_model: str = "rules"
+    router_availability: str = "not_checked"
+    router_fallback_used: bool = False
+    router_error: str | None = None
+    router_decision: RouteDecision | None = None
     cache_hit: bool
     model: str
     latency_ms: int

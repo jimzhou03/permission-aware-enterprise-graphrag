@@ -8,6 +8,7 @@ A permission-first internal knowledge assistant that enforces backend RBAC and s
 - Deterministic backend permission enforcement (`RBAC + KnowledgeBase ACL`).
 - Permission-aware RAG retrieval with knowledge base scope filtering.
 - Real pgvector SQL retrieval path for PostgreSQL deployments (with safe fallback).
+- Ollama local router (qwen2.5:0.5b-instruct) for lightweight classification with safe fallback to rules.
 - Knowledge Base Viewer + Document Viewer + Chunk Viewer (read-only, permission-scoped).
 - Retrieval Trace API and Developer Trace page for `request_id`, scope, chunk hits, deny/cache path.
 - GraphRAG scaffolding with Neo4j entity/path projection.
@@ -23,6 +24,7 @@ flowchart LR
     API --> Auth["JWT / Auth Service"]
     API --> Perm["Permission Service"]
     Perm --> PG["PostgreSQL + pgvector fields"]
+    API --> Router["Local Router (rules / ollama)"]
     API --> Cache["Redis Cache Service"]
     API --> Graph["Neo4j Graph Service"]
     API --> Audit["QA Audit Logs"]
@@ -47,12 +49,13 @@ Permission boundary is backend-owned:
 ## RAG Retrieval Flow
 
 1. Receive question and mode (`auto/rag/graphrag`).
-2. Resolve backend permission scope.
-3. Validate optional frontend KB selection against scope.
-4. Retrieve chunks only from authorized KBs.
-5. Optionally project graph evidence paths (GraphRAG mode).
-6. Generate answer (`LLM_MODE=mock` by default).
-7. Persist audit record and cache payload.
+2. Route/classify question (`LOCAL_ROUTER_MODE=rules|ollama`).
+3. Resolve backend permission scope.
+4. Validate optional frontend KB selection against scope.
+5. Retrieve chunks only from authorized KBs.
+6. Optionally project graph evidence paths (GraphRAG mode).
+7. Generate final answer (`LLM_MODE=mock` by default).
+8. Persist audit record and cache payload.
 
 Retrieval engine behavior:
 
@@ -61,7 +64,14 @@ Retrieval engine behavior:
 
 In both modes, retrieval is scoped in backend by `allowed_kb_ids` before any chunk is returned.
 
-## Observability Endpoints (v0.1.8)
+Router behavior:
+
+- `LOCAL_ROUTER_MODE=rules` (default): deterministic rules router.
+- `LOCAL_ROUTER_MODE=ollama`: calls local Ollama model for classification only.
+- If Ollama is unavailable/timeout/invalid-output, router safely falls back to rules.
+- Router never decides permission and never expands `allowed_kb_ids`.
+
+## Observability Endpoints (v0.2.1)
 
 - `GET /api/v1/knowledge-bases`:
   Returns knowledge bases visible to the current user, including `display_name`, `language`, and scoped metadata.
@@ -70,9 +80,9 @@ In both modes, retrieval is scoped in backend by `allowed_kb_ids` before any chu
 - `GET /api/v1/documents/{document_id}/chunks`:
   Returns chunk list with preview/full content and embedding status only when the caller can access the document's KB.
 - `GET /api/v1/qa/{request_id}/trace`:
-  Returns structured retrieval trace. Chunk content is filtered again by the current viewer's permission scope.
+  Returns structured retrieval trace. Includes router metadata (`router_mode`, `router_model`, fallback/error, router decision). Chunk content is filtered again by the current viewer's permission scope.
 - `GET /api/v1/system/retrieval-config`:
-  Returns safe runtime config for retrieval mode and embedding mode.
+  Returns safe runtime config for retrieval mode, router runtime, and embedding mode.
 
 ## Demo Accounts
 
@@ -119,6 +129,25 @@ npm install
 npm run dev
 ```
 
+### Enable Ollama Router (optional)
+
+Run Ollama locally:
+
+```powershell
+ollama run qwen2.5:0.5b-instruct
+```
+
+Set environment:
+
+```powershell
+LOCAL_ROUTER_MODE=ollama
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+OLLAMA_ROUTER_MODEL=qwen2.5:0.5b-instruct
+OLLAMA_ROUTER_TIMEOUT_SECONDS=8
+```
+
+For non-Docker local API runtime, `OLLAMA_BASE_URL=http://127.0.0.1:11434` also works.
+
 ## Test Commands
 
 ```powershell
@@ -140,14 +169,13 @@ npm run build
 - `LLM_MODE=mock` by default (deterministic mock generation path).
 - Embedding is deterministic mock embedding in MVP (`SHA256`-based vector projection).
 - Document upload/indexing management API is not implemented yet.
-- Ollama router is implemented as optional code path but not connected by default.
+- Ollama is used only as local router/classifier in v0.2.1; it is not the final answer generator.
 - External LLM API mode exists but is disabled by default.
 
 ## Roadmap
 
 - Admin knowledge base viewer polish.
 - Real document upload and indexing pipeline.
-- Ollama local router integration.
 - Function calling trace and tool-call observability.
 - MCP adapter layer.
 - Production deployment hardening (security, ops, reliability).

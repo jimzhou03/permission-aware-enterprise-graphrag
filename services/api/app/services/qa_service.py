@@ -15,8 +15,9 @@ from app.services.audit_service import create_qa_audit_log
 from app.services.cache_service import build_cache_key_parts, cache_service
 from app.services.graph_service import build_graph_paths_for_citations
 from app.services.llm_service import generate_answer
-from app.services.local_router_service import route_question
+from app.services.local_router_service import get_router_status, route_question
 from app.services.permission_service import list_allowed_knowledge_bases
+from app.services.qa_runtime_store import RouterTraceSnapshot, qa_runtime_store
 from app.services.rag_service import get_retrieval_runtime, retrieve_permission_scoped_chunks
 
 
@@ -40,7 +41,7 @@ def _as_unique_strings(items: Iterable[str]) -> list[str]:
     return values
 
 
-def _deny_response(request_id: str, reason: str, route_mode: str, route) -> AskResponse:
+def _deny_response(request_id: str, reason: str, route_mode: str, route: RouteDecision) -> AskResponse:
     return AskResponse(
         request_id=request_id,
         answer="Access denied: you are not allowed to access the requested knowledge scope.",
@@ -49,6 +50,10 @@ def _deny_response(request_id: str, reason: str, route_mode: str, route) -> AskR
         cache_hit=False,
         mode=route_mode,  # type: ignore[arg-type]
         route=route,
+        router_mode=route.router_mode,
+        router_model=route.router_model,
+        router_fallback_used=route.router_fallback_used,
+        router_error=route.router_error,
         retrieved_chunks=[],
         citations=[],
         graph_paths=[],
@@ -56,9 +61,10 @@ def _deny_response(request_id: str, reason: str, route_mode: str, route) -> AskR
 
 
 def _model_profile(retrieval_token: str) -> str:
+    router_model = settings.ollama_router_model if settings.local_router_mode == "ollama" else "rules"
     return (
         f"llm={settings.llm_mode}:{settings.llm_model}|"
-        f"router={settings.local_router_mode}:{settings.local_router_model}|"
+        f"router={settings.local_router_mode}:{router_model}|"
         f"retrieval={retrieval_token}"
     )
 
@@ -71,6 +77,10 @@ def _cache_payload_from_response(response: AskResponse, model: str) -> dict:
         "mode": response.mode,
         "model": model,
         "route": response.route.model_dump(),
+        "router_mode": response.router_mode,
+        "router_model": response.router_model,
+        "router_fallback_used": response.router_fallback_used,
+        "router_error": response.router_error,
         "retrieved_chunks": [item.model_dump(mode="json") for item in response.retrieved_chunks],
         "citations": [item.model_dump(mode="json") for item in response.citations],
         "graph_paths": [item.model_dump(mode="json") for item in response.graph_paths],
@@ -92,6 +102,10 @@ def _response_from_cache_payload(request_id: str, payload: dict) -> AskResponse:
         cache_hit=True,
         mode=payload.get("mode", route.mode),
         route=route,
+        router_mode=str(payload.get("router_mode", route.router_mode)),
+        router_model=str(payload.get("router_model", route.router_model)),
+        router_fallback_used=bool(payload.get("router_fallback_used", route.router_fallback_used)),
+        router_error=payload.get("router_error", route.router_error),
         retrieved_chunks=retrieved_chunks,
         citations=citations,
         graph_paths=graph_paths,
@@ -122,10 +136,25 @@ def _render_general_greeting(question: str) -> str:
     )
 
 
+def _record_router_trace(request_id: str, route: RouteDecision, router_availability: str) -> None:
+    qa_runtime_store.set_router_trace(
+        request_id=request_id,
+        snapshot=RouterTraceSnapshot(
+            route=route,
+            router_mode=route.router_mode,
+            router_model=route.router_model,
+            router_availability=router_availability,
+            router_fallback_used=route.router_fallback_used,
+            router_error=route.router_error,
+        ),
+    )
+
+
 def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
     start = time.perf_counter()
     request_id = f"qa_{uuid.uuid4().hex[:16]}"
     route = route_question(payload.question, payload.mode)
+    router_availability = get_router_status().availability
 
     allowed_kbs = list_allowed_knowledge_bases(db, user)
     allowed_kb_ids = [kb.id for kb in allowed_kbs]
@@ -141,6 +170,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
                 route_mode=route.mode,
                 route=route,
             )
+            _record_router_trace(request_id=request_id, route=route, router_availability=router_availability)
             latency_ms = int((time.perf_counter() - start) * 1000)
             create_qa_audit_log(
                 db=db,
@@ -171,6 +201,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
                 route_mode=route.mode,
                 route=route,
             )
+            _record_router_trace(request_id=request_id, route=route, router_availability=router_availability)
             latency_ms = int((time.perf_counter() - start) * 1000)
             create_qa_audit_log(
                 db=db,
@@ -207,6 +238,11 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
     cached_payload = cache_service.get_payload(cache_key_parts)
     if cached_payload is not None:
         cached_response = _response_from_cache_payload(request_id, cached_payload)
+        _record_router_trace(
+            request_id=request_id,
+            route=cached_response.route,
+            router_availability=router_availability,
+        )
         latency_ms = int((time.perf_counter() - start) * 1000)
         create_qa_audit_log(
             db=db,
@@ -236,10 +272,15 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
             cache_hit=False,
             mode="general",
             route=route,
+            router_mode=route.router_mode,
+            router_model=route.router_model,
+            router_fallback_used=route.router_fallback_used,
+            router_error=route.router_error,
             retrieved_chunks=[],
             citations=[],
             graph_paths=[],
         )
+        _record_router_trace(request_id=request_id, route=route, router_availability=router_availability)
         latency_ms = int((time.perf_counter() - start) * 1000)
         create_qa_audit_log(
             db=db,
@@ -309,10 +350,15 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         cache_hit=False,
         mode=route.mode,  # type: ignore[arg-type]
         route=route,
+        router_mode=route.router_mode,
+        router_model=route.router_model,
+        router_fallback_used=route.router_fallback_used,
+        router_error=route.router_error,
         retrieved_chunks=citations,
         citations=citations,
         graph_paths=graph_paths,
     )
+    _record_router_trace(request_id=request_id, route=route, router_availability=router_availability)
     latency_ms = int((time.perf_counter() - start) * 1000)
     create_qa_audit_log(
         db=db,

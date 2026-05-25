@@ -129,6 +129,12 @@ def test_trace_endpoint_filters_chunk_content_for_unauthorized_audit_reader(clie
     assert trace_payload["retrieved_chunks"] == []
     assert any("omitted" in item for item in trace_payload["trace_limits"])
     assert set(trace_payload["allowed_kb_codes"]) == {"cn-public", "cn-internal"}
+    assert trace_payload["router_mode"] in {"rules", "ollama"}
+    assert trace_payload["router_model"]
+    assert trace_payload["router_availability"] in {"available", "unavailable", "not_checked"}
+    assert isinstance(trace_payload["router_fallback_used"], bool)
+    assert trace_payload["router_decision"] is not None
+    assert "need_rag" in trace_payload["router_decision"]
 
 
 def test_retrieval_config_endpoint_reports_mock_mvp_runtime(client):
@@ -146,3 +152,7 @@ def test_retrieval_config_endpoint_reports_mock_mvp_runtime(client):
     assert payload["sql_vector_search_enabled"] is False
     assert payload["pgvector_sql_retrieval_enabled"] is False
     assert payload["generator_mode"] == "mock"
+    assert payload["router_mode"] == "rules"
+    assert payload["router_model"] == "rules"
+    assert payload["router_availability"] == "not_checked"
+    assert payload["router_fallback_last"] is False

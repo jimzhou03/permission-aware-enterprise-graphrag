@@ -3,11 +3,15 @@ from __future__ import annotations
 import json
 import re
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from threading import Lock
+from typing import Literal
 
 import httpx
+from pydantic import BaseModel, Field, ValidationError
 
 from app.core.config import get_settings
-from app.schemas.qa import AskMode, RouteDecision
+from app.schemas.qa import AskMode, RouteDecision, RouterIntent, RouterLanguage, RouterMode, RouterTargetDepartment
 
 
 settings = get_settings()
@@ -18,18 +22,84 @@ DEPARTMENT_KEYWORDS: dict[str, tuple[str, ...]] = {
     "tech": ("tech", "deploy", "release", "incident", "service", "技术", "发布", "故障", "运维"),
     "cn": ("cn", "chinese", "中文", "汉语", "china policy", "中国内部"),
     "en": ("en", "english", "英文", "internal english", "english internal"),
+    "public": ("public", "visitor", "badge", "访客", "公开", "公示"),
 }
 
-GREETING_ZH = {"你好", "您好", "早上好"}
-GREETING_EN = {"hello", "hi", "good morning"}
+POLICY_KEYWORDS = (
+    "policy",
+    "process",
+    "procedure",
+    "guideline",
+    "制度",
+    "流程",
+    "规范",
+    "指引",
+)
+SECURITY_TEST_KEYWORDS = (
+    "secret",
+    "confidential",
+    "internal only",
+    "bypass",
+    "override",
+    "越权",
+    "绕过",
+    "机密",
+    "内部资料",
+)
+GREETING_ZH = {"你好", "您好", "早上好", "晚上好"}
+GREETING_EN = {"hello", "hi", "good morning", "good evening"}
+KNOWN_DEPARTMENTS = {"hr", "finance", "tech", "cn", "en", "public"}
 
 
-def detect_target_department(question: str) -> str | None:
-    lowered = question.lower()
-    for department, keywords in DEPARTMENT_KEYWORDS.items():
-        if any(word in lowered for word in keywords):
-            return department
-    return None
+class OllamaRouterOutput(BaseModel):
+    language: RouterLanguage
+    intent: RouterIntent
+    target_department: RouterTargetDepartment
+    need_rag: bool
+    confidence: float = Field(ge=0.0, le=1.0)
+    reason: str = Field(min_length=1, max_length=240)
+
+
+@dataclass(frozen=True)
+class RouterStatus:
+    mode: RouterMode
+    model: str
+    availability: Literal["available", "unavailable", "not_checked"]
+    fallback_used: bool
+    error: str | None
+
+
+class _RouterStatusStore:
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._status = RouterStatus(
+            mode=settings.local_router_mode,
+            model=_configured_router_model(),
+            availability="not_checked",
+            fallback_used=False,
+            error=None,
+        )
+
+    def update(self, status: RouterStatus) -> None:
+        with self._lock:
+            self._status = status
+
+    def snapshot(self) -> RouterStatus:
+        with self._lock:
+            return self._status
+
+
+def _configured_router_model() -> str:
+    if settings.local_router_mode == "ollama":
+        return settings.ollama_router_model
+    return "rules"
+
+
+_router_status_store = _RouterStatusStore()
+
+
+def get_router_status() -> RouterStatus:
+    return _router_status_store.snapshot()
 
 
 def _normalize_for_greeting(text: str) -> str:
@@ -42,45 +112,152 @@ def is_simple_greeting(question: str) -> bool:
     normalized = _normalize_for_greeting(question)
     if not normalized:
         return False
-    if normalized in GREETING_EN or normalized in GREETING_ZH:
-        return True
-    return False
+    return normalized in GREETING_EN or normalized in GREETING_ZH
 
 
-def _build_general_route_decision(question: str) -> RouteDecision:
-    normalized = _normalize_for_greeting(question)
-    is_zh = bool(re.search(r"[\u4e00-\u9fff]", normalized))
-    reason = "Greeting intent detected." if not is_zh else "识别为问候语意图。"
-    return RouteDecision(
-        target_department=None,
-        mode="general",
-        requires_rag=False,
-        need_rag=False,
-        confidence=0.99,
+def detect_language(question: str) -> RouterLanguage:
+    if re.search(r"[\u4e00-\u9fff]", question):
+        return "zh"
+    if re.search(r"[a-zA-Z]", question):
+        return "en"
+    return "unknown"
+
+
+def detect_target_department(question: str) -> str | None:
+    lowered = question.lower()
+    for department, keywords in DEPARTMENT_KEYWORDS.items():
+        if any(word in lowered for word in keywords):
+            return department
+    return None
+
+
+def detect_intent(question: str) -> RouterIntent:
+    lowered = question.lower()
+    if is_simple_greeting(question):
+        return "greeting"
+    if any(token in lowered for token in SECURITY_TEST_KEYWORDS):
+        return "security_test"
+    if any(token in lowered for token in POLICY_KEYWORDS):
+        return "policy_question"
+    if len(lowered.strip()) < 2:
+        return "unsupported"
+    return "knowledge_lookup"
+
+
+def _rule_output(question: str) -> OllamaRouterOutput:
+    language = detect_language(question)
+    intent = detect_intent(question)
+    department = detect_target_department(question) or "unknown"
+    need_rag = intent not in {"greeting", "unsupported"}
+    confidence = 0.98 if intent == "greeting" else (0.88 if department != "unknown" else 0.72)
+    reason = "Rule router classification."
+    if language == "zh":
+        reason = "规则路由分类结果。"
+    return OllamaRouterOutput(
+        language=language,
+        intent=intent,
+        target_department=department,  # type: ignore[arg-type]
+        need_rag=need_rag,
+        confidence=confidence,
         reason=reason,
     )
 
 
-def _forced_mode_decision(target_department: str | None, mode: AskMode) -> RouteDecision | None:
-    if mode == "graphrag":
-        return RouteDecision(
-            target_department=target_department,
-            mode="graphrag",
-            requires_rag=True,
-            need_rag=True,
-            confidence=0.9 if target_department else 0.7,
-            reason="Requester forced graphrag mode.",
-        )
-    if mode == "rag":
-        return RouteDecision(
-            target_department=target_department,
-            mode="rag",
-            requires_rag=True,
-            need_rag=True,
-            confidence=0.9 if target_department else 0.7,
-            reason="Requester forced rag mode.",
-        )
+def _sanitize_department(value: RouterTargetDepartment, question: str) -> str | None:
+    if value in KNOWN_DEPARTMENTS:
+        return value
+    detected = detect_target_department(question)
+    if detected in KNOWN_DEPARTMENTS:
+        return detected
     return None
+
+
+def _route_mode_from_inputs(request_mode: AskMode, classification_need_rag: bool, intent: RouterIntent) -> str:
+    if request_mode == "graphrag":
+        return "graphrag"
+    if request_mode == "rag":
+        return "rag"
+    if intent == "greeting" or not classification_need_rag:
+        return "general"
+    return "rag"
+
+
+def _build_route_decision(
+    question: str,
+    request_mode: AskMode,
+    classification: OllamaRouterOutput,
+    *,
+    router_mode: RouterMode,
+    router_model: str,
+    router_fallback_used: bool,
+    router_error: str | None,
+) -> RouteDecision:
+    route_mode = _route_mode_from_inputs(request_mode, classification.need_rag, classification.intent)
+    if request_mode in {"rag", "graphrag"}:
+        need_rag = True
+    else:
+        need_rag = route_mode in {"rag", "graphrag"}
+    target_department = _sanitize_department(classification.target_department, question)
+    return RouteDecision(
+        target_department=target_department,
+        mode=route_mode,  # type: ignore[arg-type]
+        requires_rag=need_rag,
+        need_rag=need_rag,
+        confidence=classification.confidence,
+        reason=classification.reason[:240],
+        language=classification.language,
+        intent=classification.intent,
+        router_mode=router_mode,
+        router_model=router_model,
+        router_fallback_used=router_fallback_used,
+        router_error=router_error,
+    )
+
+
+def _extract_json_payload(text: str) -> dict | None:
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start < 0 or end <= start:
+            return None
+        try:
+            parsed = json.loads(text[start : end + 1])
+            return parsed if isinstance(parsed, dict) else None
+        except json.JSONDecodeError:
+            return None
+
+
+def _build_ollama_prompt() -> str:
+    return (
+        "You are a router/classifier only.\n"
+        "Do not answer the user's question.\n"
+        "Do not decide permissions.\n"
+        "Output strict JSON only; no markdown and no extra text.\n"
+        "Return exactly keys: language, intent, target_department, need_rag, confidence, reason.\n"
+        "language must be one of: zh, en, unknown.\n"
+        "intent must be one of: greeting, policy_question, knowledge_lookup, security_test, unsupported.\n"
+        "target_department must be one of: cn, en, hr, finance, tech, public, unknown.\n"
+        "need_rag must be boolean.\n"
+        "confidence must be a float between 0 and 1.\n"
+        "reason must be short."
+    )
+
+
+def _safe_router_error(exc: Exception) -> str:
+    if isinstance(exc, httpx.TimeoutException):
+        return "ollama_timeout"
+    if isinstance(exc, httpx.HTTPStatusError):
+        return "ollama_http_error"
+    if isinstance(exc, httpx.HTTPError):
+        return "ollama_unavailable"
+    if isinstance(exc, ValidationError):
+        return "ollama_invalid_schema"
+    if isinstance(exc, json.JSONDecodeError):
+        return "ollama_invalid_json"
+    return "ollama_router_error"
 
 
 class BaseLocalModelRouter(ABC):
@@ -91,21 +268,26 @@ class BaseLocalModelRouter(ABC):
 
 class RuleBasedLocalModelRouter(BaseLocalModelRouter):
     def route(self, question: str, mode: AskMode) -> RouteDecision:
-        if is_simple_greeting(question):
-            return _build_general_route_decision(question)
-
-        target_department = detect_target_department(question)
-        forced = _forced_mode_decision(target_department, mode)
-        if forced is not None:
-            return forced
-        return RouteDecision(
-            target_department=target_department,
-            mode="rag",
-            requires_rag=True,
-            need_rag=True,
-            confidence=0.86 if target_department else 0.65,
-            reason="Auto mode defaults to permission-scoped rag in rule router.",
+        classification = _rule_output(question)
+        decision = _build_route_decision(
+            question=question,
+            request_mode=mode,
+            classification=classification,
+            router_mode="rules",
+            router_model="rules",
+            router_fallback_used=False,
+            router_error=None,
         )
+        _router_status_store.update(
+            RouterStatus(
+                mode="rules",
+                model="rules",
+                availability="not_checked",
+                fallback_used=False,
+                error=None,
+            )
+        )
+        return decision
 
 
 class OllamaQwenRouter(BaseLocalModelRouter):
@@ -113,100 +295,85 @@ class OllamaQwenRouter(BaseLocalModelRouter):
         self._fallback = fallback or RuleBasedLocalModelRouter()
 
     def route(self, question: str, mode: AskMode) -> RouteDecision:
-        if is_simple_greeting(question):
-            return _build_general_route_decision(question)
-
-        target_department = detect_target_department(question)
-        forced = _forced_mode_decision(target_department, mode)
-        if forced is not None:
-            return forced
-
-        payload = {
-            "model": settings.local_router_model,
-            "temperature": 0,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a local intent router. "
-                        "Return strict JSON only with keys: mode, target_department, requires_rag, confidence, reason. "
-                        "Allowed mode values: rag, graphrag, direct. "
-                        "Allowed target_department values: hr, finance, tech, cn, en, public, null."
-                    ),
-                },
-                {"role": "user", "content": question},
-            ],
-        }
-        headers = {"Content-Type": "application/json"}
-        if settings.local_router_api_key:
-            headers["Authorization"] = f"Bearer {settings.local_router_api_key}"
-
         try:
-            with httpx.Client(timeout=8.0) as client:
-                response = client.post(
-                    f"{settings.local_router_base_url.rstrip('/')}/chat/completions",
-                    json=payload,
-                    headers=headers,
+            classification = self._classify_with_ollama(question)
+            decision = _build_route_decision(
+                question=question,
+                request_mode=mode,
+                classification=classification,
+                router_mode="ollama",
+                router_model=settings.ollama_router_model,
+                router_fallback_used=False,
+                router_error=None,
+            )
+            _router_status_store.update(
+                RouterStatus(
+                    mode="ollama",
+                    model=settings.ollama_router_model,
+                    availability="available",
+                    fallback_used=False,
+                    error=None,
                 )
-                response.raise_for_status()
-                content = response.json()["choices"][0]["message"]["content"]
-            decision = self._parse_model_output(content, question)
-            if decision is not None:
-                return decision
-        except Exception:
-            pass
-
-        fallback_decision = self._fallback.route(question, "auto")
-        fallback_decision.reason = (
-            "Local model router fallback to rules due to unavailable local endpoint or invalid output."
-        )
-        return fallback_decision
+            )
+            return decision
+        except Exception as exc:
+            fallback_error = _safe_router_error(exc)
+            fallback_decision = self._fallback.route(question, mode)
+            fallback_decision.router_mode = "ollama"
+            fallback_decision.router_model = settings.ollama_router_model
+            fallback_decision.router_fallback_used = True
+            fallback_decision.router_error = fallback_error
+            fallback_decision.reason = "Ollama router fallback to deterministic rules."
+            _router_status_store.update(
+                RouterStatus(
+                    mode="ollama",
+                    model=settings.ollama_router_model,
+                    availability="unavailable",
+                    fallback_used=True,
+                    error=fallback_error,
+                )
+            )
+            return fallback_decision
 
     @staticmethod
-    def _parse_model_output(content: str, question: str) -> RouteDecision | None:
-        parsed: dict | None = None
-        try:
-            parsed = json.loads(content)
-        except json.JSONDecodeError:
-            start = content.find("{")
-            end = content.rfind("}")
-            if start >= 0 and end > start:
-                try:
-                    parsed = json.loads(content[start : end + 1])
-                except json.JSONDecodeError:
-                    parsed = None
-        if not parsed:
-            return None
+    def _extract_content(payload: dict) -> str:
+        if isinstance(payload.get("choices"), list):
+            choices = payload.get("choices") or []
+            if choices and isinstance(choices[0], dict):
+                message = choices[0].get("message", {})
+                if isinstance(message, dict):
+                    content = message.get("content")
+                    if isinstance(content, str):
+                        return content
+        message = payload.get("message", {})
+        if isinstance(message, dict):
+            content = message.get("content")
+            if isinstance(content, str):
+                return content
+        raise ValueError("ollama_invalid_response")
 
-        mode_value = str(parsed.get("mode", "rag")).strip().lower()
-        if mode_value not in {"direct", "rag", "graphrag", "general"}:
-            mode_value = "rag"
-        if mode_value == "direct":
-            mode_value = "rag"
+    def _classify_with_ollama(self, question: str) -> OllamaRouterOutput:
+        payload = {
+            "model": settings.ollama_router_model,
+            "stream": False,
+            "format": "json",
+            "messages": [
+                {"role": "system", "content": _build_ollama_prompt()},
+                {"role": "user", "content": question},
+            ],
+            "options": {"temperature": 0},
+        }
+        base_url = settings.ollama_base_url.rstrip("/")
+        url = f"{base_url}/api/chat"
+        with httpx.Client(timeout=settings.ollama_router_timeout_seconds) as client:
+            response = client.post(url, json=payload, headers={"Content-Type": "application/json"})
+            response.raise_for_status()
+            content = self._extract_content(response.json())
 
-        target_department = parsed.get("target_department")
-        if target_department is not None:
-            target_department = str(target_department).strip().lower()
-            if target_department not in {"hr", "finance", "tech", "cn", "en", "public"}:
-                target_department = detect_target_department(question)
-
-        requires_rag = bool(parsed.get("requires_rag", mode_value in {"rag", "graphrag"}))
-        need_rag = bool(parsed.get("need_rag", requires_rag))
-        confidence_raw = parsed.get("confidence", 0.7)
-        try:
-            confidence = max(0.0, min(1.0, float(confidence_raw)))
-        except (TypeError, ValueError):
-            confidence = 0.7
-        reason = str(parsed.get("reason", "Local router decision from ollama."))[:240]
-
-        return RouteDecision(
-            target_department=target_department,
-            mode=mode_value,  # type: ignore[arg-type]
-            requires_rag=requires_rag,
-            need_rag=need_rag,
-            confidence=confidence,
-            reason=reason,
-        )
+        parsed = _extract_json_payload(content)
+        if parsed is None:
+            raise json.JSONDecodeError("invalid router json", content, 0)
+        return OllamaRouterOutput.model_validate(parsed)
 
 
 def _router_factory() -> BaseLocalModelRouter:

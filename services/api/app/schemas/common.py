@@ -60,6 +60,10 @@ class RetrievalConfigPublic(BaseModel):
     default_top_k: int
     generator_mode: str
     router_mode: str
+    router_model: str
+    router_availability: str
+    router_fallback_last: bool
+    router_error_last: str | None = None
     pgvector_available: bool
     sql_vector_search_enabled: bool
     pgvector_sql_retrieval_enabled: bool

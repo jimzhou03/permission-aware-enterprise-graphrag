@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.core import database as db_module
 from app.services.cache_service import cache_service
+from app.services.qa_runtime_store import qa_runtime_store
 
 
 @pytest.fixture()
@@ -15,6 +16,7 @@ def client():
 
     db_module.rebind_database(test_database_url)
     cache_service.clear_for_tests()
+    qa_runtime_store.clear_for_tests()
     from app.main import app
 
     with TestClient(app) as test_client:

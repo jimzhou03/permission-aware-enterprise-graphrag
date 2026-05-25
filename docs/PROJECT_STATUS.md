@@ -6,8 +6,38 @@
 
 - Docker 运行正常：前端 `http://localhost:5173`、后端 `http://localhost:8000/docs`、健康检查 `GET /healthz` 返回 `{"status":"ok"}`。
 - 模型模式保持 `LLM_MODE=mock`。
-- 未接入 Ollama，未接入外部大模型 API。
+- v0.2.1 已接入 Ollama Local Router（仅分类/路由，不参与最终答案生成）。
+- 未接入外部大模型 API。
 - v0.2.0 已实现 PostgreSQL + pgvector SQL 检索路径，并保留 SQLite/不可用环境安全回退。
+
+## 本阶段（v0.2.1 Ollama Local Router）完成项
+
+1. 路由模式升级（仅路由，不改权限）
+   - 新增 `LOCAL_ROUTER_MODE=rules|ollama`，默认仍是 `rules`。
+   - 新增 Ollama 配置：
+     - `OLLAMA_BASE_URL`
+     - `OLLAMA_ROUTER_MODEL`
+     - `OLLAMA_ROUTER_TIMEOUT_SECONDS`
+   - `ollama` 模式调用本地 `qwen2.5:0.5b-instruct` 仅做分类：`language/intent/target_department/need_rag/confidence/reason`。
+
+2. 安全回退与稳定性
+   - Ollama 超时、不可用、返回非 JSON 或 schema 不合法时，自动安全回退到规则路由。
+   - 回退不会影响 RBAC，不会扩展 `allowed_kb_ids`，不会绕过后端权限。
+
+3. QA / Trace / System Status 可观测性增强
+   - QA 响应新增路由元数据：`router_mode`、`router_model`、`router_fallback_used`、`router_error`。
+   - Trace 新增路由链路字段：`router_availability`、`router_decision` 等。
+   - `GET /api/v1/system/retrieval-config` 新增路由运行态字段：
+     - `router_model`
+     - `router_availability`
+     - `router_fallback_last`
+     - `router_error_last`
+   - 前端 `System Status` 与 `Developer Trace` 已展示路由步骤与回退状态。
+
+4. 权限边界保持不变
+   - 权限判定仍由后端 RBAC 确定性执行。
+   - 检索仍先按 `allowed_kb_ids` 收敛，再执行 pgvector SQL / fallback 检索。
+   - visitor/cn_staff/en_staff/bilingual_admin 权限矩阵不变。
 
 ## 本阶段（v0.2.0 Real pgvector SQL Retrieval）完成项
 

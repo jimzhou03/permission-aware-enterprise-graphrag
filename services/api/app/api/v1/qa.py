@@ -14,12 +14,15 @@ from app.schemas.qa import (
     AskResponse,
     QAAuditRecordResponse,
     QATraceResponse,
+    RouteDecision,
     TraceRetrievedChunk,
 )
 from app.services.audit_service import get_qa_audit_by_request_id
 from app.services.auth_service import user_has_permission
+from app.services.local_router_service import get_router_status
 from app.services.permission_service import list_allowed_knowledge_bases
 from app.services.qa_service import ask_question
+from app.services.qa_runtime_store import qa_runtime_store
 from app.services.rag_service import get_retrieval_runtime
 
 
@@ -41,6 +44,18 @@ def _parse_retrieval_engine_from_model(model: str) -> str | None:
     if marker not in model:
         return None
     return model.split(marker, maxsplit=1)[1].strip() or None
+
+
+def _default_router_decision(record_mode: str) -> RouteDecision:
+    need_rag = record_mode in {"rag", "graphrag"}
+    return RouteDecision(
+        target_department=None,
+        mode=record_mode if record_mode in {"general", "rag", "graphrag"} else "rag",  # type: ignore[arg-type]
+        requires_rag=need_rag,
+        need_rag=need_rag,
+        confidence=0.0,
+        reason="router decision was not persisted for this historical request.",
+    )
 
 
 @router.post("/ask", response_model=AskResponse)
@@ -108,6 +123,8 @@ def get_request_trace(
     allowed_kb_ids = [str(kb.id) for kb in request_allowed_kbs]
     allowed_kb_codes = [kb.code for kb in request_allowed_kbs]
     current_runtime = get_retrieval_runtime(db)
+    current_router_status = get_router_status()
+    route_snapshot = qa_runtime_store.get_router_trace(request_id)
 
     hit_kb_ids = record.hit_kb_ids if isinstance(record.hit_kb_ids, list) else []
     hit_document_ids = record.hit_document_ids if isinstance(record.hit_document_ids, list) else []
@@ -164,6 +181,10 @@ def get_request_trace(
         trace_limits.append(
             "No authorized chunk content is available to current viewer; trace falls back to identifier-level metadata."
         )
+    if route_snapshot is None:
+        trace_limits.append(
+            "router diagnostics are available for recent runtime requests only; this trace shows reconstructed defaults."
+        )
 
     return QATraceResponse(
         request_id=record.request_id,
@@ -185,6 +206,16 @@ def get_request_trace(
         retrieval_engine=(
             _parse_retrieval_engine_from_model(record.model) or current_runtime.retrieval_engine
         ),
+        router_mode=route_snapshot.router_mode if route_snapshot else current_router_status.mode,
+        router_model=route_snapshot.router_model if route_snapshot else current_router_status.model,
+        router_availability=(
+            route_snapshot.router_availability if route_snapshot else current_router_status.availability
+        ),
+        router_fallback_used=(
+            route_snapshot.router_fallback_used if route_snapshot else current_router_status.fallback_used
+        ),
+        router_error=route_snapshot.router_error if route_snapshot else current_router_status.error,
+        router_decision=route_snapshot.route if route_snapshot else _default_router_decision(record.mode),
         cache_hit=record.cache_hit,
         model=record.model,
         latency_ms=record.latency_ms,
