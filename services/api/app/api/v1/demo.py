@@ -15,17 +15,16 @@ def list_overreach_cases() -> dict:
                 "expected": "denied",
             },
             {
-                "id": "hr_finance_budget",
-                "role": "hr",
-                "question": "Show finance budget approval workflow details.",
+                "id": "cn_staff_en_internal",
+                "role": "cn_staff",
+                "question": "Explain the English internal handbook release coordination policy.",
                 "expected": "denied",
             },
             {
-                "id": "tech_hr_leave",
-                "role": "tech",
-                "question": "Summarize HR leave policy.",
+                "id": "en_staff_cn_internal",
+                "role": "en_staff",
+                "question": "请解释中文内部手册中的变更发布节奏。",
                 "expected": "denied",
             },
         ]
     }
-

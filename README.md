@@ -21,21 +21,35 @@
 
 典型越权案例：
 
-- `visitor` 询问公开制度：允许检索公开知识库。
-- `visitor` 询问财务薪酬制度：直接拒绝，不检索财务知识库，不调用大模型生成财务答案。
-- `hr` 询问HR制度：只在HR知识库和公开知识库内检索。
-- `finance` 询问财务制度：只在财务知识库和公开知识库内检索。
-- `admin` 管理用户、知识库和审计日志；问答权限按系统策略显式配置。
+- `visitor` 询问 visitor-safe 公共制度：只允许检索 `public-policy`。
+- `visitor` 询问财务薪酬制度：直接拒绝，不检索未授权知识库，不调用大模型生成答案。
+- `cn_staff` 询问中文制度：只在 `cn-public`、`cn-internal` 内检索。
+- `en_staff` 询问英文制度：只在 `en-public`、`en-internal` 内检索。
+- `bilingual_admin` 可访问中英文部门知识库和 `public-policy`，并可查看审计日志。
 
 ## 用户角色
 
 | 角色 | 说明 | 默认访问范围 |
 | --- | --- | --- |
-| `admin` | 管理员 | 用户、部门、知识库、审计日志；问答访问范围按策略配置 |
-| `hr` | HR部门用户 | HR知识库、公开知识库 |
-| `finance` | 财务部门用户 | 财务知识库、公开知识库 |
-| `tech` | 技术部门用户 | 技术知识库、公开知识库 |
-| `visitor` | 访客 | 公开知识库 |
+| `bilingual_admin` | 双语管理员 | `cn-public`、`cn-internal`、`en-public`、`en-internal`、`public-policy` |
+| `cn_staff` | 中文部门员工 | `cn-public`、`cn-internal` |
+| `en_staff` | 英文部门员工 | `en-public`、`en-internal` |
+| `visitor` | 访客 | `public-policy` |
+
+## v0.1.6 双语部门知识隔离
+
+新增演示目标：在 RBAC 之外，展示“部门 + 语言知识库边界”隔离。
+
+- `cn_staff` 只能访问中文知识库：`cn-public`、`cn-internal`。
+- `en_staff` 只能访问英文知识库：`en-public`、`en-internal`。
+- `bilingual_admin` 同时访问中英文知识库与 `public-policy`。
+- `visitor` 仅访问 `public-policy`。
+
+知识库内容均为虚构文档：
+
+- `cn-public`、`cn-internal`：仅中文内容。
+- `en-public`、`en-internal`：仅英文内容。
+- `public-policy`：仅 visitor-safe 公共信息，不含薪酬、工资、定价、财务敏感词。
 
 ## 核心功能列表
 
@@ -277,23 +291,24 @@ Set-Location apps/web
 npm run build
 ```
 
-越权演示（visitor 访问 finance）：
+越权演示（visitor 越权访问）：
 
 1. 使用 `visitor@example.local / Passw0rd!123` 登录。
 2. 提问：`请提供 finance compensation salary policy`。
 3. 预期：后端返回 `denied=true`，并带 `department scope: finance` 拒绝原因。
-4. 以 `admin@example.local / Passw0rd!123` 登录管理员页面查看审计日志，确认本次请求被记录。
+4. 以 `bilingual_admin@example.local / Passw0rd!123` 登录管理员页面查看审计日志，确认本次请求被记录。
 
 前端演示增强（无需 Swagger 手工授权）：
 
-1. 登录区支持演示账号下拉：`admin/hr/finance/tech/visitor`。
-2. 可一键填充账号并登录。
+1. 登录区支持演示账号卡片：`cn_staff/en_staff/bilingual_admin/visitor`。
+2. 点击演示账号可一键填充邮箱与默认密码并登录。
 3. 提供越权场景按钮：
    - visitor 问 finance 薪酬制度
-   - hr 问 finance 预算审批
-   - finance 问 tech 发布密钥
-   - tech 问 HR 员工档案
+   - hr 问 finance 预算审批（演示文案）
+   - finance 问 tech 发布密钥（演示文案）
+   - tech 问 HR 员工档案（演示文案）
 4. 页面会展示当前角色、可访问知识库、本次拒绝状态、命中知识库、审计 `request_id`。
+5. 页面提示“访问范围由后端 `allowed_kb_ids` 决定，前端不做权限过滤”。
 
 前端中英文 UI 切换：
 
@@ -314,9 +329,19 @@ npm run build
 
 1. 未登录仅显示企业登录页；登录成功后进入主控制台。
 2. 登录态持久化到 `localStorage`（token + user），刷新后调用 `/api/v1/auth/me` 自动恢复。
-3. 提供 `Logout`，退出后清理本地会话并返回登录页。
-4. 安全测试场景迁移为折叠面板 `Security Test Scenarios`，默认折叠，不干扰主问答流程。
-5. 顶部导航、左侧状态、中间问答、右侧审计形成产品化信息架构。
+3. 登录后主界面改为企业知识助手聊天布局：左侧展示当前用户、角色、可访问知识库、模型/路由状态和最近会话；中间展示用户问题与助手回答；右侧展示审计详情、命中知识库、`request_id`、越权拦截和缓存命中状态。
+4. 聊天历史保存到浏览器 `localStorage`，key 按用户邮箱隔离，例如 `chat_history_cn_staff@example.local`，切换账号不会看到其他账号历史。
+5. 提供新建会话、清空当前会话和最近会话切换。
+6. 提供 `退出登录` / `Logout`，退出后清理本地登录态并返回登录页，不删除各账号的本地聊天历史。
+7. 安全测试场景迁移为右侧折叠面板，默认折叠，不干扰主问答流程。
+8. 顶部导航、左侧状态、中间聊天、右侧审计形成产品化信息架构。
+
+前端缓存展示说明：
+
+1. 当前后端已有 `CacheService`，Docker Compose 默认通过 `REDIS_URL=redis://redis:6379/0` 使用 Redis。
+2. 如果 Redis 不可用或测试环境使用内存模式，后端会回退到进程内缓存；权限感知 cache key 仍绑定用户、角色、部门、授权范围、问题、模式和模型配置。
+3. 前端不伪造缓存能力，只展示 `/api/v1/qa/ask` 和审计详情返回的真实 `cache_hit` 字段，显示为命中或未命中。
+4. 当前生成模型仍保持 `LLM_MODE=mock`；缓存展示不代表接入外部 LLM。
 
 普通问候 general fallback：
 
@@ -329,10 +354,9 @@ npm run build
 
 | 角色 | 邮箱 | 默认密码 |
 | --- | --- | --- |
-| admin | `admin@example.local` | `Passw0rd!123` |
-| hr | `hr@example.local` | `Passw0rd!123` |
-| finance | `finance@example.local` | `Passw0rd!123` |
-| tech | `tech@example.local` | `Passw0rd!123` |
+| bilingual_admin | `bilingual_admin@example.local` | `Passw0rd!123` |
+| cn_staff | `cn_staff@example.local` | `Passw0rd!123` |
+| en_staff | `en_staff@example.local` | `Passw0rd!123` |
 | visitor | `visitor@example.local` | `Passw0rd!123` |
 
 ## 模型接入说明（Phase 6）

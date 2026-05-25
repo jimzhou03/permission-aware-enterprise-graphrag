@@ -16,6 +16,8 @@ DEPARTMENT_KEYWORDS: dict[str, tuple[str, ...]] = {
     "finance": ("finance", "salary", "compensation", "payroll", "reimbursement", "budget", "财务", "薪酬", "报销", "预算"),
     "hr": ("hr", "recruit", "hiring", "leave", "attendance", "招聘", "人事", "请假", "考勤"),
     "tech": ("tech", "deploy", "release", "incident", "service", "技术", "发布", "故障", "运维"),
+    "cn": ("cn", "chinese", "中文", "汉语", "china policy", "中国内部"),
+    "en": ("en", "english", "英文", "internal english", "english internal"),
 }
 
 GREETING_ZH = {"你好", "您好", "早上好"}
@@ -129,7 +131,7 @@ class OllamaQwenRouter(BaseLocalModelRouter):
                         "You are a local intent router. "
                         "Return strict JSON only with keys: mode, target_department, requires_rag, confidence, reason. "
                         "Allowed mode values: rag, graphrag, direct. "
-                        "Allowed target_department values: hr, finance, tech, public, null."
+                        "Allowed target_department values: hr, finance, tech, cn, en, public, null."
                     ),
                 },
                 {"role": "user", "content": question},
@@ -185,7 +187,7 @@ class OllamaQwenRouter(BaseLocalModelRouter):
         target_department = parsed.get("target_department")
         if target_department is not None:
             target_department = str(target_department).strip().lower()
-            if target_department not in {"hr", "finance", "tech", "public"}:
+            if target_department not in {"hr", "finance", "tech", "cn", "en", "public"}:
                 target_department = detect_target_department(question)
 
         requires_rag = bool(parsed.get("requires_rag", mode_value in {"rag", "graphrag"}))

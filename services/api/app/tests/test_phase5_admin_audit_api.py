@@ -5,14 +5,14 @@ def _login(client, email: str, password: str = "Passw0rd!123") -> str:
 
 
 def test_admin_can_read_audit_logs(client):
-    hr_token = _login(client, "hr@example.local")
+    staff_token = _login(client, "cn_staff@example.local")
     client.post(
         "/api/v1/qa/ask",
-        headers={"Authorization": f"Bearer {hr_token}"},
+        headers={"Authorization": f"Bearer {staff_token}"},
         json={"question": "Phase5 audit api smoke", "mode": "rag"},
     )
 
-    admin_token = _login(client, "admin@example.local")
+    admin_token = _login(client, "bilingual_admin@example.local")
     response = client.get(
         "/api/v1/admin/audit-logs",
         headers={"Authorization": f"Bearer {admin_token}"},
@@ -24,10 +24,9 @@ def test_admin_can_read_audit_logs(client):
 
 
 def test_non_admin_without_audit_permission_forbidden(client):
-    hr_token = _login(client, "hr@example.local")
+    staff_token = _login(client, "cn_staff@example.local")
     response = client.get(
         "/api/v1/admin/audit-logs",
-        headers={"Authorization": f"Bearer {hr_token}"},
+        headers={"Authorization": f"Bearer {staff_token}"},
     )
     assert response.status_code == 403, response.text
-

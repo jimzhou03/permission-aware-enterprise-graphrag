@@ -1,0 +1,49 @@
+- generic [ref=e4]:
+  - generic [ref=e5]:
+    - generic [ref=e6]: 语言
+    - combobox "语言" [ref=e7]:
+      - option "中文" [selected]
+      - option "English"
+  - generic [ref=e8]:
+    - generic [ref=e9]:
+      - generic [ref=e10]: 企业知识访问控制台
+      - heading "权限感知企业 GraphRAG 知识助手" [level=1] [ref=e11]
+      - paragraph [ref=e12]: 登录后只能检索当前角色被授权的企业知识库。
+      - generic [ref=e13]:
+        - paragraph [ref=e14]: 核心能力
+        - list [ref=e15]:
+          - listitem [ref=e16]: 后端确定性权限判断与越权拦截
+          - listitem [ref=e17]: 权限范围内 RAG / GraphRAG 检索链路
+          - listitem [ref=e18]: 审计日志与缓存隔离，防止缓存越权
+    - generic [ref=e19]:
+      - heading "账号登录" [level=2] [ref=e20]
+      - generic [ref=e21]:
+        - group "演示账号" [ref=e22]:
+          - generic [ref=e23]: 演示账号
+          - generic [ref=e24]:
+            - generic [ref=e25]: 选择演示账号
+            - generic [ref=e26]: 仅用于演示账号切换
+          - generic [ref=e27]:
+            - button "cn_staff cn_staff@example.local" [pressed] [ref=e28] [cursor=pointer]:
+              - generic [ref=e30]: cn_staff
+              - generic [ref=e32]: cn_staff@example.local
+            - button "en_staff en_staff@example.local" [ref=e33] [cursor=pointer]:
+              - generic [ref=e35]: en_staff
+              - generic [ref=e37]: en_staff@example.local
+            - button "bilingual_admin bilingual_admin@example.local" [ref=e38] [cursor=pointer]:
+              - generic [ref=e40]: bilingual_admin
+              - generic [ref=e42]: bilingual_admin@example.local
+            - button "visitor visitor@example.local" [ref=e43] [cursor=pointer]:
+              - generic [ref=e45]: visitor
+              - generic [ref=e47]: visitor@example.local
+        - generic [ref=e48]:
+          - text: 邮箱
+          - textbox "邮箱" [ref=e49]:
+            - /placeholder: cn_staff@example.local
+            - text: cn_staff@example.local
+        - generic [ref=e50]:
+          - text: 密码
+          - textbox "密码" [ref=e51]:
+            - /placeholder: Passw0rd!123
+            - text: Passw0rd!123
+        - button "登录" [ref=e52] [cursor=pointer]

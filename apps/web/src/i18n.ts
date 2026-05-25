@@ -2,96 +2,31 @@ export type Language = "zh" | "en";
 
 export const LANGUAGE_STORAGE_KEY = "paegr.ui.language";
 
-export const OVERREACH_LABELS: Record<
-  Language,
-  Record<string, string>
-> = {
+export const OVERREACH_LABELS = {
   zh: {
-    visitor_finance_salary: "visitor问finance薪酬制度",
-    hr_finance_budget: "hr问finance预算审批",
-    finance_tech_secret: "finance问tech发布密钥",
-    tech_hr_profile: "tech问HR员工档案"
+    visitor_finance_salary: "visitor 查询 finance 薪酬制度",
+    hr_finance_budget: "cn_staff 查询 finance 预算审批",
+    finance_tech_secret: "en_staff 查询 tech 发布密钥",
+    tech_hr_profile: "cn_staff 查询 HR 员工档案"
   },
   en: {
     visitor_finance_salary: "visitor asks finance salary policy",
-    hr_finance_budget: "hr asks finance budget approval",
-    finance_tech_secret: "finance asks tech release secret",
-    tech_hr_profile: "tech asks HR employee file"
+    hr_finance_budget: "cn_staff asks finance budget approval",
+    finance_tech_secret: "en_staff asks tech release secret",
+    tech_hr_profile: "cn_staff asks HR employee file"
   }
-};
+} satisfies Record<Language, Record<string, string>>;
 
-export const UI_TEXT: Record<
-  Language,
-  {
-    subtitle: string;
-    consoleLabel: string;
-    language: string;
-    chinese: string;
-    english: string;
-    login: string;
-    demoAccount: string;
-    email: string;
-    password: string;
-    signIn: string;
-    working: string;
-    currentSession: string;
-    currentUser: string;
-    currentRole: string;
-    deniedCurrentRequest: string;
-    requestId: string;
-    accessibleKnowledgeBases: string;
-    hitKnowledgeBases: string;
-    askQuestionSection: string;
-    askQuestionPlaceholder: string;
-    ask: string;
-    mode: string;
-    kbScopeOptional: string;
-    latestResponse: string;
-    noResponseYet: string;
-    requestDetailAndAdminAudit: string;
-    noRequestDetailLoaded: string;
-    loadAuditLogs: string;
-    riskAlert: string;
-    normalState: string;
-    accountState: string;
-    citations: string;
-    graphPaths: string;
-    loginSuccess: string;
-    loginFailed: string;
-    requestDeniedPrefix: string;
-    answerServedFromCache: string;
-    answerGenerated: string;
-    askFailed: string;
-    scenarioExecutedPrefix: string;
-    scenarioExecutionFailed: string;
-    loadAuditLogsFailed: string;
-    loadedAuditLogsPrefix: string;
-    logout: string;
-    loginPageTagline: string;
-    capabilityTitle: string;
-    capabilityA: string;
-    capabilityB: string;
-    capabilityC: string;
-    securityTestScenarios: string;
-    expandScenarios: string;
-    collapseScenarios: string;
-    routerStatus: string;
-    generatorStatus: string;
-    restoringSession: string;
-    sessionRestoreFailed: string;
-    modelStatus: string;
-    auditDetail: string;
-    demoAccountHint: string;
-  }
-> = {
+export const UI_TEXT = {
   zh: {
-    subtitle: "企业级权限感知 GraphRAG 知识助手",
-    consoleLabel: "Enterprise Access Console",
+    productName: "权限感知企业 GraphRAG 知识助手",
+    subtitle: "面向企业内部知识库的权限感知 RAG 问答工具",
+    consoleLabel: "企业知识访问控制台",
     language: "语言",
     chinese: "中文",
     english: "English",
     login: "登录",
-    demoAccount: "Demo Account",
+    demoAccount: "演示账号",
     email: "邮箱",
     password: "密码",
     signIn: "登录",
@@ -99,21 +34,22 @@ export const UI_TEXT: Record<
     currentSession: "当前会话",
     currentUser: "当前用户",
     currentRole: "当前角色",
+    currentDepartment: "当前部门",
     deniedCurrentRequest: "本次是否拒绝",
     requestId: "request_id",
     accessibleKnowledgeBases: "可访问知识库",
     hitKnowledgeBases: "命中知识库",
-    askQuestionSection: "提问区",
-    askQuestionPlaceholder: "请输入问题...",
-    ask: "提问",
+    askQuestionSection: "知识问答",
+    askQuestionPlaceholder: "输入要查询的企业知识问题...",
+    ask: "发送",
     mode: "模式",
     kbScopeOptional: "知识库范围（可选）",
-    latestResponse: "最新响应",
-    noResponseYet: "暂无响应。",
+    latestResponse: "最新回答",
+    noResponseYet: "暂无回答。",
     requestDetailAndAdminAudit: "请求详情与管理员审计",
     noRequestDetailLoaded: "暂无请求详情。",
     loadAuditLogs: "加载审计日志",
-    riskAlert: "风险提示",
+    riskAlert: "越权拦截",
     normalState: "正常",
     accountState: "账号状态",
     citations: "引用片段",
@@ -124,29 +60,74 @@ export const UI_TEXT: Record<
     answerServedFromCache: "命中缓存返回答案。",
     answerGenerated: "答案已生成。",
     askFailed: "提问失败。",
+    auditDetailLoadFailed: "审计详情加载失败。",
     scenarioExecutedPrefix: "安全测试场景已执行",
     scenarioExecutionFailed: "场景执行失败。",
     loadAuditLogsFailed: "加载审计日志失败。",
     loadedAuditLogsPrefix: "已加载审计日志数量",
     logout: "退出登录",
-    loginPageTagline: "企业级权限感知知识问答系统",
+    loginPageTagline: "登录后只能检索当前角色被授权的企业知识库。",
     capabilityTitle: "核心能力",
     capabilityA: "后端确定性权限判断与越权拦截",
     capabilityB: "权限范围内 RAG / GraphRAG 检索链路",
-    capabilityC: "审计日志与缓存隔离（防缓存越权）",
+    capabilityC: "审计日志与缓存隔离，防止缓存越权",
     securityTestScenarios: "安全测试场景",
-    expandScenarios: "展开场景",
-    collapseScenarios: "收起场景",
-    routerStatus: "Router: rules",
-    generatorStatus: "Generator: mock",
+    expandScenarios: "展开",
+    collapseScenarios: "收起",
+    routerStatus: "路由器：规则模式",
+    generatorStatus: "生成器：mock",
     restoringSession: "正在恢复登录状态...",
     sessionRestoreFailed: "登录状态恢复失败，请重新登录。",
-    modelStatus: "模型/路由状态",
+    modelStatus: "模型与路由状态",
     auditDetail: "审计详情",
-    demoAccountHint: "仅用于演示账号切换"
+    demoAccountHint: "仅用于演示账号切换",
+    allowedKbHint: "访问范围由后端 allowed_kb_ids 决定，前端勾选不能扩大权限。",
+    recentSessions: "最近会话",
+    newSession: "新建会话",
+    clearCurrentSession: "清空当前会话",
+    emptyConversation: "当前会话还没有消息。",
+    untitledSession: "未命名会话",
+    noRecentSessions: "暂无最近会话。",
+    userMessageLabel: "你",
+    assistantMessageLabel: "助手",
+    selectedKbScope: "本次范围",
+    defaultKbScope: "后端默认授权范围",
+    sendQuestion: "发送问题",
+    auditPanelTitle: "请求审计",
+    authorizationPanelTitle: "权限与命中",
+    cacheStatus: "缓存状态",
+    cacheHit: "命中",
+    cacheMiss: "未命中",
+    cacheNotRequested: "未请求",
+    cacheFieldHint: "由后端 cache_hit 字段返回",
+    model: "模型",
+    latency: "耗时",
+    milliseconds: "毫秒",
+    responseMode: "响应模式",
+    rawAuditJson: "原始审计 JSON",
+    noAuditForSession: "当前会话暂无可展示的审计信息。",
+    deniedReason: "拒绝原因",
+    notDenied: "未触发越权拦截",
+    adminAuditLogs: "管理员审计日志",
+    tableDenied: "是否拒绝",
+    tableCacheHit: "缓存命中",
+    tableMode: "模式",
+    cacheLayer: "缓存层",
+    yes: "是",
+    no: "否",
+    noValue: "-",
+    score: "相似度",
+    requestMeta: "请求元信息",
+    clearSessionDone: "当前会话已清空。",
+    newSessionReady: "已创建新会话。",
+    historyStoredLocally: "聊天历史仅保存在当前浏览器，并按用户邮箱隔离。",
+    signedInAs: "已登录",
+    chooseDemoAccount: "选择演示账号",
+    signInPanelTitle: "账号登录"
   },
   en: {
-    subtitle: "Permission-Aware Enterprise GraphRAG Knowledge Assistant",
+    productName: "Permission-Aware Enterprise GraphRAG Assistant",
+    subtitle: "Permission-aware RAG assistant for internal enterprise knowledge bases",
     consoleLabel: "Enterprise Access Console",
     language: "Language",
     chinese: "中文",
@@ -160,13 +141,14 @@ export const UI_TEXT: Record<
     currentSession: "Current Session",
     currentUser: "Current User",
     currentRole: "Current Role",
+    currentDepartment: "Current Department",
     deniedCurrentRequest: "Denied This Request",
     requestId: "request_id",
     accessibleKnowledgeBases: "Accessible Knowledge Bases",
     hitKnowledgeBases: "Hit Knowledge Bases",
-    askQuestionSection: "Ask",
-    askQuestionPlaceholder: "Ask a question...",
-    ask: "Ask",
+    askQuestionSection: "Knowledge Chat",
+    askQuestionPlaceholder: "Ask an enterprise knowledge question...",
+    ask: "Send",
     mode: "Mode",
     kbScopeOptional: "Knowledge Base Scope (optional)",
     latestResponse: "Latest Response",
@@ -174,7 +156,7 @@ export const UI_TEXT: Record<
     requestDetailAndAdminAudit: "Request Detail & Admin Audit",
     noRequestDetailLoaded: "No request detail loaded.",
     loadAuditLogs: "Load Audit Logs",
-    riskAlert: "Risk Alert",
+    riskAlert: "Overreach Blocked",
     normalState: "Normal",
     accountState: "Account Status",
     citations: "Citations",
@@ -185,12 +167,13 @@ export const UI_TEXT: Record<
     answerServedFromCache: "Answer served from cache.",
     answerGenerated: "Answer generated.",
     askFailed: "Ask failed.",
+    auditDetailLoadFailed: "Audit detail failed to load.",
     scenarioExecutedPrefix: "Security scenario executed",
     scenarioExecutionFailed: "Scenario execution failed.",
     loadAuditLogsFailed: "Load audit logs failed.",
     loadedAuditLogsPrefix: "Loaded audit logs",
     logout: "Logout",
-    loginPageTagline: "Enterprise permission-aware knowledge assistant",
+    loginPageTagline: "After signing in, retrieval is limited to the knowledge bases authorized for the role.",
     capabilityTitle: "Core Capabilities",
     capabilityA: "Deterministic backend authorization and overreach interception",
     capabilityB: "Permission-scoped RAG / GraphRAG retrieval pipeline",
@@ -204,6 +187,49 @@ export const UI_TEXT: Record<
     sessionRestoreFailed: "Session restore failed, please sign in again.",
     modelStatus: "Model / Router Status",
     auditDetail: "Audit Detail",
-    demoAccountHint: "For demo account switching only"
+    demoAccountHint: "For demo account switching only",
+    allowedKbHint: "Access scope is enforced by backend allowed_kb_ids; frontend selection cannot expand permissions.",
+    recentSessions: "Recent Sessions",
+    newSession: "New Session",
+    clearCurrentSession: "Clear Current Session",
+    emptyConversation: "No messages in this session yet.",
+    untitledSession: "Untitled Session",
+    noRecentSessions: "No recent sessions.",
+    userMessageLabel: "You",
+    assistantMessageLabel: "Assistant",
+    selectedKbScope: "Scope",
+    defaultKbScope: "Backend default allowed scope",
+    sendQuestion: "Send Question",
+    auditPanelTitle: "Request Audit",
+    authorizationPanelTitle: "Authorization & Hits",
+    cacheStatus: "Cache Status",
+    cacheHit: "hit",
+    cacheMiss: "miss",
+    cacheNotRequested: "not requested",
+    cacheFieldHint: "Returned by backend cache_hit field",
+    model: "Model",
+    latency: "Latency",
+    milliseconds: "ms",
+    responseMode: "Response Mode",
+    rawAuditJson: "Raw Audit JSON",
+    noAuditForSession: "No audit details available for this session.",
+    deniedReason: "Denied Reason",
+    notDenied: "No overreach block",
+    adminAuditLogs: "Admin Audit Logs",
+    tableDenied: "Denied",
+    tableCacheHit: "Cache Hit",
+    tableMode: "Mode",
+    cacheLayer: "Cache Layer",
+    yes: "yes",
+    no: "no",
+    noValue: "-",
+    score: "score",
+    requestMeta: "Request Metadata",
+    clearSessionDone: "Current session cleared.",
+    newSessionReady: "New session ready.",
+    historyStoredLocally: "Chat history is stored only in this browser and isolated by user email.",
+    signedInAs: "Signed in",
+    chooseDemoAccount: "Choose Demo Account",
+    signInPanelTitle: "Account Login"
   }
-};
+} satisfies Record<Language, Record<string, string>>;

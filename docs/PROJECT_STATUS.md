@@ -7,18 +7,43 @@
 - Docker 运行正常：前端 `http://localhost:5173`、后端 `http://localhost:8000/docs`、健康检查 `GET /healthz` 返回 `{"status":"ok"}`。
 - 模型模式保持 `LLM_MODE=mock`。
 - 未接入 Ollama，未接入外部大模型 API。
+- v0.1.6 已实现双语部门知识隔离（`cn_staff / en_staff / bilingual_admin / visitor`）。
+
+## 本阶段（v0.1.6 双语部门知识隔离）完成项
+
+1. 后端种子数据与权限矩阵更新
+   - 新增演示账号：`cn_staff`、`en_staff`、`bilingual_admin`、`visitor`。
+   - 新增知识库：`cn-public`、`cn-internal`、`en-public`、`en-internal`、`public-policy`。
+   - ACL 显式绑定角色到知识库，权限仍由后端确定性代码执行。
+
+2. 双语虚构文档入库
+   - 中文知识库只包含中文文档。
+   - 英文知识库只包含英文文档。
+   - `public-policy` 仅包含 visitor-safe 公共信息，不含薪酬/工资/定价/财务敏感内容。
+
+3. 前端演示补强
+   - 登录演示账号切换改为新账号集合。
+   - 会话区继续展示当前用户、角色、可访问知识库。
+   - 新增提示：访问范围由后端 `allowed_kb_ids` 决定，前端不做权限过滤。
+   - 安全测试场景保持默认折叠。
+
+4. 自动化测试更新
+   - `pytest` 用例迁移到双语隔离矩阵。
+   - `scripts/test_permission_matrix.py` 更新为新账号和新知识库校验：
+     - `visitor` 问 finance 薪酬仍必须拒绝；
+     - `cn_staff`/`en_staff` 跨语言问题必须被拒绝或至少不返回越权 chunk；
+     - `bilingual_admin` 可检索中英文知识。
 
 ## 本阶段（权限矩阵自动化 + 前端演示）完成项
 
 1. 新增权限矩阵自动化脚本：`scripts/test_permission_matrix.py`
-   - 自动登录 5 个角色账号。
+   - 自动登录 4 个角色账号（`cn_staff`、`en_staff`、`bilingual_admin`、`visitor`）。
    - 自动调用 `/auth/me`、`/knowledge-bases`、`/qa/ask`。
    - 自动验证：
      - visitor 问 finance 薪酬必须拒绝。
-     - hr 仅 `hr-policy + public-general`。
-     - finance 仅 `finance-policy + public-general`。
-     - tech 仅 `tech-policy + public-general`。
-     - admin 可访问全部知识库。
+     - cn_staff 仅 `cn-public + cn-internal`。
+     - en_staff 仅 `en-public + en-internal`。
+     - bilingual_admin 可访问中英文知识库与 `public-policy`。
    - 失败时打印接口、账号、问题和返回内容，并返回非零退出码。
 
 2. 前端演示增强

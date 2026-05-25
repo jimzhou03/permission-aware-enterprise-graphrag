@@ -8,8 +8,8 @@ def _login(client, email: str, password: str = "Passw0rd!123") -> str:
 
 
 def test_same_user_same_question_hits_cache(client):
-    token = _login(client, "hr@example.local")
-    question = f"Explain leave policy cache test {uuid4().hex}"
+    token = _login(client, "cn_staff@example.local")
+    question = f"请总结中文公开指引缓存测试 {uuid4().hex}"
     payload = {"question": question, "mode": "rag", "knowledge_base_codes": []}
 
     first = client.post("/api/v1/qa/ask", headers={"Authorization": f"Bearer {token}"}, json=payload)
@@ -33,28 +33,27 @@ def test_same_user_same_question_hits_cache(client):
 
 
 def test_cache_key_isolation_between_roles(client):
-    hr_token = _login(client, "hr@example.local")
-    visitor_token = _login(client, "visitor@example.local")
-    question = f"workplace handbook cache scope {uuid4().hex}"
+    cn_token = _login(client, "cn_staff@example.local")
+    en_token = _login(client, "en_staff@example.local")
+    question = f"public handbook cache scope {uuid4().hex}"
     payload = {"question": question, "mode": "auto", "knowledge_base_codes": []}
 
-    hr_first = client.post("/api/v1/qa/ask", headers={"Authorization": f"Bearer {hr_token}"}, json=payload)
-    assert hr_first.status_code == 200, hr_first.text
-    assert hr_first.json()["cache_hit"] is False
+    cn_first = client.post("/api/v1/qa/ask", headers={"Authorization": f"Bearer {cn_token}"}, json=payload)
+    assert cn_first.status_code == 200, cn_first.text
+    assert cn_first.json()["cache_hit"] is False
 
-    visitor_first = client.post(
+    en_first = client.post(
         "/api/v1/qa/ask",
-        headers={"Authorization": f"Bearer {visitor_token}"},
+        headers={"Authorization": f"Bearer {en_token}"},
         json=payload,
     )
-    assert visitor_first.status_code == 200, visitor_first.text
-    assert visitor_first.json()["cache_hit"] is False
+    assert en_first.status_code == 200, en_first.text
+    assert en_first.json()["cache_hit"] is False
 
-    visitor_second = client.post(
+    en_second = client.post(
         "/api/v1/qa/ask",
-        headers={"Authorization": f"Bearer {visitor_token}"},
+        headers={"Authorization": f"Bearer {en_token}"},
         json=payload,
     )
-    assert visitor_second.status_code == 200, visitor_second.text
-    assert visitor_second.json()["cache_hit"] is True
-
+    assert en_second.status_code == 200, en_second.text
+    assert en_second.json()["cache_hit"] is True

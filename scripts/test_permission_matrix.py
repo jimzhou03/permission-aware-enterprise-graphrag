@@ -22,34 +22,28 @@ class AccountCase:
 
 ACCOUNTS: list[AccountCase] = [
     AccountCase(
-        role="admin",
-        email="admin@example.local",
-        expected_kb_codes={"public-general", "hr-policy", "finance-policy", "tech-policy"},
-        allowed_question="Summarize all company policy categories.",
+        role="bilingual_admin",
+        email="bilingual_admin@example.local",
+        expected_kb_codes={"cn-public", "cn-internal", "en-public", "en-internal", "public-policy"},
+        allowed_question="Summarize visitor guidance and internal onboarding checklist.",
     ),
     AccountCase(
-        role="hr",
-        email="hr@example.local",
-        expected_kb_codes={"public-general", "hr-policy"},
-        allowed_question="Summarize leave and attendance policy.",
+        role="cn_staff",
+        email="cn_staff@example.local",
+        expected_kb_codes={"cn-public", "cn-internal"},
+        allowed_question="请总结中文内部手册中的接入流程。",
     ),
     AccountCase(
-        role="finance",
-        email="finance@example.local",
-        expected_kb_codes={"public-general", "finance-policy"},
-        allowed_question="Summarize reimbursement policy details.",
-    ),
-    AccountCase(
-        role="tech",
-        email="tech@example.local",
-        expected_kb_codes={"public-general", "tech-policy"},
-        allowed_question="Summarize release runbook checklist.",
+        role="en_staff",
+        email="en_staff@example.local",
+        expected_kb_codes={"en-public", "en-internal"},
+        allowed_question="Summarize the English internal onboarding flow.",
     ),
     AccountCase(
         role="visitor",
         email="visitor@example.local",
-        expected_kb_codes={"public-general"},
-        allowed_question="Summarize public employee handbook.",
+        expected_kb_codes={"public-policy"},
+        allowed_question="Summarize visitor badge and public support guidance.",
     ),
 ]
 
@@ -96,10 +90,27 @@ def _assert_true(name: str, condition: bool, context: dict) -> None:
         raise TestFailure(f"[FAIL] {name}: context={json.dumps(context, ensure_ascii=False)}")
 
 
+def _assert_citations_in_scope(name: str, ask_data: dict, allowed_codes: set[str], context: dict) -> None:
+    citations = ask_data.get("citations", [])
+    if not isinstance(citations, list):
+        raise TestFailure(f"[FAIL] {name}: citations is not list, context={json.dumps(context, ensure_ascii=False)}")
+    kb_codes = {
+        item.get("kb_code")
+        for item in citations
+        if isinstance(item, dict) and isinstance(item.get("kb_code"), str)
+    }
+    if not kb_codes.issubset(allowed_codes):
+        raise TestFailure(
+            f"[FAIL] {name}: unauthorized kb codes={sorted(kb_codes - allowed_codes)!r}, "
+            f"context={json.dumps(context, ensure_ascii=False)}"
+        )
+
+
 def run(base_url: str) -> int:
     api = f"{base_url.rstrip('/')}/api/v1"
     failures: list[str] = []
     passes = 0
+    tokens: dict[str, str] = {}
 
     print(f"Running permission matrix test against: {api}")
 
@@ -183,22 +194,28 @@ def run(base_url: str) -> int:
                     "response": ask_data,
                 },
             )
+            _assert_citations_in_scope(
+                f"{case_prefix} allowed question citation scope",
+                ask_data,
+                account.expected_kb_codes,
+                {
+                    "endpoint": "/qa/ask",
+                    "question": account.allowed_question,
+                    "response": ask_data,
+                },
+            )
 
+            tokens[account.role] = token
             passes += 1
             print(f"[PASS] {case_prefix} login/me/kb/ask")
         except TestFailure as exc:
             failures.append(str(exc))
             print(str(exc))
 
-    # Required overreach checks
+    # Required overreach check: visitor asks finance salary policy must be denied.
     try:
-        status, login_data = _request_json(
-            "POST",
-            f"{api}/auth/login",
-            payload={"email": "visitor@example.local", "password": DEFAULT_PASSWORD},
-        )
-        _assert_equal("visitor overreach login status", status, 200, {"endpoint": "/auth/login", "response": login_data})
-        visitor_token = login_data["access_token"]
+        visitor_token = tokens.get("visitor")
+        _assert_true("visitor token exists for overreach", bool(visitor_token), {"tokens": list(tokens.keys())})
 
         status, ask_data = _request_json(
             "POST",
@@ -221,13 +238,127 @@ def run(base_url: str) -> int:
             ask_data.get("denied") is True,
             {"endpoint": "/qa/ask", "question": "finance compensation salary policy", "response": ask_data},
         )
+        _assert_true(
+            "visitor finance overreach no citations",
+            ask_data.get("citations", []) == [],
+            {"endpoint": "/qa/ask", "question": "finance compensation salary policy", "response": ask_data},
+        )
         passes += 1
         print("[PASS] visitor finance overreach denied")
     except TestFailure as exc:
         failures.append(str(exc))
         print(str(exc))
 
-    total = len(ACCOUNTS) + 1
+    # cn_staff cross-language isolation: asking English internal should be denied
+    # OR return only authorized CN chunks.
+    try:
+        cn_token = tokens.get("cn_staff")
+        _assert_true("cn_staff token exists", bool(cn_token), {"tokens": list(tokens.keys())})
+        question = "Explain the English internal handbook onboarding checklist."
+        status, ask_data = _request_json(
+            "POST",
+            f"{api}/qa/ask",
+            token=cn_token,
+            payload={"question": question, "mode": "auto", "knowledge_base_codes": []},
+        )
+        _assert_equal("cn_staff cross-language ask status", status, 200, {"endpoint": "/qa/ask", "response": ask_data})
+        if ask_data.get("denied") is not True:
+            _assert_citations_in_scope(
+                "cn_staff cross-language scoped citations",
+                ask_data,
+                {"cn-public", "cn-internal"},
+                {"endpoint": "/qa/ask", "question": question, "response": ask_data},
+            )
+        passes += 1
+        print("[PASS] cn_staff English-internal isolation")
+    except TestFailure as exc:
+        failures.append(str(exc))
+        print(str(exc))
+
+    # en_staff cross-language isolation: asking Chinese internal should be denied
+    # OR return only authorized EN chunks.
+    try:
+        en_token = tokens.get("en_staff")
+        _assert_true("en_staff token exists", bool(en_token), {"tokens": list(tokens.keys())})
+        question = "请解释中文内部手册中的接入流程和协作约定。"
+        status, ask_data = _request_json(
+            "POST",
+            f"{api}/qa/ask",
+            token=en_token,
+            payload={"question": question, "mode": "auto", "knowledge_base_codes": []},
+        )
+        _assert_equal("en_staff cross-language ask status", status, 200, {"endpoint": "/qa/ask", "response": ask_data})
+        if ask_data.get("denied") is not True:
+            _assert_citations_in_scope(
+                "en_staff cross-language scoped citations",
+                ask_data,
+                {"en-public", "en-internal"},
+                {"endpoint": "/qa/ask", "question": question, "response": ask_data},
+            )
+        passes += 1
+        print("[PASS] en_staff Chinese-internal isolation")
+    except TestFailure as exc:
+        failures.append(str(exc))
+        print(str(exc))
+
+    # bilingual_admin bilingual retrieval with explicit kb scope
+    try:
+        admin_token = tokens.get("bilingual_admin")
+        _assert_true("bilingual_admin token exists", bool(admin_token), {"tokens": list(tokens.keys())})
+
+        cn_status, cn_data = _request_json(
+            "POST",
+            f"{api}/qa/ask",
+            token=admin_token,
+            payload={
+                "question": "请总结中文内部手册中的接入流程。",
+                "mode": "rag",
+                "knowledge_base_codes": ["cn-internal"],
+            },
+        )
+        _assert_equal("bilingual_admin cn ask status", cn_status, 200, {"endpoint": "/qa/ask", "response": cn_data})
+        _assert_true(
+            "bilingual_admin cn ask not denied",
+            cn_data.get("denied") is False,
+            {"endpoint": "/qa/ask", "response": cn_data},
+        )
+        _assert_citations_in_scope(
+            "bilingual_admin cn citations",
+            cn_data,
+            {"cn-internal"},
+            {"endpoint": "/qa/ask", "response": cn_data},
+        )
+
+        en_status, en_data = _request_json(
+            "POST",
+            f"{api}/qa/ask",
+            token=admin_token,
+            payload={
+                "question": "Summarize the English internal onboarding checklist.",
+                "mode": "rag",
+                "knowledge_base_codes": ["en-internal"],
+            },
+        )
+        _assert_equal("bilingual_admin en ask status", en_status, 200, {"endpoint": "/qa/ask", "response": en_data})
+        _assert_true(
+            "bilingual_admin en ask not denied",
+            en_data.get("denied") is False,
+            {"endpoint": "/qa/ask", "response": en_data},
+        )
+        _assert_citations_in_scope(
+            "bilingual_admin en citations",
+            en_data,
+            {"en-internal"},
+            {"endpoint": "/qa/ask", "response": en_data},
+        )
+
+        passes += 1
+        print("[PASS] bilingual_admin bilingual retrieval")
+    except TestFailure as exc:
+        failures.append(str(exc))
+        print(str(exc))
+
+    total = len(ACCOUNTS) + 4
     print("")
     print(f"Result: {passes}/{total} PASS")
     if failures:
