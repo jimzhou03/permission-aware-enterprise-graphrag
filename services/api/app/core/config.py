@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     enable_pgvector_sql_retrieval: bool = True
     cache_ttl_seconds: int = 1200
     cache_refusal_ttl_seconds: int = 300
+    upload_max_size_bytes: int = 1_048_576
+    upload_chunk_size_chars: int = 1000
+    upload_chunk_overlap_chars: int = 150
     prompt_version: str = "mvp-2026-05"
     permission_policy_version: str = "rbac-v1"
 

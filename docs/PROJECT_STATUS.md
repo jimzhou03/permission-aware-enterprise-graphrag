@@ -6,10 +6,60 @@
 
 - Docker 运行正常：前端 `http://localhost:5173`、后端 `http://localhost:8000/docs`、健康检查 `GET /healthz` 返回 `{"status":"ok"}`。
 - 模型模式保持 `LLM_MODE=mock`。
+- v0.3.0 已实现 Markdown/TXT 文档上传与重建索引（后端 RBAC 严格校验）。
 - v0.2.2 已实现 Function Calling Trace（后端受控函数链路追踪，非自治工具调用）。
 - v0.2.1 已接入 Ollama Local Router（仅分类/路由，不参与最终答案生成）。
 - 未接入外部大模型 API。
 - v0.2.0 已实现 PostgreSQL + pgvector SQL 检索路径，并保留 SQLite/不可用环境安全回退。
+
+## 本阶段（v0.3.0 Document Upload + Re-indexing）完成项
+
+1. 后端上传与重建索引能力
+   - 新增上传接口：`POST /api/v1/knowledge-bases/{kb_id}/documents/upload`。
+   - 新增重建索引接口：`POST /api/v1/documents/{document_id}/reindex`。
+   - 上传支持 `Markdown/TXT`（`.md/.txt`，`text/markdown`、`text/plain`、`text/x-markdown`）。
+   - 上传默认大小限制：`1MB`。
+   - 文本解析流程：UTF-8 解码、换行归一化、过量空行压缩、结构保留。
+
+2. 分块、嵌入、存储与版本失效
+   - 新增确定性分块器（可配置 `chunk_size` / `overlap`，默认 `1000/150` 字符）。
+   - 分块优先保留标题/段落边界，并生成稳定 `ordinal` 顺序。
+   - 继续使用本地 deterministic embedding（`embedding_service`），不接外部 embedding API。
+   - 上传与重建索引都会写入 `document_chunks` 并更新 KB `version`。
+   - 缓存失效策略采用 `kb_version_hash` 变化触发（无需前端参与，不跨角色泄露）。
+
+3. 权限与安全边界
+   - 上传/重建索引权限完全由后端决定，前端不参与授权判断。
+   - 上传/重建索引要求：
+     - 用户对目标 KB 在可见范围内；
+     - 且具备后端写权限（当前演示为 `admin:kb:write`）。
+   - `bilingual_admin` 可上传/重建；`cn_staff/en_staff/visitor` 默认不可上传。
+   - Ollama 仍仅用于路由分类，不参与权限判定和最终答案生成。
+
+4. 审计事件与可观测性
+   - 使用现有 `ingestion_jobs` 记录上传/重建索引事件元数据（成功/失败）：
+     - actor user
+     - target kb
+     - document id
+     - filename
+     - chunk count
+     - action (`document_upload` / `document_reindex`)
+     - status + error_code（安全错误码）
+   - 不落库存储原始文件内容。
+   - `System Status` 新增上传与索引能力字段（enabled/max size/supported types/indexing mode）。
+
+5. 前端改造
+   - Knowledge Bases 页面新增上传区域（仅有权限用户可见可用）。
+   - 支持选择 `.md/.txt` 文件、可选标题、上传后自动刷新文档与 chunks。
+   - 文档列表新增 `Re-index` 操作（仅有权限用户可用）。
+   - 无权限用户保持只读 Viewer 体验。
+   - 修复 Knowledge Chat 布局：消息区固定视口高度并内部滚动，输入区保持可见，避免页面无限拉长。
+
+6. 当前限制（v0.3.0）
+   - 仅支持 Markdown/TXT 上传，不支持 PDF/DOCX/图片解析。
+   - 最终答案生成仍是 `LLM_MODE=mock`。
+   - 外部 LLM API 未启用。
+   - MCP 暂未接入。
 
 ## 本阶段（v0.2.2 Function Calling Trace）完成项
 

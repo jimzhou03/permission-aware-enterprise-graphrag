@@ -3,6 +3,7 @@ import type {
   AskMode,
   AskResponse,
   AuditLog,
+  DocumentIngestionResult,
   DocumentChunk,
   DemoCase,
   KnowledgeBaseDocument,
@@ -61,6 +62,36 @@ export async function listKnowledgeBaseDocuments(
 
 export async function listDocumentChunks(token: string, documentId: string): Promise<DocumentChunk[]> {
   return request<DocumentChunk[]>(`/documents/${documentId}/chunks`, { method: "GET" }, token);
+}
+
+export async function uploadKnowledgeBaseDocument(
+  token: string,
+  kbId: string,
+  file: File,
+  title?: string
+): Promise<DocumentIngestionResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (title && title.trim()) {
+    formData.append("title", title.trim());
+  }
+
+  const response = await fetch(`${API_BASE}/knowledge-bases/${kbId}/documents/upload`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`
+    },
+    body: formData
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Request failed: ${response.status}`);
+  }
+  return (await response.json()) as DocumentIngestionResult;
+}
+
+export async function reindexDocument(token: string, documentId: string): Promise<DocumentIngestionResult> {
+  return request<DocumentIngestionResult>(`/documents/${documentId}/reindex`, { method: "POST" }, token);
 }
 
 export async function askQuestion(

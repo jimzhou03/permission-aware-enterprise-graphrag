@@ -57,6 +57,20 @@ export interface DocumentChunk {
   embedding_dimension: number;
 }
 
+export interface DocumentIngestionResult {
+  action: "document_upload" | "document_reindex" | string;
+  status: "success" | "failed" | string;
+  knowledge_base_id: string;
+  knowledge_base_code: string;
+  knowledge_base_version: number;
+  document_id: string;
+  document_title: string;
+  document_source: string;
+  document_version: number;
+  filename: string;
+  chunk_count: number;
+}
+
 export interface DemoCase {
   id: string;
   role: string;
@@ -205,4 +219,8 @@ export interface RetrievalConfig {
   function_calling_mode: string;
   llm_autonomous_tool_calling: boolean;
   permission_authority: string;
+  document_upload_enabled: boolean;
+  upload_max_size_bytes: number;
+  upload_supported_types: string[];
+  indexing_mode: string;
 }

@@ -10,7 +10,8 @@ A permission-first internal knowledge assistant that enforces backend RBAC and s
 - Real pgvector SQL retrieval path for PostgreSQL deployments (with safe fallback).
 - Ollama local router (qwen2.5:0.5b-instruct) for lightweight classification with safe fallback to rules.
 - Backend-controlled Function Calling Trace for deterministic QA execution steps.
-- Knowledge Base Viewer + Document Viewer + Chunk Viewer (read-only, permission-scoped).
+- Markdown/TXT document upload + re-indexing (backend RBAC enforced).
+- Knowledge Base Viewer + Document Viewer + Chunk Viewer (permission-scoped).
 - Retrieval Trace API and Developer Trace page for `request_id`, scope, chunk hits, deny/cache path.
 - GraphRAG scaffolding with Neo4j entity/path projection.
 - Permission-aware cache key design with `cache_hit` audit visibility.
@@ -85,18 +86,34 @@ Router behavior:
 - If Ollama is unavailable/timeout/invalid-output, router safely falls back to rules.
 - Router never decides permission and never expands `allowed_kb_ids`.
 
-## Observability Endpoints (v0.2.2)
+## Document Upload Flow (v0.3.0)
+
+`upload -> parse -> chunk -> embed -> store -> viewer refresh -> permission-scoped retrieval`
+
+1. Upload endpoint receives `.md/.txt` file (UTF-8, max 1MB).
+2. Backend validates role permission and KB scope.
+3. Text is normalized (`\r\n`/blank lines) and chunked deterministically.
+4. Deterministic local embeddings are generated (`embedding_service`).
+5. Chunks are stored in PostgreSQL/pgvector-compatible schema.
+6. KB version increments to invalidate cache key scope (`kb_version_hash` changes).
+7. Document/Chunk viewer immediately reads the new data under RBAC scope.
+
+## Observability Endpoints (v0.3.0)
 
 - `GET /api/v1/knowledge-bases`:
   Returns knowledge bases visible to the current user, including `display_name`, `language`, and scoped metadata.
 - `GET /api/v1/knowledge-bases/{kb_id}/documents`:
   Returns documents in a knowledge base only when the caller has access to that KB.
+- `POST /api/v1/knowledge-bases/{kb_id}/documents/upload`:
+  Uploads and indexes Markdown/TXT documents. Upload permission is enforced by backend RBAC + KB scope checks.
 - `GET /api/v1/documents/{document_id}/chunks`:
   Returns chunk list with preview/full content and embedding status only when the caller can access the document's KB.
+- `POST /api/v1/documents/{document_id}/reindex`:
+  Rebuilds chunks/embeddings for an existing document with backend write permission checks.
 - `GET /api/v1/qa/{request_id}/trace`:
   Returns structured retrieval trace and backend function calling trace. Includes router metadata (`router_mode`, `router_model`, fallback/error, router decision). Chunk content is filtered again by the current viewer's permission scope.
 - `GET /api/v1/system/retrieval-config`:
-  Returns safe runtime config for retrieval mode, router runtime, embedding mode, and function calling safety posture.
+  Returns safe runtime config for retrieval mode, router runtime, embedding mode, function-calling posture, and upload/indexing capabilities.
 
 ## Demo Accounts
 
@@ -182,15 +199,16 @@ npm run build
 
 - `LLM_MODE=mock` by default (deterministic mock generation path).
 - Embedding is deterministic mock embedding in MVP (`SHA256`-based vector projection).
+- Upload currently supports Markdown/TXT only (`.md`, `.txt`, UTF-8).
+- PDF/DOCX/image upload and parsing are not implemented yet.
 - Ollama is used only as local router/classifier; it is not the final answer generator.
 - External LLM APIs are not enabled for this demo.
 - MCP is not added yet.
-- Document upload/indexing management API is not implemented yet.
 
 ## Roadmap
 
 - Admin knowledge base viewer polish.
-- Real document upload and indexing pipeline.
+- Rich parser pipeline (PDF/DOCX/HTML) with strict security policy.
 - MCP adapter layer.
 - Production deployment hardening (security, ops, reliability).
 

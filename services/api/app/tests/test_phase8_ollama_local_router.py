@@ -293,3 +293,7 @@ def test_retrieval_config_reports_ollama_router_runtime(client, monkeypatch):
     assert payload["function_calling_mode"] == "backend-controlled-trace"
     assert payload["llm_autonomous_tool_calling"] is False
     assert payload["permission_authority"] == "backend-rbac"
+    assert payload["document_upload_enabled"] is True
+    assert payload["upload_max_size_bytes"] >= 1_048_576
+    assert ".txt" in payload["upload_supported_types"]
+    assert payload["indexing_mode"] == "deterministic-local-embedding"

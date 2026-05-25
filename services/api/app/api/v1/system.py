@@ -5,6 +5,7 @@ from app.core.deps import get_current_user
 from app.core.database import get_db
 from app.models import User
 from app.schemas.common import RetrievalConfigPublic
+from app.services.ingestion_service import SUPPORTED_UPLOAD_MIME_TYPES, SUPPORTED_UPLOAD_SUFFIXES
 from app.services.local_router_service import get_router_status
 from app.services.rag_service import get_retrieval_runtime
 from sqlalchemy.orm import Session
@@ -42,4 +43,8 @@ def get_retrieval_config(
         function_calling_mode="backend-controlled-trace",
         llm_autonomous_tool_calling=False,
         permission_authority="backend-rbac",
+        document_upload_enabled=True,
+        upload_max_size_bytes=settings.upload_max_size_bytes,
+        upload_supported_types=sorted({*SUPPORTED_UPLOAD_SUFFIXES, *SUPPORTED_UPLOAD_MIME_TYPES}),
+        indexing_mode="deterministic-local-embedding",
     )

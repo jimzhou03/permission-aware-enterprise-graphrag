@@ -10,7 +10,9 @@ import {
   listAuditLogs,
   listKnowledgeBaseDocuments,
   listKnowledgeBases,
-  login
+  login,
+  reindexDocument,
+  uploadKnowledgeBaseDocument
 } from "./api";
 import { LANGUAGE_STORAGE_KEY, OVERREACH_LABELS, UI_TEXT, type Language } from "./i18n";
 import type {
@@ -358,6 +360,12 @@ export default function App() {
   const [activeView, setActiveView] = useState<AppView>("knowledge_chat");
   const [viewerPending, setViewerPending] = useState(false);
   const [tracePending, setTracePending] = useState(false);
+  const [uploadTitle, setUploadTitle] = useState("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadPending, setUploadPending] = useState(false);
+  const [uploadStatusMessage, setUploadStatusMessage] = useState("");
+  const [uploadInputVersion, setUploadInputVersion] = useState(0);
+  const [reindexPendingDocumentId, setReindexPendingDocumentId] = useState("");
 
   const t = UI_TEXT[language];
   const overreachLabels: Record<string, string> = OVERREACH_LABELS[language];
@@ -390,6 +398,7 @@ export default function App() {
     () => chunksByDocumentId[selectedDocumentId] ?? [],
     [chunksByDocumentId, selectedDocumentId]
   );
+  const canUploadDocuments = Boolean(user?.permissions?.includes("admin:kb:write"));
   const latestHitKbCodes = useMemo(() => {
     if (!activeResponse) return [];
     return [...new Set(activeResponse.citations.map((item) => item.kb_code))];
@@ -542,6 +551,12 @@ export default function App() {
     return response.cache_hit ? t.cacheHit : t.cacheMiss;
   }
 
+  function formatSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
   function traceStatusClass(status: string): string {
     if (status === "success") return "border-emerald-200 bg-emerald-50 text-emerald-700";
     if (status === "denied") return "border-amber-200 bg-amber-50 text-amber-700";
@@ -591,6 +606,11 @@ export default function App() {
     setTraceRequestId("");
     setRequestTrace(null);
     setRetrievalConfig(null);
+    setUploadTitle("");
+    setUploadFile(null);
+    setUploadStatusMessage("");
+    setUploadInputVersion(0);
+    setReindexPendingDocumentId("");
     setMessage("");
     setHistoryOwnerEmail("");
     setChatSessions([]);
@@ -807,15 +827,26 @@ export default function App() {
     );
   }
 
+  async function refreshKnowledgeBaseDocuments(kbId: string) {
+    if (!token) return [];
+    const documents = await listKnowledgeBaseDocuments(token, kbId);
+    setKbDocumentsByKbId((prev) => ({ ...prev, [kbId]: documents }));
+    return documents;
+  }
+
   async function onSelectKnowledgeBase(kbId: string) {
     if (!token) return;
     setSelectedKnowledgeBaseId(kbId);
     setSelectedDocumentId("");
+    setUploadStatusMessage("");
+    setUploadTitle("");
+    setUploadFile(null);
+    setReindexPendingDocumentId("");
+    setUploadInputVersion((prev) => prev + 1);
     if (kbDocumentsByKbId[kbId]) return;
     setViewerPending(true);
     try {
-      const documents = await listKnowledgeBaseDocuments(token, kbId);
-      setKbDocumentsByKbId((prev) => ({ ...prev, [kbId]: documents }));
+      await refreshKnowledgeBaseDocuments(kbId);
     } catch (error) {
       setMessage(
         error instanceof Error ? `${t.askFailed} ${error.message}` : t.askFailed
@@ -839,6 +870,71 @@ export default function App() {
       );
     } finally {
       setViewerPending(false);
+    }
+  }
+
+  async function onUploadDocument(event: React.FormEvent) {
+    event.preventDefault();
+    if (!token || !selectedKnowledgeBase || !uploadFile) return;
+    setUploadPending(true);
+    setUploadStatusMessage("");
+    try {
+      const result = await uploadKnowledgeBaseDocument(
+        token,
+        selectedKnowledgeBase.id,
+        uploadFile,
+        uploadTitle
+      );
+      setUploadStatusMessage(
+        `${t.uploadSuccessPrefix}: ${result.filename} (${result.chunk_count} chunks)`
+      );
+      setUploadTitle("");
+      setUploadFile(null);
+      setUploadInputVersion((prev) => prev + 1);
+      const nextKnowledgeBases = await listKnowledgeBases(token);
+      setKnowledgeBases(nextKnowledgeBases);
+      await refreshKnowledgeBaseDocuments(selectedKnowledgeBase.id);
+      setChunksByDocumentId((prev) => {
+        const next = { ...prev };
+        delete next[result.document_id];
+        return next;
+      });
+      await onSelectDocument(result.document_id);
+    } catch (error) {
+      setUploadStatusMessage(
+        error instanceof Error ? `${t.uploadFailedPrefix} ${error.message}` : t.uploadFailedPrefix
+      );
+    } finally {
+      setUploadPending(false);
+    }
+  }
+
+  async function onReindexDocument(documentId: string) {
+    if (!token || !selectedKnowledgeBase) return;
+    setReindexPendingDocumentId(documentId);
+    setUploadStatusMessage("");
+    try {
+      const result = await reindexDocument(token, documentId);
+      setUploadStatusMessage(
+        `${t.reindexSuccessPrefix}: ${result.filename} (${result.chunk_count} chunks)`
+      );
+      const nextKnowledgeBases = await listKnowledgeBases(token);
+      setKnowledgeBases(nextKnowledgeBases);
+      await refreshKnowledgeBaseDocuments(selectedKnowledgeBase.id);
+      setChunksByDocumentId((prev) => {
+        const next = { ...prev };
+        delete next[documentId];
+        return next;
+      });
+      if (selectedDocumentId === documentId) {
+        await onSelectDocument(documentId);
+      }
+    } catch (error) {
+      setUploadStatusMessage(
+        error instanceof Error ? `${t.reindexFailedPrefix} ${error.message}` : t.reindexFailedPrefix
+      );
+    } finally {
+      setReindexPendingDocumentId("");
     }
   }
 
@@ -1102,7 +1198,7 @@ export default function App() {
                     <p className="mt-2 text-[11px] text-slate-500">{t.historyStoredLocally}</p>
                   </div>
 
-                  <div className="flex min-h-[700px] flex-col">
+                  <div className="flex h-[72vh] min-h-[560px] max-h-[820px] flex-col md:h-[calc(100vh-220px)]">
                     <div className="border-b border-slate-200 px-5 py-4">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
@@ -1115,7 +1211,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5 md:px-6">
+                    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 md:px-6">
                       {!activeChatSession || activeChatSession.messages.length === 0 ? (
                         <div className="flex min-h-[320px] items-center justify-center text-center">
                           <p className="text-sm text-slate-500">{t.emptyConversation}</p>
@@ -1330,6 +1426,61 @@ export default function App() {
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-slate-700">{t.uploadDocumentTitle}</p>
+                        <div className="text-xs text-slate-500">
+                          {t.uploadTargetKnowledgeBase}:{" "}
+                          <span className="font-mono text-slate-700">
+                            {selectedKnowledgeBase?.code ?? t.noValue}
+                          </span>
+                        </div>
+                      </div>
+                      {selectedKnowledgeBase ? (
+                        canUploadDocuments ? (
+                          <form className="space-y-3" onSubmit={onUploadDocument}>
+                            <label className="block space-y-1">
+                              <span className="text-xs text-slate-600">{t.uploadTitleOptional}</span>
+                              <input
+                                className="field h-9"
+                                value={uploadTitle}
+                                onChange={(event) => setUploadTitle(event.target.value)}
+                                placeholder={selectedKnowledgeBase.code}
+                              />
+                            </label>
+                            <label className="block space-y-1">
+                              <span className="text-xs text-slate-600">{t.uploadChooseFile}</span>
+                              <input
+                                key={`${selectedKnowledgeBase.id}_${uploadInputVersion}`}
+                                className="field h-10 p-1.5"
+                                type="file"
+                                accept=".md,.txt,text/markdown,text/plain"
+                                onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
+                              />
+                            </label>
+                            <div className="text-xs text-slate-500">{t.uploadConstraintHint}</div>
+                            <div className="text-xs text-slate-600">
+                              {t.uploadSelectedFile}: {uploadFile?.name ?? t.noValue}
+                            </div>
+                            <button
+                              className="btn-primary w-full"
+                              type="submit"
+                              disabled={uploadPending || !uploadFile || !token}
+                            >
+                              {uploadPending ? t.working : t.uploadSubmit}
+                            </button>
+                            {uploadStatusMessage ? (
+                              <div className="notification-line text-xs">{uploadStatusMessage}</div>
+                            ) : null}
+                          </form>
+                        ) : (
+                          <p className="text-sm text-slate-500">{t.uploadReadonlyHint}</p>
+                        )
+                      ) : (
+                        <p className="text-sm text-slate-500">{t.noKnowledgeBaseSelected}</p>
+                      )}
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                         <p className="text-sm font-medium text-slate-700">{t.documentsPanelTitle}</p>
                         <div className="text-xs text-slate-500">
                           {t.selectedKnowledgeBase}:{" "}
@@ -1359,13 +1510,25 @@ export default function App() {
                                     <td className="px-2 py-2">{doc.chunk_count}</td>
                                     <td className="px-2 py-2">{formatDateTime(doc.created_at, language)}</td>
                                     <td className="px-2 py-2">
-                                      <button
-                                        className="btn-secondary px-2 py-1 text-xs"
-                                        type="button"
-                                        onClick={() => onSelectDocument(doc.id)}
-                                      >
-                                        {t.viewChunks}
-                                      </button>
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          className="btn-secondary px-2 py-1 text-xs"
+                                          type="button"
+                                          onClick={() => onSelectDocument(doc.id)}
+                                        >
+                                          {t.viewChunks}
+                                        </button>
+                                        {canUploadDocuments ? (
+                                          <button
+                                            className="btn-secondary px-2 py-1 text-xs"
+                                            type="button"
+                                            disabled={reindexPendingDocumentId === doc.id}
+                                            onClick={() => onReindexDocument(doc.id)}
+                                          >
+                                            {reindexPendingDocumentId === doc.id ? t.working : t.reindexAction}
+                                          </button>
+                                        ) : null}
+                                      </div>
                                     </td>
                                   </tr>
                                 ))}
@@ -1582,6 +1745,30 @@ export default function App() {
                     <div className="text-xs text-slate-500">{t.cacheBackend}</div>
                     <div className="mt-1 font-mono text-sm text-slate-800">
                       {retrievalConfig?.cache_backend ?? t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.documentUploadStatus}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig ? formatBoolean(retrievalConfig.document_upload_enabled) : t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.uploadMaxSize}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig ? formatSize(retrievalConfig.upload_max_size_bytes) : t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.uploadSupportedTypes}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.upload_supported_types.join(", ") || t.noValue}
+                    </div>
+                  </div>
+                  <div className="soft-card">
+                    <div className="text-xs text-slate-500">{t.indexingMode}</div>
+                    <div className="mt-1 font-mono text-sm text-slate-800">
+                      {retrievalConfig?.indexing_mode ?? t.noValue}
                     </div>
                   </div>
                   <div className="soft-card">

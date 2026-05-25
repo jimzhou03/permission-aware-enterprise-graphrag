@@ -52,6 +52,20 @@ class DocumentChunkPublic(ORMModel):
     embedding_dimension: int
 
 
+class DocumentIngestionResponse(BaseModel):
+    action: str
+    status: str
+    knowledge_base_id: UUID
+    knowledge_base_code: str
+    knowledge_base_version: int
+    document_id: UUID
+    document_title: str
+    document_source: str
+    document_version: int
+    filename: str
+    chunk_count: int
+
+
 class RetrievalConfigPublic(BaseModel):
     embedding_provider: str
     embedding_dimension: int
@@ -73,6 +87,10 @@ class RetrievalConfigPublic(BaseModel):
     function_calling_mode: str
     llm_autonomous_tool_calling: bool
     permission_authority: str
+    document_upload_enabled: bool
+    upload_max_size_bytes: int
+    upload_supported_types: list[str] = Field(default_factory=list)
+    indexing_mode: str
 
 
 class AuditLogPublic(ORMModel):
