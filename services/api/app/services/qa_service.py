@@ -124,9 +124,10 @@ def _deny_response(request_id: str, reason: str, route_mode: str, route: RouteDe
 
 
 def _model_profile(retrieval_token: str) -> str:
+    llm_mode = "openai-compatible" if settings.llm_mode == "api" else settings.llm_mode
     router_model = settings.ollama_router_model if settings.local_router_mode == "ollama" else "rules"
     return (
-        f"llm={settings.llm_mode}:{settings.llm_model}|"
+        f"llm={llm_mode}:{settings.llm_model}|"
         f"router={settings.local_router_mode}:{router_model}|"
         f"retrieval={retrieval_token}"
     )
@@ -686,7 +687,8 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
             duration_ms=0,
         )
 
-    generate_input = f"citations={len(citations)} graph_paths={len(graph_paths)} llm_mode={settings.llm_mode}"
+    llm_mode = "openai-compatible" if settings.llm_mode == "api" else settings.llm_mode
+    generate_input = f"citations={len(citations)} graph_paths={len(graph_paths)} llm_mode={llm_mode}"
     generate_start = time.perf_counter()
     try:
         generated = generate_answer(

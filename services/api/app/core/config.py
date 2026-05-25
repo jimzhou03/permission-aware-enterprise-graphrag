@@ -36,6 +36,23 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 480
 
     embedding_dimensions: int = 64
+    embedding_mode: Literal["mock", "local"] = "mock"
+    local_embedding_backend: Literal["ollama", "sentence-transformers"] = Field(
+        default="ollama",
+        validation_alias=AliasChoices("LOCAL_EMBEDDING_BACKEND", "LOCAL_EMBEDDING_PROVIDER"),
+    )
+    local_embedding_model: str = Field(
+        default="nomic-embed-text",
+        validation_alias=AliasChoices("LOCAL_EMBEDDING_MODEL", "EMBEDDING_MODEL"),
+    )
+    local_embedding_base_url: str = Field(
+        default="http://host.docker.internal:11434",
+        validation_alias=AliasChoices("LOCAL_EMBEDDING_BASE_URL", "EMBEDDING_BASE_URL"),
+    )
+    local_embedding_timeout_seconds: float = Field(
+        default=8.0,
+        validation_alias=AliasChoices("LOCAL_EMBEDDING_TIMEOUT_SECONDS", "EMBEDDING_TIMEOUT_SECONDS"),
+    )
     qa_top_k: int = 5
     enable_pgvector_sql_retrieval: bool = True
     cache_ttl_seconds: int = 1200
@@ -46,10 +63,24 @@ class Settings(BaseSettings):
     prompt_version: str = "mvp-2026-05"
     permission_policy_version: str = "rbac-v1"
 
-    llm_mode: Literal["mock", "api"] = "mock"
+    llm_mode: Literal["mock", "ollama", "openai-compatible", "api"] = "mock"
     llm_api_base_url: str = "https://api.openai.com/v1"
     llm_api_key: str = ""
     llm_model: str = "gpt-4o-mini"
+    llm_temperature: float = 0.2
+    llm_timeout_seconds: float = 30.0
+    llm_ollama_base_url: str = Field(
+        default="http://host.docker.internal:11434",
+        validation_alias=AliasChoices("LLM_OLLAMA_BASE_URL", "OLLAMA_LLM_BASE_URL"),
+    )
+    llm_ollama_model: str = Field(
+        default="qwen2.5:7b-instruct",
+        validation_alias=AliasChoices("LLM_OLLAMA_MODEL", "OLLAMA_LLM_MODEL"),
+    )
+    llm_ollama_timeout_seconds: float = Field(
+        default=30.0,
+        validation_alias=AliasChoices("LLM_OLLAMA_TIMEOUT_SECONDS", "OLLAMA_LLM_TIMEOUT_SECONDS"),
+    )
 
     local_router_mode: Literal["rules", "ollama"] = "rules"
     ollama_base_url: str = Field(
