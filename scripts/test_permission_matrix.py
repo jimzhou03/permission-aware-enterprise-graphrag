@@ -34,7 +34,7 @@ ACCOUNTS: list[AccountCase] = [
     AccountCase(
         role="tech_staff",
         email="tech_staff@example.local",
-        expected_kb_codes={"tech-internal", "public-policy"},
+        expected_kb_codes={"tech-internal", "company-internal", "public-policy"},
         allowed_question="Summarize the Robot SDK deployment troubleshooting checklist.",
         overreach_kb_code="sales-internal",
         overreach_question="Summarize sales pricing policy.",
@@ -42,7 +42,7 @@ ACCOUNTS: list[AccountCase] = [
     AccountCase(
         role="sales_staff",
         email="sales_staff@example.local",
-        expected_kb_codes={"sales-internal", "public-policy"},
+        expected_kb_codes={"sales-internal", "company-internal", "public-policy"},
         allowed_question="请总结销售部机器人产品报价策略。",
         overreach_kb_code="tech-internal",
         overreach_question="请总结技术部 SDK 部署排障流程。",
@@ -50,7 +50,7 @@ ACCOUNTS: list[AccountCase] = [
     AccountCase(
         role="marketing_staff",
         email="marketing_staff@example.local",
-        expected_kb_codes={"marketing-internal", "public-policy"},
+        expected_kb_codes={"marketing-internal", "company-internal", "public-policy"},
         allowed_question="请总结市场部品牌定位与展会方案。",
         overreach_kb_code="support-internal",
         overreach_question="请总结客服部售后流程。",
@@ -58,7 +58,7 @@ ACCOUNTS: list[AccountCase] = [
     AccountCase(
         role="support_staff",
         email="support_staff@example.local",
-        expected_kb_codes={"support-internal", "public-policy"},
+        expected_kb_codes={"support-internal", "company-internal", "public-policy"},
         allowed_question="请总结客服部保修政策和常见故障处理。",
         overreach_kb_code="product-internal",
         overreach_question="请总结产品部功能路线图。",
@@ -66,7 +66,7 @@ ACCOUNTS: list[AccountCase] = [
     AccountCase(
         role="hr_staff",
         email="hr_staff@example.local",
-        expected_kb_codes={"hr-internal", "public-policy"},
+        expected_kb_codes={"hr-internal", "company-internal", "public-policy"},
         allowed_question="请总结人事部入职流程和绩效制度。",
         overreach_kb_code="admin-internal",
         overreach_question="请总结行政部采购流程。",
@@ -74,7 +74,7 @@ ACCOUNTS: list[AccountCase] = [
     AccountCase(
         role="admin_staff",
         email="admin_staff@example.local",
-        expected_kb_codes={"admin-internal", "public-policy"},
+        expected_kb_codes={"admin-internal", "company-internal", "public-policy"},
         allowed_question="请总结行政部会议室管理和办公资产管理。",
         overreach_kb_code="hr-internal",
         overreach_question="请总结人事部考勤制度。",
@@ -82,7 +82,7 @@ ACCOUNTS: list[AccountCase] = [
     AccountCase(
         role="product_staff",
         email="product_staff@example.local",
-        expected_kb_codes={"product-internal", "public-policy"},
+        expected_kb_codes={"product-internal", "company-internal", "public-policy"},
         allowed_question="请总结产品部机器人规格和竞品分析。",
         overreach_kb_code="marketing-internal",
         overreach_question="请总结市场部宣传内容规范。",
@@ -92,6 +92,7 @@ ACCOUNTS: list[AccountCase] = [
         email="bilingual_admin@example.local",
         expected_kb_codes={
             "public-policy",
+            "company-internal",
             "tech-internal",
             "sales-internal",
             "marketing-internal",
@@ -373,6 +374,45 @@ def run(base_url: str) -> int:
         )
         _assert_equal("visitor cooperation ask status", status, 200, {"response": coop_data})
         _assert_equal("visitor cooperation denied", coop_data.get("denied"), False, {"response": coop_data})
+
+        status, company_internal_data = _request_json(
+            "POST",
+            f"{api}/qa/ask",
+            token=visitor_token,
+            payload={"question": "公司组织架构是什么？", "mode": "auto", "knowledge_base_codes": []},
+        )
+        _assert_equal("visitor company internal ask status", status, 200, {"response": company_internal_data})
+        _assert_equal("visitor company internal denied", company_internal_data.get("denied"), True, {"response": company_internal_data})
+        _assert_equal("visitor company internal citations empty", company_internal_data.get("citations"), [], {"response": company_internal_data})
+
+        for role in [
+            "tech_staff",
+            "sales_staff",
+            "marketing_staff",
+            "support_staff",
+            "hr_staff",
+            "admin_staff",
+            "product_staff",
+        ]:
+            token = tokens.get(role)
+            _assert_true(f"{role} token exists", bool(token), {"tokens": list(tokens.keys())})
+            status, staff_company_data = _request_json(
+                "POST",
+                f"{api}/qa/ask",
+                token=token,
+                payload={"question": "怎么申请权限？", "mode": "auto", "knowledge_base_codes": []},
+            )
+            _assert_equal(f"{role} company ask status", status, 200, {"response": staff_company_data})
+            _assert_equal(f"{role} company ask denied", staff_company_data.get("denied"), False, {"response": staff_company_data})
+            _assert_true(
+                f"{role} company ask citations in company-internal",
+                {
+                    item.get("kb_code")
+                    for item in staff_company_data.get("citations", [])
+                    if isinstance(item, dict) and isinstance(item.get("kb_code"), str)
+                }.issubset({"company-internal"}),
+                {"response": staff_company_data},
+            )
 
         passes += 1
         print("[PASS] visitor general/public-quality questions")

@@ -91,12 +91,13 @@ def test_graph_status_endpoint_returns_safe_runtime_status(client):
     ("email", "expected_codes"),
     [
         ("visitor@example.local", {"public-policy"}),
-        ("sales_staff@example.local", {"public-policy", "sales-internal"}),
-        ("tech_staff@example.local", {"public-policy", "tech-internal"}),
+        ("sales_staff@example.local", {"public-policy", "company-internal", "sales-internal"}),
+        ("tech_staff@example.local", {"public-policy", "company-internal", "tech-internal"}),
         (
             "bilingual_admin@example.local",
             {
                 "public-policy",
+                "company-internal",
                 "tech-internal",
                 "sales-internal",
                 "marketing-internal",
@@ -163,7 +164,7 @@ def test_qa_graph_endpoint_respects_request_ownership_and_permission(client):
     assert owner.status_code == 200, owner.text
     owner_payload = owner.json()
     assert owner_payload["request_id"] == request_id
-    assert set(owner_payload["allowed_kb_codes"]) == {"public-policy", "sales-internal"}
+    assert set(owner_payload["allowed_kb_codes"]) == {"public-policy", "company-internal", "sales-internal"}
 
 
 def test_neo4j_unavailable_fallback_does_not_break_graphrag_qa(client):

@@ -92,6 +92,8 @@ def test_ollama_router_accepts_valid_json(client, monkeypatch):
     assert payload["route"]["router_fallback_used"] is False
     assert payload["route"]["intent"] == "policy_question"
     assert payload["route"]["target_department"] == "sales"
+    assert payload["route"]["target_scope"] == "department"
+    assert payload["route"]["target_kb_codes"] == ["sales-internal"]
     assert payload["route"]["need_rag"] is True
     assert payload["route"]["query_language"] == "zh"
     assert payload["route"]["requires_internal_access"] is True
@@ -187,17 +189,13 @@ def test_ollama_router_sales_and_tech_isolation_still_enforced(client, monkeypat
     cn_response = _ask(client, cn_token, "Explain the tech internal SDK deployment checklist.", mode="auto")
     assert cn_response.status_code == 200, cn_response.text
     cn_payload = cn_response.json()
-    assert cn_payload["denied"] is True or {
-        item["kb_code"] for item in cn_payload.get("citations", [])
-    }.issubset({"public-policy", "sales-internal"})
+    assert cn_payload["denied"] is True
 
     en_token = _login(client, "tech_staff@example.local")
     en_response = _ask(client, en_token, "请解释销售部报价策略与客户沟通话术。", mode="auto")
     assert en_response.status_code == 200, en_response.text
     en_payload = en_response.json()
-    assert en_payload["denied"] is True or {
-        item["kb_code"] for item in en_payload.get("citations", [])
-    }.issubset({"public-policy", "tech-internal"})
+    assert en_payload["denied"] is True
 
 
 def test_ollama_router_admin_can_still_retrieve_authorized_bilingual_content(client, monkeypatch):

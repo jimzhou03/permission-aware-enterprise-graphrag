@@ -32,6 +32,12 @@ SAMPLE_DOCUMENT_MANIFEST: list[dict[str, Any]] = [
         "source_label": "fictional-enterprise-doc",
     },
     {
+        "kb_code": "company-internal",
+        "title": "Company Internal Handbook",
+        "path": ROOT_DIR / "sample_data" / "company" / "company-internal.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
         "kb_code": "tech-internal",
         "title": "Robot SDK Manual",
         "path": ROOT_DIR / "sample_data" / "tech" / "robot-sdk-manual.md",

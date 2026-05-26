@@ -25,37 +25,37 @@ def test_department_accounts_can_retrieve_only_allowed_scope(client):
     cases = [
         (
             "tech_staff@example.local",
-            {"tech-internal", "public-policy"},
+            {"tech-internal", "company-internal", "public-policy"},
             "Summarize the Robot SDK Manual deployment checklist.",
         ),
         (
             "sales_staff@example.local",
-            {"sales-internal", "public-policy"},
+            {"sales-internal", "company-internal", "public-policy"},
             "请总结销售部机器人产品报价策略。",
         ),
         (
             "marketing_staff@example.local",
-            {"marketing-internal", "public-policy"},
+            {"marketing-internal", "company-internal", "public-policy"},
             "请说明市场部展会方案与宣传规范。",
         ),
         (
             "support_staff@example.local",
-            {"support-internal", "public-policy"},
+            {"support-internal", "company-internal", "public-policy"},
             "请总结客服部售后流程和保修政策。",
         ),
         (
             "hr_staff@example.local",
-            {"hr-internal", "public-policy"},
+            {"hr-internal", "company-internal", "public-policy"},
             "请总结人事部入职流程和考勤制度。",
         ),
         (
             "admin_staff@example.local",
-            {"admin-internal", "public-policy"},
+            {"admin-internal", "company-internal", "public-policy"},
             "请总结行政部会议室管理与采购流程。",
         ),
         (
             "product_staff@example.local",
-            {"product-internal", "public-policy"},
+            {"product-internal", "company-internal", "public-policy"},
             "请总结产品部规格与路线图。",
         ),
         (
@@ -102,6 +102,7 @@ def test_explicit_unauthorized_kb_scope_is_denied(client):
 def test_bilingual_admin_can_retrieve_all_department_knowledge(client):
     token = _login(client, "bilingual_admin@example.local")
     for kb_code, question in [
+        ("company-internal", "请总结公司组织架构与权限申请流程。"),
         ("tech-internal", "Summarize API integration guide."),
         ("sales-internal", "请总结销售渠道合作政策。"),
         ("marketing-internal", "请总结品牌定位。"),
@@ -180,10 +181,89 @@ def test_company_and_cooperation_questions_use_authorized_public_scope(client):
         payload = response.json()
         assert payload["denied"] is False
         assert payload["mode"] == "rag"
-        assert payload["route"]["target_department"] == "public"
+        assert payload["route"]["target_scope"] == "public"
+        assert payload["route"]["target_department"] is None
+        assert payload["route"]["target_kb_codes"] == ["public-policy"]
         assert payload["route"]["requires_internal_access"] is False
         assert {item["kb_code"] for item in payload["citations"]}.issubset({"public-policy"})
         assert "当前账号可访问" in payload["answer"] or "Based on the knowledge bases available" in payload["answer"]
+
+
+def test_company_internal_questions_require_company_internal_scope(client):
+    visitor_token = _login(client, "visitor@example.local")
+    visitor_response = _ask(client, visitor_token, "公司组织架构是什么？", mode="auto")
+    assert visitor_response.status_code == 200, visitor_response.text
+    visitor_payload = visitor_response.json()
+    assert visitor_payload["denied"] is True
+    assert visitor_payload["citations"] == []
+    assert visitor_payload["route"]["target_scope"] == "company"
+    assert visitor_payload["route"]["target_kb_codes"] == ["company-internal"]
+
+    sales_token = _login(client, "sales_staff@example.local")
+    staff_response = _ask(client, sales_token, "怎么申请权限？", mode="auto")
+    assert staff_response.status_code == 200, staff_response.text
+    staff_payload = staff_response.json()
+    assert staff_payload["denied"] is False
+    assert {item["kb_code"] for item in staff_payload["citations"]}.issubset({"company-internal"})
+    assert staff_payload["route"]["target_scope"] == "company"
+
+
+def test_router_target_scope_narrowing_for_department_questions(client):
+    checks = [
+        ("sales_staff@example.local", "销售报价策略是什么？", False, {"sales-internal"}),
+        ("sales_staff@example.local", "SDK 怎么接入？", True, set()),
+        ("tech_staff@example.local", "How to integrate the robot SDK?", False, {"tech-internal"}),
+        ("tech_staff@example.local", "销售报价策略是什么？", True, set()),
+        ("hr_staff@example.local", "绩效制度是什么？", False, {"hr-internal"}),
+        ("marketing_staff@example.local", "绩效制度是什么？", True, set()),
+        ("product_staff@example.local", "产品路线图是什么？", False, {"product-internal"}),
+    ]
+    for email, question, denied_expected, allowed_hit_codes in checks:
+        token = _login(client, email)
+        response = _ask(client, token, question, mode="auto")
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["denied"] is denied_expected, {"email": email, "question": question, "payload": payload}
+        if denied_expected:
+            assert payload["citations"] == []
+            continue
+        assert {item["kb_code"] for item in payload["citations"]}.issubset(allowed_hit_codes)
+
+
+def test_all_staff_can_hit_company_internal_for_permission_workflow_question(client):
+    staff_emails = [
+        "tech_staff@example.local",
+        "sales_staff@example.local",
+        "marketing_staff@example.local",
+        "support_staff@example.local",
+        "hr_staff@example.local",
+        "admin_staff@example.local",
+        "product_staff@example.local",
+    ]
+    for email in staff_emails:
+        token = _login(client, email)
+        response = _ask(client, token, "怎么申请权限？", mode="auto")
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["denied"] is False, {"email": email, "payload": payload}
+        assert payload["route"]["target_scope"] == "company"
+        assert {item["kb_code"] for item in payload["citations"]}.issubset({"company-internal"})
+
+
+def test_bilingual_admin_can_hit_multiple_department_targets(client):
+    token = _login(client, "bilingual_admin@example.local")
+    checks = [
+        ("销售报价策略是什么？", {"sales-internal"}),
+        ("How to integrate the robot SDK?", {"tech-internal"}),
+        ("绩效制度是什么？", {"hr-internal"}),
+        ("产品路线图是什么？", {"product-internal"}),
+    ]
+    for question, expected_scope in checks:
+        response = _ask(client, token, question, mode="auto")
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["denied"] is False
+        assert {item["kb_code"] for item in payload["citations"]}.issubset(expected_scope)
 
 
 def test_unsupported_query_returns_unsupported_mode_without_retrieval(client):

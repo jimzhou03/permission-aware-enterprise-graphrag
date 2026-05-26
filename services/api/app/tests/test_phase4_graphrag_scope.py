@@ -20,11 +20,13 @@ def test_graphrag_sales_staff_returns_graph_paths_in_authorized_scope(client):
     assert payload["denied"] is False
     assert payload["mode"] == "graphrag"
     assert payload["graph_paths"], payload
+    assert {item["kb_code"] for item in payload["citations"]}.issubset({"sales-internal"})
 
-    allowed_prefixes = {"KB:public-policy", "KB:sales-internal"}
+    allowed_prefixes = {"KB:sales-internal"}
     for graph_path in payload["graph_paths"]:
         assert graph_path["path"], graph_path
         assert graph_path["path"][0] in allowed_prefixes
+        assert "public-policy" not in " ".join(graph_path["path"])
         assert "tech-internal" not in " ".join(graph_path["path"])
         assert "marketing-internal" not in " ".join(graph_path["path"])
 

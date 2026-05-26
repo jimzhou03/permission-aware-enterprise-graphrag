@@ -202,3 +202,24 @@ def test_denied_request_skips_llm_generation_even_if_llm_mode_ollama(client, mon
     assert response.status_code == 200, response.text
     assert response.json()["denied"] is True
     assert calls["count"] == 0
+
+
+def test_router_target_scope_denied_request_skips_llm_generation(client, monkeypatch):
+    calls = {"count": 0}
+
+    def _fake_generate_answer(*args, **kwargs):
+        calls["count"] += 1
+        return llm_service.GeneratedAnswer(answer="should-not-run", model="mock:test")
+
+    monkeypatch.setattr(qa_service, "generate_answer", _fake_generate_answer)
+    token = _login(client, "sales_staff@example.local")
+    response = client.post(
+        "/api/v1/qa/ask",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "SDK 怎么接入？", "mode": "auto", "knowledge_base_codes": []},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["denied"] is True
+    assert payload["citations"] == []
+    assert calls["count"] == 0

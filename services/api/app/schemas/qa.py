@@ -9,6 +9,7 @@ ResponseMode = Literal["direct", "rag", "graphrag", "general", "unsupported"]
 RouterMode = Literal["rules", "ollama"]
 FunctionTraceStatus = Literal["success", "skipped", "denied", "error"]
 RouterLanguage = Literal["zh", "en", "unknown"]
+RouterTargetScope = Literal["general", "public", "company", "department", "unsupported"]
 RouterIntent = Literal[
     "greeting",
     "assistant_identity",
@@ -44,7 +45,9 @@ class AskRequest(BaseModel):
 
 
 class RouteDecision(BaseModel):
+    target_scope: RouterTargetScope = "general"
     target_department: str | None
+    target_kb_codes: list[str] = Field(default_factory=list)
     mode: ResponseMode
     requires_rag: bool
     need_rag: bool = False

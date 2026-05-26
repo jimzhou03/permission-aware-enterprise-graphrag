@@ -4,7 +4,7 @@
 
 Permission-Aware Enterprise GraphRAG Assistant is a local runnable enterprise knowledge assistant demo that combines JWT/RBAC, permission-scoped RAG retrieval, PostgreSQL + pgvector, Redis caching, Neo4j GraphRAG visualization, document upload/re-indexing, optional Ollama local routing, and auditable retrieval traces.
 
-Current demo scenario (v0.7.1) uses a fictional company: **星海智造机器人有限公司 (StarSea Robotics Co., Ltd.)**.  
+Current demo scenario (v0.7.2) uses a fictional company: **星海智造机器人有限公司 (StarSea Robotics Co., Ltd.)**.  
 The company provides service robots, inspection robots, receptionist robots, and delivery robots for enterprises, schools, campuses, exhibition halls, and mixed-use business spaces.
 
 ## Why This Project
@@ -24,7 +24,8 @@ This project focuses on deterministic backend authorization, then retrieval, the
 - JWT authentication.
 - RBAC and knowledge base ACL.
 - Multi-department knowledge isolation with visitor/staff/admin scope boundaries.
-- v0.7.1 rewritten department-specific demo knowledge base content for higher RAG answer quality.
+- v0.7.2 three-layer knowledge base structure: `public-policy` + `company-internal` + `department-internal`.
+- v0.7.2 router target scope narrowing before retrieval (`target_kb_codes` intersection with backend allowed scope).
 - Permission-scoped pgvector SQL retrieval.
 - Redis permission-aware cache and KB-version invalidation.
 - Markdown/TXT document upload and re-indexing.
@@ -64,8 +65,9 @@ flowchart LR
 
 - Permissions are computed by deterministic backend code.
 - `allowed_kb_ids` are resolved and enforced before retrieval.
+- Router output can narrow retrieval to `target_kb_codes`, but permission authority remains backend RBAC/ACL.
 - Frontend selection can only narrow scope; it cannot expand permissions.
-- Ollama is used only as optional intent-routing assistance and safe fallback metadata.
+- Ollama (when enabled) is only optional intent-routing assistance and safe fallback metadata.
 - The final generator does not decide access control.
 - Unauthorized chunks are excluded from answer payloads, trace payloads, cache usage paths, graph views, and audit payload outputs.
 - Graph visualization endpoints are also permission-scoped.
@@ -80,6 +82,12 @@ flowchart LR
 6. Permission-scoped retrieval.
 7. Answer generation.
 8. Audit and trace persistence.
+
+## Knowledge Base Layers
+
+- `public-policy`: public/company introduction, open product line, external cooperation entry, visit guide, public contact.
+- `company-internal`: internal organization/process handbook for formal employees only (visitor denied).
+- `department-internal`: department-owned internal docs (`tech/sales/marketing/support/hr/admin/product`), each role sees only its own department plus allowed shared layers.
 
 ## GraphRAG Pipeline
 
@@ -180,13 +188,13 @@ They are not production authentication credentials.
 | Role | Email | Demo Password (Local) | Access Scope |
 | --- | --- | --- | --- |
 | `visitor` | `visitor@example.local` | one-click guest entry | `public-policy` only |
-| `tech_staff` | `tech_staff@example.local` | `Passw0rd!123` | `tech-internal`, `public-policy` |
-| `sales_staff` | `sales_staff@example.local` | `Passw0rd!123` | `sales-internal`, `public-policy` |
-| `marketing_staff` | `marketing_staff@example.local` | `Passw0rd!123` | `marketing-internal`, `public-policy` |
-| `support_staff` | `support_staff@example.local` | `Passw0rd!123` | `support-internal`, `public-policy` |
-| `hr_staff` | `hr_staff@example.local` | `Passw0rd!123` | `hr-internal`, `public-policy` |
-| `admin_staff` | `admin_staff@example.local` | `Passw0rd!123` | `admin-internal`, `public-policy` |
-| `product_staff` | `product_staff@example.local` | `Passw0rd!123` | `product-internal`, `public-policy` |
+| `tech_staff` | `tech_staff@example.local` | `Passw0rd!123` | `public-policy`, `company-internal`, `tech-internal` |
+| `sales_staff` | `sales_staff@example.local` | `Passw0rd!123` | `public-policy`, `company-internal`, `sales-internal` |
+| `marketing_staff` | `marketing_staff@example.local` | `Passw0rd!123` | `public-policy`, `company-internal`, `marketing-internal` |
+| `support_staff` | `support_staff@example.local` | `Passw0rd!123` | `public-policy`, `company-internal`, `support-internal` |
+| `hr_staff` | `hr_staff@example.local` | `Passw0rd!123` | `public-policy`, `company-internal`, `hr-internal` |
+| `admin_staff` | `admin_staff@example.local` | `Passw0rd!123` | `public-policy`, `company-internal`, `admin-internal` |
+| `product_staff` | `product_staff@example.local` | `Passw0rd!123` | `public-policy`, `company-internal`, `product-internal` |
 | `bilingual_admin` | `bilingual_admin@example.local` | `Passw0rd!123` | all demo knowledge bases + admin views |
 
 ## Demo Walkthrough

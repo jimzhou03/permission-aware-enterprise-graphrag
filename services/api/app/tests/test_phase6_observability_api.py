@@ -34,13 +34,14 @@ def _grant_role_permission(role_name: str, permission_code: str) -> None:
 @pytest.mark.parametrize(
     ("email", "expected_codes"),
     [
-        ("sales_staff@example.local", {"sales-internal", "public-policy"}),
-        ("tech_staff@example.local", {"tech-internal", "public-policy"}),
+        ("sales_staff@example.local", {"sales-internal", "company-internal", "public-policy"}),
+        ("tech_staff@example.local", {"tech-internal", "company-internal", "public-policy"}),
         ("visitor@example.local", {"public-policy"}),
         (
             "bilingual_admin@example.local",
             {
                 "public-policy",
+                "company-internal",
                 "tech-internal",
                 "sales-internal",
                 "marketing-internal",
@@ -137,7 +138,7 @@ def test_trace_endpoint_filters_chunk_content_for_unauthorized_audit_reader(clie
     assert trace_payload["hit_chunk_ids"]
     assert trace_payload["retrieved_chunks"] == []
     assert any("omitted" in item for item in trace_payload["trace_limits"])
-    assert set(trace_payload["allowed_kb_codes"]) == {"public-policy", "sales-internal"}
+    assert set(trace_payload["allowed_kb_codes"]) == {"public-policy", "company-internal", "sales-internal"}
     assert trace_payload["router_mode"] in {"rules", "ollama"}
     assert trace_payload["router_model"]
     assert trace_payload["router_availability"] in {"available", "unavailable", "not_checked"}

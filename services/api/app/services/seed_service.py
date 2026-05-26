@@ -165,6 +165,7 @@ def seed_demo_data(db: Session) -> None:
     }
     dept_map = {
         "public": _get_or_create_department(db, "public", "Public"),
+        "company": _get_or_create_department(db, "company", "Company Internal"),
         "tech": _get_or_create_department(db, "tech", "Technology Department"),
         "sales": _get_or_create_department(db, "sales", "Sales Department"),
         "marketing": _get_or_create_department(db, "marketing", "Marketing Department"),
@@ -276,6 +277,14 @@ def seed_demo_data(db: Session) -> None:
         "private",
         dept_map["public"],
     )
+    kb_company_internal = _get_or_create_knowledge_base(
+        db,
+        "company-internal",
+        "全员内部通用知识库",
+        "公司组织架构、跨部门协作流程、权限申请与内部协作规范。",
+        "private",
+        dept_map["company"],
+    )
     kb_tech_internal = _get_or_create_knowledge_base(
         db,
         "tech-internal",
@@ -335,6 +344,7 @@ def seed_demo_data(db: Session) -> None:
 
     managed_kb_codes = {
         "public-policy",
+        "company-internal",
         "tech-internal",
         "sales-internal",
         "marketing-internal",
@@ -347,28 +357,36 @@ def seed_demo_data(db: Session) -> None:
 
     # Explicit ACL entries keep policy deterministic and reviewable.
     _ensure_acl(db, kb_public_policy, role=role_map["tech_staff"])
+    _ensure_acl(db, kb_company_internal, role=role_map["tech_staff"])
     _ensure_acl(db, kb_tech_internal, role=role_map["tech_staff"])
 
     _ensure_acl(db, kb_public_policy, role=role_map["sales_staff"])
+    _ensure_acl(db, kb_company_internal, role=role_map["sales_staff"])
     _ensure_acl(db, kb_sales_internal, role=role_map["sales_staff"])
 
     _ensure_acl(db, kb_public_policy, role=role_map["marketing_staff"])
+    _ensure_acl(db, kb_company_internal, role=role_map["marketing_staff"])
     _ensure_acl(db, kb_marketing_internal, role=role_map["marketing_staff"])
 
     _ensure_acl(db, kb_public_policy, role=role_map["support_staff"])
+    _ensure_acl(db, kb_company_internal, role=role_map["support_staff"])
     _ensure_acl(db, kb_support_internal, role=role_map["support_staff"])
 
     _ensure_acl(db, kb_public_policy, role=role_map["hr_staff"])
+    _ensure_acl(db, kb_company_internal, role=role_map["hr_staff"])
     _ensure_acl(db, kb_hr_internal, role=role_map["hr_staff"])
 
     _ensure_acl(db, kb_public_policy, role=role_map["admin_staff"])
+    _ensure_acl(db, kb_company_internal, role=role_map["admin_staff"])
     _ensure_acl(db, kb_admin_internal, role=role_map["admin_staff"])
 
     _ensure_acl(db, kb_public_policy, role=role_map["product_staff"])
+    _ensure_acl(db, kb_company_internal, role=role_map["product_staff"])
     _ensure_acl(db, kb_product_internal, role=role_map["product_staff"])
 
     _ensure_acl(db, kb_public_policy, role=role_map["visitor"])
 
+    _ensure_acl(db, kb_company_internal, role=role_map["bilingual_admin"])
     _ensure_acl(db, kb_tech_internal, role=role_map["bilingual_admin"])
     _ensure_acl(db, kb_sales_internal, role=role_map["bilingual_admin"])
     _ensure_acl(db, kb_marketing_internal, role=role_map["bilingual_admin"])

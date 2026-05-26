@@ -360,7 +360,9 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         input_summary=classify_input,
         output_summary=(
             f"mode={route.mode} need_rag={route.need_rag} intent={route.intent} "
+            f"target_scope={route.target_scope} "
             f"target_department={route.target_department or 'none'} "
+            f"target_kb_count={len(route.target_kb_codes)} "
             f"requires_internal_access={route.requires_internal_access}"
         ),
         duration_ms=classify_duration_ms,
@@ -389,6 +391,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
     resolve_duration_ms = int((time.perf_counter() - resolve_start) * 1000)
     allowed_kb_ids = [kb.id for kb in allowed_kbs]
     allowed_kb_codes = {kb.code for kb in allowed_kbs}
+    allowed_kb_by_code = {kb.code: kb for kb in allowed_kbs}
     trace_recorder.set_step(
         tool_name="resolve_user_permission_scope",
         status="success",
@@ -447,105 +450,67 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
                 trace_recorder=trace_recorder,
             )
 
-    if route.target_department and route.target_department not in {"public"}:
-        matches_target = [
-            kb for kb in allowed_kbs if kb.department and kb.department.code == route.target_department
-        ]
-        if not matches_target and user.role and user.role.name not in {"admin", "bilingual_admin"}:
-            trace_recorder.set_step(
-                tool_name="check_cache",
-                status="skipped",
-                input_summary="cache_lookup_not_started",
-                output_summary="permission_denied_before_cache",
-                duration_ms=0,
-            )
-            trace_recorder.set_step(
-                tool_name="search_allowed_chunks",
-                status="denied",
-                input_summary=f"target_department={route.target_department}",
-                output_summary="department_scope_not_allowed",
-                duration_ms=0,
-            )
-            trace_recorder.set_step(
-                tool_name="get_graph_paths",
-                status="skipped",
-                input_summary=f"mode={route.mode}",
-                output_summary="denied_before_retrieval",
-                duration_ms=0,
-            )
-            trace_recorder.set_step(
-                tool_name="generate_answer",
-                status="skipped",
-                input_summary="denied_request",
-                output_summary="permission_denied",
-                duration_ms=0,
-            )
-            response = _deny_response(
-                request_id=request_id,
-                reason=_permission_denied_message(route.language),
-                route_mode=route.mode,
-                route=route,
-            )
-            return _finalize_with_audit(
-                db=db,
-                start=start,
-                request_id=request_id,
-                user=user,
-                question=payload.question,
-                response=response,
-                model="permission-deny|retrieval=none",
-                router_availability=router_availability,
-                trace_recorder=trace_recorder,
-            )
+    route_target_codes = _as_unique_strings(code for code in route.target_kb_codes if code)
+    requested_scope_codes = _as_unique_strings(code for code in payload.knowledge_base_codes if code)
+    if route_target_codes:
+        selected_scope_codes = [code for code in route_target_codes if code in allowed_kb_codes]
+        selected_scope_source = "router_target_scope"
+    elif requested_scope_codes:
+        selected_scope_codes = [code for code in requested_scope_codes if code in allowed_kb_codes]
+        selected_scope_source = "request_scope"
+    else:
+        selected_scope_codes = [kb.code for kb in allowed_kbs]
+        selected_scope_source = "allowed_scope"
 
-    if route.requires_internal_access and user.role and user.role.name not in {"admin", "bilingual_admin"}:
-        has_internal_scope = any(kb.department and kb.department.code != "public" for kb in allowed_kbs)
-        if not has_internal_scope:
-            trace_recorder.set_step(
-                tool_name="check_cache",
-                status="skipped",
-                input_summary="cache_lookup_not_started",
-                output_summary="permission_denied_before_cache",
-                duration_ms=0,
-            )
-            trace_recorder.set_step(
-                tool_name="search_allowed_chunks",
-                status="denied",
-                input_summary=f"intent={route.intent}",
-                output_summary="requires_internal_access_without_internal_scope",
-                duration_ms=0,
-            )
-            trace_recorder.set_step(
-                tool_name="get_graph_paths",
-                status="skipped",
-                input_summary=f"mode={route.mode}",
-                output_summary="denied_before_retrieval",
-                duration_ms=0,
-            )
-            trace_recorder.set_step(
-                tool_name="generate_answer",
-                status="skipped",
-                input_summary="denied_request",
-                output_summary="permission_denied",
-                duration_ms=0,
-            )
-            response = _deny_response(
-                request_id=request_id,
-                reason=_permission_denied_message(route.language),
-                route_mode=route.mode,
-                route=route,
-            )
-            return _finalize_with_audit(
-                db=db,
-                start=start,
-                request_id=request_id,
-                user=user,
-                question=payload.question,
-                response=response,
-                model="permission-deny|retrieval=none",
-                router_availability=router_availability,
-                trace_recorder=trace_recorder,
-            )
+    selected_kbs = [allowed_kb_by_code[code] for code in selected_scope_codes if code in allowed_kb_by_code]
+    selected_kb_ids = [kb.id for kb in selected_kbs]
+
+    if route_target_codes and not selected_kb_ids:
+        trace_recorder.set_step(
+            tool_name="check_cache",
+            status="skipped",
+            input_summary="cache_lookup_not_started",
+            output_summary="permission_denied_before_cache",
+            duration_ms=0,
+        )
+        trace_recorder.set_step(
+            tool_name="search_allowed_chunks",
+            status="denied",
+            input_summary=f"target_kbs={','.join(route_target_codes)}",
+            output_summary="router_target_scope_not_allowed",
+            duration_ms=0,
+        )
+        trace_recorder.set_step(
+            tool_name="get_graph_paths",
+            status="skipped",
+            input_summary=f"mode={route.mode}",
+            output_summary="denied_before_retrieval",
+            duration_ms=0,
+        )
+        trace_recorder.set_step(
+            tool_name="generate_answer",
+            status="skipped",
+            input_summary="denied_request",
+            output_summary="permission_denied",
+            duration_ms=0,
+        )
+        response = _deny_response(
+            request_id=request_id,
+            reason=_permission_denied_message(route.language),
+            route_mode=route.mode,
+            route=route,
+        )
+        return _finalize_with_audit(
+            db=db,
+            start=start,
+            request_id=request_id,
+            user=user,
+            question=payload.question,
+            response=response,
+            model="permission-deny|retrieval=none",
+            router_availability=router_availability,
+            trace_recorder=trace_recorder,
+        )
 
     cache_key_parts = build_cache_key_parts(
         user_id=str(user.id),
@@ -553,17 +518,20 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         department=user.department.code if user.department else None,
         permission_scope_items=[
             f"{settings.permission_policy_version}",
-            *(f"{kb.code}:{kb.id}" for kb in allowed_kbs),
+            f"scope_source={selected_scope_source}",
+            *(f"allowed:{kb.code}:{kb.id}" for kb in allowed_kbs),
+            *(f"selected:{kb.code}:{kb.id}" for kb in selected_kbs),
+            *(f"target:{code}" for code in route_target_codes),
         ],
-        kb_versions=[f"{kb.code}:{kb.version}" for kb in allowed_kbs],
+        kb_versions=[f"{kb.code}:{kb.version}" for kb in selected_kbs],
         question=payload.question,
         mode=route.mode,
         model_profile=_model_profile(retrieval_runtime.cache_token),
         prompt_version=settings.prompt_version,
     )
     cache_input = (
-        f"mode={route.mode} scoped_kbs={len(payload.knowledge_base_codes)} "
-        f"allowed_kbs={len(allowed_kbs)}"
+        f"mode={route.mode} selected_scope={selected_scope_source} "
+        f"selected_kbs={len(selected_kb_ids)} allowed_kbs={len(allowed_kbs)}"
     )
     cache_start = time.perf_counter()
     try:
@@ -695,9 +663,10 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         )
         return result
 
-    scoped_codes = payload.knowledge_base_codes
+    scoped_codes: list[str] = []
     search_input = (
         f"mode={route.mode} allowed_kbs={len(allowed_kb_ids)} "
+        f"selected_kbs={len(selected_kb_ids)} "
         f"scoped_kbs={len(scoped_codes)} top_k={settings.qa_top_k}"
     )
     search_start = time.perf_counter()
@@ -705,7 +674,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         retrieved = retrieve_permission_scoped_chunks(
             db=db,
             question=payload.question,
-            allowed_kb_ids=allowed_kb_ids,
+            allowed_kb_ids=selected_kb_ids,
             scoped_kb_codes=scoped_codes,
             top_k=settings.qa_top_k,
             runtime=retrieval_runtime,
@@ -747,13 +716,13 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
 
     graph_paths: list[GraphPath] = []
     if route.mode == "graphrag":
-        graph_input = f"citations={len(citations)} allowed_kbs={len(allowed_kb_ids)}"
+        graph_input = f"citations={len(citations)} allowed_kbs={len(selected_kb_ids)}"
         graph_start = time.perf_counter()
         try:
             graph_paths = build_graph_paths_for_citations(
                 db=db,
                 citations=citations,
-                allowed_kb_ids=allowed_kb_ids,
+                allowed_kb_ids=selected_kb_ids,
             )
         except Exception:
             graph_duration_ms = int((time.perf_counter() - graph_start) * 1000)

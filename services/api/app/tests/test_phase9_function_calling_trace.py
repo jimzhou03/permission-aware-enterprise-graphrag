@@ -171,12 +171,12 @@ def test_permission_denial_trace_hides_unauthorized_chunk_content(client):
         (
             "sales_staff@example.local",
             "Explain the tech internal SDK deployment checklist.",
-            {"public-policy", "sales-internal"},
+            {"public-policy", "company-internal", "sales-internal"},
         ),
         (
             "tech_staff@example.local",
             "请解释销售部报价策略与客户沟通话术。",
-            {"public-policy", "tech-internal"},
+            {"public-policy", "company-internal", "tech-internal"},
         ),
     ],
 )
@@ -247,7 +247,7 @@ def test_frontend_scope_selection_cannot_expand_permissions_in_function_trace(cl
 
     trace_payload = _trace(client, token, payload["request_id"])
     _assert_trace_order(trace_payload)
-    assert set(trace_payload["allowed_kb_codes"]) == {"public-policy", "sales-internal"}
+    assert set(trace_payload["allowed_kb_codes"]) == {"public-policy", "company-internal", "sales-internal"}
     assert trace_payload["retrieved_chunks"] == []
     assert _trace_step_map(trace_payload)["search_allowed_chunks"]["status"] == "denied"
 

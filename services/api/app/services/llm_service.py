@@ -65,9 +65,46 @@ def _shorten_excerpt(text: str, limit: int = 140) -> str:
     return f"{cleaned[:limit].rstrip()}..."
 
 
+def _strip_markdown_noise(text: str) -> str:
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines: list[str] = []
+    for raw_line in normalized.split("\n"):
+        line = raw_line.strip()
+        line = re.sub(r"^#{1,6}\s*", "", line)
+        line = re.sub(r"^[-*+]\s+", "", line)
+        line = re.sub(r"^\d+[.)]\s+", "", line)
+        line = re.sub(r"^`{1,3}", "", line)
+        if line:
+            lines.append(line)
+    return re.sub(r"\s+", " ", " ".join(lines)).strip()
+
+
+def _extract_query_terms(question: str) -> set[str]:
+    lowered = question.lower()
+    en_terms = {token for token in re.findall(r"[a-z]{2,}", lowered) if len(token) >= 3}
+    zh_chars = re.findall(r"[\u4e00-\u9fff]", question)
+    zh_terms = set()
+    for idx in range(len(zh_chars) - 1):
+        zh_terms.add("".join(zh_chars[idx : idx + 2]))
+    return en_terms | zh_terms
+
+
+def _is_retrieval_relevant(question: str, citations: list[Citation]) -> bool:
+    if not citations:
+        return False
+    terms = _extract_query_terms(question)
+    if not terms:
+        return True
+    for citation in citations[:4]:
+        text = f"{citation.document_title} {_strip_markdown_noise(citation.excerpt).lower()}"
+        if any(term in text for term in terms):
+            return True
+    return max((float(item.score) for item in citations[:4]), default=0.0) >= 0.58
+
+
 def _first_sentence(text: str, is_zh: bool) -> str:
     separators = r"[。！？]" if is_zh else r"[.!?]"
-    parts = re.split(separators, text)
+    parts = re.split(separators, _strip_markdown_noise(text))
     for part in parts:
         candidate = re.sub(r"\s+", " ", part).strip()
         if candidate:
@@ -77,7 +114,7 @@ def _first_sentence(text: str, is_zh: bool) -> str:
 
 def _render_mock_answer(question: str, citations: list[Citation], graph_paths: list[GraphPath]) -> str:
     is_zh = _is_zh_text(question)
-    if not citations:
+    if not citations or not _is_retrieval_relevant(question, citations):
         if is_zh:
             return "当前授权知识库中没有足够信息回答该问题。"
         return "There is not enough information in the currently authorized knowledge bases to answer this question."
@@ -85,9 +122,9 @@ def _render_mock_answer(question: str, citations: list[Citation], graph_paths: l
     top_citations = citations[:4]
     key_points = [
         (
-            f"{citation.document_title}：{_shorten_excerpt(citation.excerpt)}"
+            f"{citation.document_title}：{_shorten_excerpt(_strip_markdown_noise(citation.excerpt))}"
             if is_zh
-            else f"{citation.document_title}: {_shorten_excerpt(citation.excerpt)}"
+            else f"{citation.document_title}: {_shorten_excerpt(_strip_markdown_noise(citation.excerpt))}"
         )
         for citation in top_citations
     ]

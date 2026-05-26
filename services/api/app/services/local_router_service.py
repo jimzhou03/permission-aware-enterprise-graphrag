@@ -11,23 +11,125 @@ import httpx
 from pydantic import AliasChoices, BaseModel, Field, ValidationError, model_validator
 
 from app.core.config import get_settings
-from app.schemas.qa import AskMode, RouteDecision, RouterIntent, RouterLanguage, RouterMode, RouterTargetDepartment
+from app.schemas.qa import AskMode, RouteDecision, RouterIntent, RouterLanguage, RouterMode
 
 
 settings = get_settings()
 
 DEPARTMENT_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "finance": ("finance", "salary", "compensation", "payroll", "reimbursement", "budget", "财务", "薪酬", "报销", "预算"),
-    "hr": ("hr", "recruit", "hiring", "leave", "attendance", "recruitment", "招聘", "人事", "请假", "考勤", "绩效"),
-    "tech": ("tech", "sdk", "api", "deploy", "release", "incident", "integration", "技术", "发布", "部署", "接口"),
-    "sales": ("sales", "quote", "pricing", "channel", "deal", "销售", "报价", "客户沟通", "渠道", "折扣"),
-    "marketing": ("marketing", "brand", "campaign", "expo", "market", "市场", "品牌", "展会", "宣传"),
-    "support": ("support", "after-sales", "ticket", "warranty", "repair", "客服", "售后", "保修", "工单", "故障", "报修"),
-    "admin": ("admin", "administration", "meeting room", "procurement", "asset", "行政", "会议室", "采购", "资产"),
-    "product": ("product", "spec", "roadmap", "feature", "competition", "产品", "规格", "路线图", "竞品"),
-    "cn": ("cn", "chinese", "中文", "汉语", "china policy", "中国内部", "中文资料"),
-    "en": ("en", "english", "英文", "internal english", "english internal", "english docs"),
-    "public": ("public", "visitor", "badge", "访客", "公开", "公示", "公司介绍", "对外"),
+    "tech": (
+        "tech",
+        "sdk",
+        "api",
+        "deployment",
+        "deploy",
+        "device pairing",
+        "pairing",
+        "task dispatch",
+        "route planning",
+        "telemetry",
+        "integration",
+        "robot command",
+        "技术",
+        "部署",
+        "设备接入",
+        "任务调度",
+        "导航",
+        "故障排查",
+    ),
+    "sales": (
+        "sales",
+        "pricing",
+        "quote",
+        "discount",
+        "channel",
+        "opportunity",
+        "contract quote",
+        "销售",
+        "报价",
+        "折扣",
+        "客户分级",
+        "渠道",
+        "销售话术",
+        "商机",
+        "合同报价",
+    ),
+    "marketing": (
+        "marketing",
+        "brand",
+        "expo",
+        "campaign",
+        "media",
+        "materials",
+        "市场",
+        "品牌",
+        "展会",
+        "宣传",
+        "案例包装",
+        "媒体",
+        "物料",
+    ),
+    "support": (
+        "support",
+        "after-sales",
+        "warranty",
+        "ticket",
+        "escalation",
+        "incident handling",
+        "客服",
+        "售后",
+        "保修",
+        "工单",
+        "故障处理",
+        "客户投诉",
+        "服务升级",
+    ),
+    "hr": (
+        "hr",
+        "onboarding",
+        "attendance",
+        "performance",
+        "training",
+        "probation",
+        "payroll",
+        "compensation",
+        "salary",
+        "人事",
+        "入职",
+        "考勤",
+        "绩效",
+        "培训",
+        "试用期",
+        "薪酬",
+    ),
+    "admin": (
+        "admin",
+        "administration",
+        "meeting room",
+        "procurement",
+        "asset",
+        "visitor registration",
+        "approval",
+        "行政",
+        "会议室",
+        "采购",
+        "办公资产",
+        "访客登记",
+        "行政审批",
+    ),
+    "product": (
+        "product",
+        "spec",
+        "roadmap",
+        "version planning",
+        "competitor",
+        "feature priority",
+        "产品规格",
+        "路线图",
+        "版本规划",
+        "竞品分析",
+        "功能优先级",
+    ),
 }
 
 POLICY_KEYWORDS = (
@@ -74,6 +176,38 @@ BUSINESS_COOPERATION_KEYWORDS = (
     "商务对接",
     "商务联系",
 )
+PUBLIC_POLICY_KEYWORDS = (
+    "公开资料",
+    "公开介绍",
+    "公开产品",
+    "参观须知",
+    "联系方式",
+    "对外合作",
+    "visitor guide",
+    "public policy",
+    "public contact",
+)
+COMPANY_INTERNAL_KEYWORDS = (
+    "公司组织架构",
+    "组织架构",
+    "部门职责",
+    "每个部门负责",
+    "跨部门协作",
+    "协作流程",
+    "内部知识库使用规范",
+    "权限申请流程",
+    "怎么申请权限",
+    "申请权限",
+    "内部问题找哪个部门",
+    "内部协作",
+    "company organization",
+    "organization structure",
+    "department responsibility",
+    "cross department process",
+    "cross-functional process",
+    "permission request",
+    "internal kb policy",
+)
 ASSISTANT_IDENTITY_KEYWORDS = (
     "who are you",
     "what are you",
@@ -107,23 +241,30 @@ GREETING_ZH = {"你好", "您好", "早上好", "晚上好"}
 GREETING_EN = {"hello", "hi", "good morning", "good evening"}
 KNOWN_DEPARTMENTS = {
     "hr",
-    "finance",
     "tech",
     "sales",
     "marketing",
     "support",
     "admin",
     "product",
-    "cn",
-    "en",
-    "public",
+}
+PUBLIC_KB_CODE = "public-policy"
+COMPANY_KB_CODE = "company-internal"
+DEPARTMENT_TO_KB_CODE = {
+    "tech": "tech-internal",
+    "sales": "sales-internal",
+    "marketing": "marketing-internal",
+    "support": "support-internal",
+    "hr": "hr-internal",
+    "admin": "admin-internal",
+    "product": "product-internal",
 }
 
 
 class OllamaRouterOutput(BaseModel):
     query_language: RouterLanguage = Field(validation_alias=AliasChoices("query_language", "language"))
     intent: RouterIntent
-    target_department: RouterTargetDepartment
+    target_department: str = "unknown"
     need_rag: bool = True
     requires_internal_access: bool = False
     confidence: float = Field(ge=0.0, le=1.0)
@@ -133,13 +274,11 @@ class OllamaRouterOutput(BaseModel):
     def _normalize_fields(self) -> "OllamaRouterOutput":
         if self.intent in {"greeting", "assistant_identity", "assistant_capability", "unsupported"}:
             self.need_rag = False
-        if self.target_department == "unknown" and self.intent in {"company_intro", "business_cooperation"}:
-            self.target_department = "public"
         if self.intent == "department_internal":
             self.requires_internal_access = True
-            if self.target_department in {"unknown", "public"}:
+            if not self.target_department or self.target_department in {"unknown", "public", "company"}:
                 self.target_department = "unknown"
-        elif self.target_department not in {"unknown", "public"} and self.intent not in {
+        elif self.target_department not in {"unknown", "public", "company"} and self.intent not in {
             "greeting",
             "assistant_identity",
             "assistant_capability",
@@ -220,17 +359,24 @@ def detect_language(question: str) -> RouterLanguage:
 
 def detect_target_department(question: str) -> str | None:
     lowered = _normalize_for_greeting(question)
-    public_keywords = DEPARTMENT_KEYWORDS.get("public", ())
-    if _contains_any(lowered, public_keywords) or _contains_any(lowered, COMPANY_INFO_KEYWORDS) or _contains_any(
-        lowered, BUSINESS_COOPERATION_KEYWORDS
-    ):
-        return "public"
     for department, keywords in DEPARTMENT_KEYWORDS.items():
-        if department == "public":
-            continue
         if _contains_any(lowered, keywords):
             return department
     return None
+
+
+def _is_company_internal_question(question: str) -> bool:
+    lowered = _normalize_for_greeting(question)
+    return _contains_any(lowered, COMPANY_INTERNAL_KEYWORDS)
+
+
+def _is_public_question(question: str) -> bool:
+    lowered = _normalize_for_greeting(question)
+    return (
+        _contains_any(lowered, COMPANY_INFO_KEYWORDS)
+        or _contains_any(lowered, BUSINESS_COOPERATION_KEYWORDS)
+        or _contains_any(lowered, PUBLIC_POLICY_KEYWORDS)
+    )
 
 
 def detect_intent(question: str) -> RouterIntent:
@@ -243,12 +389,16 @@ def detect_intent(question: str) -> RouterIntent:
         return "assistant_capability"
     if any(token in lowered for token in SECURITY_TEST_KEYWORDS):
         return "security_test"
+    if _is_company_internal_question(question):
+        return "policy_question"
     if _contains_any(lowered, COMPANY_INFO_KEYWORDS):
         return "company_intro"
     if _contains_any(lowered, BUSINESS_COOPERATION_KEYWORDS):
         return "business_cooperation"
+    if _contains_any(lowered, PUBLIC_POLICY_KEYWORDS):
+        return "company_intro"
     target_department = detect_target_department(question)
-    if target_department not in {None, "public"}:
+    if target_department is not None:
         return "department_internal"
     if any(token in lowered for token in POLICY_KEYWORDS):
         return "policy_question"
@@ -261,11 +411,7 @@ def _rule_output(question: str) -> OllamaRouterOutput:
     query_language = detect_language(question)
     intent = detect_intent(question)
     department = detect_target_department(question) or "unknown"
-    requires_internal_access = (
-        intent == "department_internal"
-        or intent == "security_test"
-        or (department not in {"public", "unknown"} and intent not in {"company_intro", "business_cooperation"})
-    )
+    requires_internal_access = intent in {"department_internal", "security_test"} or _is_company_internal_question(question)
     if intent in {"greeting", "assistant_identity", "assistant_capability", "unsupported"}:
         need_rag = False
     else:
@@ -292,13 +438,70 @@ def _rule_output(question: str) -> OllamaRouterOutput:
     )
 
 
-def _sanitize_department(value: RouterTargetDepartment, question: str) -> str | None:
-    if value in KNOWN_DEPARTMENTS:
-        return value
+def _sanitize_department(value: str, question: str) -> str | None:
+    raw = str(value or "").strip().lower().replace("_", "-")
+    alias_map = {
+        "technology": "tech",
+        "technical": "tech",
+        "customer-support": "support",
+        "customer service": "support",
+        "human-resources": "hr",
+        "operations-admin": "admin",
+        "operation-admin": "admin",
+    }
+    normalized = alias_map.get(raw, raw)
+    if normalized in KNOWN_DEPARTMENTS:
+        return normalized
     detected = detect_target_department(question)
     if detected in KNOWN_DEPARTMENTS:
         return detected
     return None
+
+
+def _build_target_selection(
+    *,
+    question: str,
+    classification: OllamaRouterOutput,
+    target_department: str | None,
+    route_mode: str,
+) -> tuple[str, str | None, list[str], bool]:
+    normalized = _normalize_for_greeting(question)
+    raw_target_department = str(classification.target_department or "").strip().lower()
+
+    if route_mode == "unsupported":
+        return "unsupported", None, [], False
+    if route_mode == "general":
+        return "general", None, [], False
+
+    if _is_company_internal_question(question):
+        return "company", None, [COMPANY_KB_CODE], True
+
+    if classification.intent in {"company_intro", "business_cooperation"} or _is_public_question(question):
+        return "public", None, [PUBLIC_KB_CODE], False
+
+    if target_department in DEPARTMENT_TO_KB_CODE:
+        kb_code = DEPARTMENT_TO_KB_CODE[target_department]
+        return "department", target_department, [kb_code], True
+
+    if classification.intent == "security_test":
+        if raw_target_department and raw_target_department not in {"unknown", "public", "company"}:
+            return "department", None, [f"{raw_target_department}-internal"], True
+        if any(token in normalized for token in ("internal", "内部", "机密", "confidential")):
+            return "company", None, [COMPANY_KB_CODE], True
+        return "department", None, [], True
+
+    if classification.intent == "policy_question":
+        if raw_target_department and raw_target_department not in {"unknown", "public", "company"}:
+            return "department", None, [f"{raw_target_department}-internal"], True
+        if _contains_any(normalized, POLICY_KEYWORDS):
+            return "company", None, [COMPANY_KB_CODE], True
+
+    if classification.requires_internal_access:
+        if raw_target_department and raw_target_department not in {"unknown", "public", "company"}:
+            return "department", None, [f"{raw_target_department}-internal"], True
+        return "company", None, [COMPANY_KB_CODE], True
+
+    return "public", None, [PUBLIC_KB_CODE], False
 
 
 def _route_mode_from_inputs(request_mode: AskMode, classification_need_rag: bool, intent: RouterIntent) -> str:
@@ -329,8 +532,16 @@ def _build_route_decision(
     else:
         need_rag = route_mode in {"rag", "graphrag"}
     target_department = _sanitize_department(classification.target_department, question)
-    return RouteDecision(
+    target_scope, scoped_department, target_kb_codes, requires_internal_access = _build_target_selection(
+        question=question,
+        classification=classification,
         target_department=target_department,
+        route_mode=route_mode,
+    )
+    return RouteDecision(
+        target_scope=target_scope,  # type: ignore[arg-type]
+        target_department=scoped_department,
+        target_kb_codes=target_kb_codes,
         mode=route_mode,  # type: ignore[arg-type]
         requires_rag=need_rag,
         need_rag=need_rag,
@@ -338,7 +549,7 @@ def _build_route_decision(
         reason=classification.reason[:240],
         language=classification.query_language,
         query_language=classification.query_language,
-        requires_internal_access=classification.requires_internal_access,
+        requires_internal_access=requires_internal_access,
         intent=classification.intent,
         router_mode=router_mode,
         router_model=router_model,
@@ -372,7 +583,7 @@ def _build_ollama_prompt() -> str:
         "Return exactly keys: query_language, intent, target_department, need_rag, requires_internal_access, confidence, reason.\n"
         "query_language must be one of: zh, en, unknown.\n"
         "intent must be one of: greeting, assistant_identity, assistant_capability, company_intro, business_cooperation, policy_question, department_internal, knowledge_lookup, security_test, unsupported.\n"
-        "target_department must be one of: tech, sales, marketing, support, hr, admin, product, finance, public, cn, en, unknown.\n"
+        "target_department must be one of: tech, sales, marketing, support, hr, admin, product, public, company, unknown.\n"
         "need_rag must be boolean.\n"
         "requires_internal_access must be boolean.\n"
         "confidence must be a float between 0 and 1.\n"
