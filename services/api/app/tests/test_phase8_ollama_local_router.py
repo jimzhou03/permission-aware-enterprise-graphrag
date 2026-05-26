@@ -66,6 +66,8 @@ def test_rules_router_still_works_by_default(client):
     assert payload["route"]["router_mode"] == "rules"
     assert payload["router_mode"] == "rules"
     assert payload["route"]["need_rag"] is False
+    assert payload["route"]["query_language"] == "zh"
+    assert payload["route"]["requires_internal_access"] is False
 
 
 def test_ollama_router_accepts_valid_json(client, monkeypatch):
@@ -91,6 +93,8 @@ def test_ollama_router_accepts_valid_json(client, monkeypatch):
     assert payload["route"]["intent"] == "policy_question"
     assert payload["route"]["target_department"] == "sales"
     assert payload["route"]["need_rag"] is True
+    assert payload["route"]["query_language"] == "zh"
+    assert payload["route"]["requires_internal_access"] is True
 
 
 def test_ollama_invalid_json_falls_back_to_rules(client, monkeypatch):

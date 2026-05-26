@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactElement } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 
 import {
   askQuestion,
@@ -569,6 +569,8 @@ export default function App() {
   const [uploadStatusMessage, setUploadStatusMessage] = useState("");
   const [uploadInputVersion, setUploadInputVersion] = useState(0);
   const [reindexPendingDocumentId, setReindexPendingDocumentId] = useState("");
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoScrollRef = useRef(true);
 
   const t = UI_TEXT[language];
   const overreachLabels: Record<string, string> = OVERREACH_LABELS[language];
@@ -840,6 +842,34 @@ export default function App() {
       setSelectedGraphNodeId("");
     }
   }, [graphNodeById, selectedGraphNodeId]);
+
+  function scrollChatToBottom(behavior: ScrollBehavior = "auto") {
+    const container = chatScrollRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior });
+  }
+
+  function updateAutoScrollState() {
+    const container = chatScrollRef.current;
+    if (!container) return;
+    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    shouldAutoScrollRef.current = distanceToBottom < 72;
+  }
+
+  useEffect(() => {
+    if (activeView !== "knowledge_chat") return;
+    shouldAutoScrollRef.current = true;
+    scrollChatToBottom("auto");
+  }, [activeView, activeSessionId]);
+
+  useEffect(() => {
+    if (activeView !== "knowledge_chat") return;
+    if (!activeChatSession) return;
+    const behavior: ScrollBehavior = activeChatSession.messages.length > 0 ? "smooth" : "auto";
+    if (shouldAutoScrollRef.current) {
+      scrollChatToBottom(behavior);
+    }
+  }, [activeView, activeChatSession?.messages.length]);
 
   const roleProfile = useMemo(() => resolveRoleDisplayProfile(user, language), [language, user]);
   const roleBadgeClass = useMemo(() => roleProfile.badgeClass, [roleProfile.badgeClass]);
@@ -1357,7 +1387,7 @@ export default function App() {
         <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center px-6">
           <div className="console-shell w-full max-w-2xl p-3">
             <div className="console-statusbar mb-3">
-              <div className="console-statusbar-left">GRAPHRAG OS v0.7.0</div>
+              <div className="console-statusbar-left">GRAPHRAG OS v0.7.1</div>
               <div className="console-statusbar-mid">///////////////</div>
               <div className="console-statusbar-right">SYSTEM ONLINE</div>
             </div>
@@ -1552,7 +1582,7 @@ export default function App() {
     <div className="console-root min-h-screen text-slate-900">
       <div className="console-shell mx-auto w-full max-w-[1880px] p-3 md:p-4">
         <div className="console-statusbar mb-2">
-          <div className="console-statusbar-left">GRAPHRAG OS v0.7.0</div>
+          <div className="console-statusbar-left">GRAPHRAG OS v0.7.1</div>
           <div className="console-statusbar-mid" aria-hidden="true">
             /////////////////////////
           </div>
@@ -1766,7 +1796,11 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="scroll-area console-chat-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 md:px-6">
+                    <div
+                      ref={chatScrollRef}
+                      onScroll={updateAutoScrollState}
+                      className="scroll-area console-chat-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 md:px-6"
+                    >
                       {!activeChatSession || activeChatSession.messages.length === 0 ? (
                         <div className="flex min-h-[350px] flex-col items-center justify-center gap-3 text-center">
                           <div className="flex h-16 w-16 items-center justify-center rounded-sm border border-[#5a5146] bg-[#efdcc1] text-[#8a4a16]">
@@ -1802,7 +1836,7 @@ export default function App() {
                                   <span>{formatDateTime(chatMessage.createdAt, language)}</span>
                                   {chatMessage.mode ? <span className="font-mono">{chatMessage.mode}</span> : null}
                                 </div>
-                                <div className="whitespace-pre-wrap text-sm leading-6">{chatMessage.content}</div>
+                                <div className="whitespace-pre-wrap break-words text-sm leading-6">{chatMessage.content}</div>
 
                                 {isUserMessage ? (
                                   <div className="mt-2 text-[11px] text-accent-50">
@@ -1899,7 +1933,7 @@ export default function App() {
                       )}
                     </div>
 
-                    <form className="border-t border-[#34312c] bg-[#efe8db] p-4" onSubmit={onAsk}>
+                    <form className="shrink-0 border-t border-[#34312c] bg-[#efe8db] p-4" onSubmit={onAsk}>
                       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_228px]">
                         <div className="relative">
                           <textarea

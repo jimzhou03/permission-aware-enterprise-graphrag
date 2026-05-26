@@ -172,16 +172,28 @@ export interface AskResponse {
   denied: boolean;
   refusal_reason: string | null;
   cache_hit: boolean;
-  mode: "direct" | "rag" | "graphrag" | "general";
+  mode: "direct" | "rag" | "graphrag" | "general" | "unsupported";
   route: {
     target_department: string | null;
-    mode: "direct" | "rag" | "graphrag" | "general";
+    mode: "direct" | "rag" | "graphrag" | "general" | "unsupported";
     requires_rag: boolean;
     need_rag: boolean;
     confidence: number;
     reason: string;
     language: "zh" | "en" | "unknown";
-    intent: "greeting" | "policy_question" | "knowledge_lookup" | "security_test" | "unsupported";
+    query_language: "zh" | "en" | "unknown";
+    requires_internal_access: boolean;
+    intent:
+      | "greeting"
+      | "assistant_identity"
+      | "assistant_capability"
+      | "company_intro"
+      | "business_cooperation"
+      | "policy_question"
+      | "department_internal"
+      | "knowledge_lookup"
+      | "security_test"
+      | "unsupported";
     router_mode: "rules" | "ollama";
     router_model: string;
     router_fallback_used: boolean;

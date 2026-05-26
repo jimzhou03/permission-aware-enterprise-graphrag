@@ -153,5 +153,46 @@ def test_greeting_uses_general_fallback_without_rag(client):
     assert payload["mode"] == "general"
     assert payload["route"]["requires_rag"] is False
     assert payload["route"]["need_rag"] is False
+    assert payload["route"]["query_language"] == "zh"
+    assert payload["route"]["requires_internal_access"] is False
     assert payload["citations"] == []
     assert payload["retrieved_chunks"] == []
+
+
+def test_identity_and_capability_questions_use_general_fallback(client):
+    token = _login(client, "visitor@example.local")
+    for question in ["你是谁", "你能做什么", "Who are you", "What can you do"]:
+        response = _ask(client, token, question, mode="auto")
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["denied"] is False
+        assert payload["mode"] == "general"
+        assert payload["citations"] == []
+        assert payload["route"]["requires_internal_access"] is False
+        assert payload["route"]["intent"] in {"assistant_identity", "assistant_capability"}
+
+
+def test_company_and_cooperation_questions_use_authorized_public_scope(client):
+    token = _login(client, "visitor@example.local")
+    for question in ["公司是做什么的？", "有哪些机器人产品？", "如何商务合作？"]:
+        response = _ask(client, token, question, mode="auto")
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["denied"] is False
+        assert payload["mode"] == "rag"
+        assert payload["route"]["target_department"] == "public"
+        assert payload["route"]["requires_internal_access"] is False
+        assert {item["kb_code"] for item in payload["citations"]}.issubset({"public-policy"})
+        assert "当前账号可访问" in payload["answer"] or "Based on the knowledge bases available" in payload["answer"]
+
+
+def test_unsupported_query_returns_unsupported_mode_without_retrieval(client):
+    token = _login(client, "sales_staff@example.local")
+    response = _ask(client, token, "?!", mode="auto")
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["denied"] is False
+    assert payload["mode"] == "unsupported"
+    assert payload["citations"] == []
+    assert payload["retrieved_chunks"] == []
+    assert payload["route"]["intent"] == "unsupported"

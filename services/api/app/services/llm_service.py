@@ -58,38 +58,75 @@ def _is_zh_text(text: str) -> bool:
     return bool(re.search(r"[\u4e00-\u9fff]", text))
 
 
+def _shorten_excerpt(text: str, limit: int = 140) -> str:
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    return f"{cleaned[:limit].rstrip()}..."
+
+
+def _first_sentence(text: str, is_zh: bool) -> str:
+    separators = r"[。！？]" if is_zh else r"[.!?]"
+    parts = re.split(separators, text)
+    for part in parts:
+        candidate = re.sub(r"\s+", " ", part).strip()
+        if candidate:
+            return candidate
+    return _shorten_excerpt(text, limit=100)
+
+
 def _render_mock_answer(question: str, citations: list[Citation], graph_paths: list[GraphPath]) -> str:
     is_zh = _is_zh_text(question)
     if not citations:
         if is_zh:
-            return "未在当前授权知识库中检索到可用内容。"
-        return "No relevant content was found in the currently authorized knowledge bases."
+            return "当前授权知识库中没有足够信息回答该问题。"
+        return "There is not enough information in the currently authorized knowledge bases to answer this question."
 
     top_citations = citations[:4]
+    key_points = [
+        (
+            f"{citation.document_title}：{_shorten_excerpt(citation.excerpt)}"
+            if is_zh
+            else f"{citation.document_title}: {_shorten_excerpt(citation.excerpt)}"
+        )
+        for citation in top_citations
+    ]
+    conclusion = _first_sentence(top_citations[0].excerpt, is_zh)
     if is_zh:
-        lines = ["基于当前账号已授权知识库，整理结论如下：", ""]
+        lines = [
+            "根据你当前账号可访问的知识库，整理如下：",
+            "",
+            f"简短结论：{conclusion}",
+            "",
+            "关键要点：",
+        ]
+        for index, point in enumerate(key_points, start=1):
+            lines.append(f"{index}. {point}")
+        lines.extend(["", "相关来源："])
         for index, citation in enumerate(top_citations, start=1):
-            lines.append(f"{index}. {citation.document_title}")
-            lines.append(f"   要点：{citation.excerpt}")
-        lines.append("")
-        lines.append("来源摘要：")
-        for citation in top_citations:
-            lines.append(f"- {citation.kb_name} / {citation.document_title}")
+            lines.append(f"{index}. {citation.kb_name} / {citation.document_title}")
+        lines.extend(["", "权限说明：仅基于当前账号可访问知识库生成，未包含未授权部门内容。"])
     else:
-        lines = ["Summary based on your currently authorized knowledge bases:", ""]
+        lines = [
+            "Based on the knowledge bases available to your account:",
+            "",
+            f"Short conclusion: {conclusion}",
+            "",
+            "Key points:",
+        ]
+        for index, point in enumerate(key_points, start=1):
+            lines.append(f"{index}. {point}")
+        lines.extend(["", "Relevant sources:"])
         for index, citation in enumerate(top_citations, start=1):
-            lines.append(f"{index}. {citation.document_title}")
-            lines.append(f"   Key point: {citation.excerpt}")
-        lines.append("")
-        lines.append("Source summary:")
-        for citation in top_citations:
-            lines.append(f"- {citation.kb_name} / {citation.document_title}")
+            lines.append(f"{index}. {citation.kb_name} / {citation.document_title}")
+        lines.extend(["", "Access note: this answer is generated only from knowledge bases authorized for your account."])
 
     if graph_paths:
         lines.append("")
-        lines.append("图谱证据路径：" if is_zh else "Graph evidence paths:")
-        for index, path in enumerate(graph_paths, start=1):
-            lines.append(f"{index}. {' -> '.join(path.path)}")
+        if is_zh:
+            lines.append(f"图谱补充：已参考 {len(graph_paths)} 条授权关系路径。")
+        else:
+            lines.append(f"Graph note: referenced {len(graph_paths)} authorized relationship paths.")
     return "\n".join(lines)
 
 

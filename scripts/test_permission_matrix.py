@@ -332,7 +332,55 @@ def run(base_url: str) -> int:
         failures.append(str(exc))
         print(str(exc))
 
-    total = len(ACCOUNTS) + 1
+    try:
+        visitor_token = tokens.get("visitor")
+        _assert_true("visitor token exists", bool(visitor_token), {"tokens": list(tokens.keys())})
+
+        status, greeting_data = _request_json(
+            "POST",
+            f"{api}/qa/ask",
+            token=visitor_token,
+            payload={"question": "你好", "mode": "auto", "knowledge_base_codes": []},
+        )
+        _assert_equal("visitor greeting ask status", status, 200, {"response": greeting_data})
+        _assert_equal("visitor greeting mode", greeting_data.get("mode"), "general", {"response": greeting_data})
+        _assert_equal("visitor greeting denied", greeting_data.get("denied"), False, {"response": greeting_data})
+        _assert_equal("visitor greeting citations empty", greeting_data.get("citations"), [], {"response": greeting_data})
+
+        status, intro_data = _request_json(
+            "POST",
+            f"{api}/qa/ask",
+            token=visitor_token,
+            payload={"question": "公司是做什么的？", "mode": "auto", "knowledge_base_codes": []},
+        )
+        _assert_equal("visitor company intro ask status", status, 200, {"response": intro_data})
+        _assert_equal("visitor company intro denied", intro_data.get("denied"), False, {"response": intro_data})
+        _assert_true(
+            "visitor company intro citations in public-policy",
+            {
+                item.get("kb_code")
+                for item in intro_data.get("citations", [])
+                if isinstance(item, dict) and isinstance(item.get("kb_code"), str)
+            }.issubset({"public-policy"}),
+            {"response": intro_data},
+        )
+
+        status, coop_data = _request_json(
+            "POST",
+            f"{api}/qa/ask",
+            token=visitor_token,
+            payload={"question": "如何商务合作？", "mode": "auto", "knowledge_base_codes": []},
+        )
+        _assert_equal("visitor cooperation ask status", status, 200, {"response": coop_data})
+        _assert_equal("visitor cooperation denied", coop_data.get("denied"), False, {"response": coop_data})
+
+        passes += 1
+        print("[PASS] visitor general/public-quality questions")
+    except PermissionMatrixFailure as exc:
+        failures.append(str(exc))
+        print(str(exc))
+
+    total = len(ACCOUNTS) + 2
     print("")
     print(f"Result: {passes}/{total} PASS")
     if failures:

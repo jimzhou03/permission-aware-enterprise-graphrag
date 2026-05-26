@@ -5,13 +5,18 @@ from pydantic import BaseModel, Field
 
 
 AskMode = Literal["auto", "rag", "graphrag"]
-ResponseMode = Literal["direct", "rag", "graphrag", "general"]
+ResponseMode = Literal["direct", "rag", "graphrag", "general", "unsupported"]
 RouterMode = Literal["rules", "ollama"]
 FunctionTraceStatus = Literal["success", "skipped", "denied", "error"]
 RouterLanguage = Literal["zh", "en", "unknown"]
 RouterIntent = Literal[
     "greeting",
+    "assistant_identity",
+    "assistant_capability",
+    "company_intro",
+    "business_cooperation",
     "policy_question",
+    "department_internal",
     "knowledge_lookup",
     "security_test",
     "unsupported",
@@ -46,6 +51,8 @@ class RouteDecision(BaseModel):
     confidence: float
     reason: str
     language: RouterLanguage = "unknown"
+    query_language: RouterLanguage = "unknown"
+    requires_internal_access: bool = False
     intent: RouterIntent = "knowledge_lookup"
     router_mode: RouterMode = "rules"
     router_model: str = "rules"

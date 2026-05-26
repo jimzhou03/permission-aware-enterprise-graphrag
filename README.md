@@ -2,12 +2,10 @@
 
 [![CI](https://github.com/jimzhou03/permission-aware-enterprise-graphrag/actions/workflows/ci.yml/badge.svg)](https://github.com/jimzhou03/permission-aware-enterprise-graphrag/actions/workflows/ci.yml)
 
-Permission-Aware Enterprise GraphRAG Assistant is a full-stack enterprise AI knowledge assistant that combines JWT/RBAC, permission-scoped RAG retrieval, PostgreSQL + pgvector, Redis caching, Neo4j GraphRAG visualization, document upload/re-indexing, Ollama local routing, and auditable retrieval traces.
+Permission-Aware Enterprise GraphRAG Assistant is a local runnable enterprise knowledge assistant demo that combines JWT/RBAC, permission-scoped RAG retrieval, PostgreSQL + pgvector, Redis caching, Neo4j GraphRAG visualization, document upload/re-indexing, optional Ollama local routing, and auditable retrieval traces.
 
-This repository is a local runnable full-stack implementation and engineering showcase with production-inspired architecture and explicit security boundaries.
-
-Current demo scenario (v0.7.0) uses a fictional company: **星海智造机器人有限公司 (StarSea Intelligent Robotics)**.  
-The company sells service robots, inspection robots, receptionist robots, and delivery robots for enterprises, schools, and campuses.
+Current demo scenario (v0.7.1) uses a fictional company: **星海智造机器人有限公司 (StarSea Robotics Co., Ltd.)**.  
+The company provides service robots, inspection robots, receptionist robots, and delivery robots for enterprises, schools, campuses, exhibition halls, and mixed-use business spaces.
 
 ## Why This Project
 
@@ -26,11 +24,12 @@ This project focuses on deterministic backend authorization, then retrieval, the
 - JWT authentication.
 - RBAC and knowledge base ACL.
 - Multi-department knowledge isolation with visitor/staff/admin scope boundaries.
+- v0.7.1 rewritten department-specific demo knowledge base content for higher RAG answer quality.
 - Permission-scoped pgvector SQL retrieval.
 - Redis permission-aware cache and KB-version invalidation.
 - Markdown/TXT document upload and re-indexing.
 - Knowledge Base / Document / Chunk Viewer.
-- Ollama local router for lightweight classification.
+- Optional Ollama local router for lightweight intent classification (never permission authority).
 - Backend-controlled function calling trace.
 - Neo4j GraphRAG visualization.
 - Audit logs and retrieval trace.
@@ -66,7 +65,7 @@ flowchart LR
 - Permissions are computed by deterministic backend code.
 - `allowed_kb_ids` are resolved and enforced before retrieval.
 - Frontend selection can only narrow scope; it cannot expand permissions.
-- Ollama is used only to classify routing metadata.
+- Ollama is used only as optional intent-routing assistance and safe fallback metadata.
 - The final generator does not decide access control.
 - Unauthorized chunks are excluded from answer payloads, trace payloads, cache usage paths, graph views, and audit payload outputs.
 - Graph visualization endpoints are also permission-scoped.
@@ -255,7 +254,7 @@ To enable real local embedding + generation in local development:
    - `LLM_MODE=ollama` for local Ollama generation, or
    - `LLM_MODE=openai-compatible` for OpenAI-compatible API endpoint.
 4. Keep router scope unchanged:
-   - `LOCAL_ROUTER_MODE=rules|ollama` still only classifies/query-routes and does not decide permissions.
+   - `LOCAL_ROUTER_MODE=rules|ollama` is optional intent-routing assistance only and does not decide permissions.
 5. Rebuild API container and re-index data for embedding consistency when switching embedding mode/model.
 
 Example local Ollama setup:
@@ -287,13 +286,13 @@ Security and scope guarantees remain unchanged in real generator mode:
 ## Current Scope
 
 - Final answer generator defaults to `LLM_MODE=mock`.
-- Ollama is router/classifier only.
+- Ollama local router is optional and classification-only.
 - Markdown/TXT upload is supported.
 - PDF/DOCX ingestion is planned.
 - MCP integration is planned.
 - Production hardening is planned.
 - Alembic migrations are planned.
-- This repository is a local runnable full-stack implementation and engineering showcase, not a hosted SaaS product.
+- This repository is a local runnable engineering showcase for a fictional company demo, not production-ready and not a hosted SaaS product.
 
 ## Roadmap
 

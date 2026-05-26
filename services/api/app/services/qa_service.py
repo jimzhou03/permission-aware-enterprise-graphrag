@@ -200,13 +200,47 @@ def _append_retrieval_engine(model: str, retrieval_engine: str) -> str:
     return f"{model}|retrieval={retrieval_engine}"
 
 
-def _render_general_greeting(question: str) -> str:
-    is_zh = bool(re.search(r"[\u4e00-\u9fff]", question))
+def _render_general_fallback(question: str, route: RouteDecision) -> str:
+    is_zh = route.query_language == "zh" or bool(re.search(r"[\u4e00-\u9fff]", question))
+    if route.intent == "assistant_identity":
+        if is_zh:
+            return (
+                "我是星海智造机器人有限公司的企业权限感知 GraphRAG 知识助手。"
+                "我只会基于你当前账号已授权的知识库回答问题。"
+            )
+        return (
+            "I am the permission-aware GraphRAG knowledge assistant for StarSea Robotics Co., Ltd. "
+            "I answer only from knowledge bases authorized for your account."
+        )
+    if route.intent == "assistant_capability":
+        if is_zh:
+            return (
+                "我可以帮助你查询当前权限范围内的公司知识，包括公开资料和你所属部门内部文档。"
+                "如果问题涉及未授权部门，我会返回权限拒绝提示。"
+            )
+        return (
+            "I can help with questions inside your authorized scope, including public materials and your own "
+            "department's internal documents. If a query targets unauthorized departments, I will return a denial."
+        )
     if is_zh:
-        return "你好，我是企业权限感知知识助手。你可以询问与当前权限范围内知识库相关的问题。"
+        return "你好，我是企业权限感知知识助手。你可以询问当前授权知识库范围内的问题。"
     return (
         "Hello, I am the permission-aware enterprise knowledge assistant. "
-        "You can ask questions within your authorized knowledge bases."
+        "You can ask questions within your authorized knowledge base scope."
+    )
+
+
+def _render_unsupported_fallback(question: str, route: RouteDecision) -> str:
+    is_zh = route.query_language == "zh" or bool(re.search(r"[\u4e00-\u9fff]", question))
+    if is_zh:
+        return (
+            "我暂时无法理解这个问题。你可以改成更明确的业务问题，例如：\n"
+            "1) 公司是做什么的\n2) 如何商务合作\n3) 请总结我有权限访问的某部门制度"
+        )
+    return (
+        "I could not understand this request yet. Try a clearer business question, for example:\n"
+        "1) What does the company do?\n2) How can we start business cooperation?\n"
+        "3) Summarize a department policy I am allowed to access."
     )
 
 
@@ -325,8 +359,9 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         status="success",
         input_summary=classify_input,
         output_summary=(
-            f"mode={route.mode} need_rag={route.need_rag} "
-            f"target_department={route.target_department or 'none'}"
+            f"mode={route.mode} need_rag={route.need_rag} intent={route.intent} "
+            f"target_department={route.target_department or 'none'} "
+            f"requires_internal_access={route.requires_internal_access}"
         ),
         duration_ms=classify_duration_ms,
     )
@@ -463,6 +498,55 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
                 trace_recorder=trace_recorder,
             )
 
+    if route.requires_internal_access and user.role and user.role.name not in {"admin", "bilingual_admin"}:
+        has_internal_scope = any(kb.department and kb.department.code != "public" for kb in allowed_kbs)
+        if not has_internal_scope:
+            trace_recorder.set_step(
+                tool_name="check_cache",
+                status="skipped",
+                input_summary="cache_lookup_not_started",
+                output_summary="permission_denied_before_cache",
+                duration_ms=0,
+            )
+            trace_recorder.set_step(
+                tool_name="search_allowed_chunks",
+                status="denied",
+                input_summary=f"intent={route.intent}",
+                output_summary="requires_internal_access_without_internal_scope",
+                duration_ms=0,
+            )
+            trace_recorder.set_step(
+                tool_name="get_graph_paths",
+                status="skipped",
+                input_summary=f"mode={route.mode}",
+                output_summary="denied_before_retrieval",
+                duration_ms=0,
+            )
+            trace_recorder.set_step(
+                tool_name="generate_answer",
+                status="skipped",
+                input_summary="denied_request",
+                output_summary="permission_denied",
+                duration_ms=0,
+            )
+            response = _deny_response(
+                request_id=request_id,
+                reason=_permission_denied_message(route.language),
+                route_mode=route.mode,
+                route=route,
+            )
+            return _finalize_with_audit(
+                db=db,
+                start=start,
+                request_id=request_id,
+                user=user,
+                question=payload.question,
+                response=response,
+                model="permission-deny|retrieval=none",
+                router_availability=router_availability,
+                trace_recorder=trace_recorder,
+            )
+
     cache_key_parts = build_cache_key_parts(
         user_id=str(user.id),
         role=user.role.name if user.role else "",
@@ -546,12 +630,13 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         duration_ms=cache_duration_ms,
     )
 
-    if route.mode == "general":
+    if route.mode in {"general", "unsupported"}:
+        retrieval_skip_reason = "router_need_rag=false" if route.mode == "general" else "unsupported_mode_no_retrieval"
         trace_recorder.set_step(
             tool_name="search_allowed_chunks",
             status="skipped",
             input_summary=f"mode={route.mode}",
-            output_summary="router_need_rag=false",
+            output_summary=retrieval_skip_reason,
             duration_ms=0,
         )
         trace_recorder.set_step(
@@ -562,12 +647,16 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
             duration_ms=0,
         )
         answer_start = time.perf_counter()
-        answer = _render_general_greeting(payload.question)
+        answer = (
+            _render_general_fallback(payload.question, route)
+            if route.mode == "general"
+            else _render_unsupported_fallback(payload.question, route)
+        )
         answer_duration_ms = int((time.perf_counter() - answer_start) * 1000)
         trace_recorder.set_step(
             tool_name="generate_answer",
             status="success",
-            input_summary="general_fallback",
+            input_summary=f"{route.mode}_fallback",
             output_summary=f"answer_chars={len(answer)}",
             duration_ms=answer_duration_ms,
         )
@@ -577,7 +666,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
             denied=False,
             refusal_reason=None,
             cache_hit=False,
-            mode="general",
+            mode=route.mode,  # type: ignore[arg-type]
             route=route,
             router_mode=route.router_mode,
             router_model=route.router_model,
@@ -587,6 +676,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
             citations=[],
             graph_paths=[],
         )
+        fallback_model = "general-fallback|retrieval=none" if route.mode == "general" else "unsupported-fallback|retrieval=none"
         result = _finalize_with_audit(
             db=db,
             start=start,
@@ -594,13 +684,13 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
             user=user,
             question=payload.question,
             response=response,
-            model="general-fallback|retrieval=none",
+            model=fallback_model,
             router_availability=router_availability,
             trace_recorder=trace_recorder,
         )
         cache_service.set_payload(
             cache_key_parts,
-            payload=_cache_payload_from_response(response, model="general-fallback|retrieval=none"),
+            payload=_cache_payload_from_response(response, model=fallback_model),
             ttl_seconds=settings.cache_ttl_seconds,
         )
         return result
