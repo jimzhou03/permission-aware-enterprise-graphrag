@@ -1370,165 +1370,178 @@ export default function App() {
 
   if (!isAuthenticated) {
     return (
-      <div className="console-root min-h-screen bg-[#0f141b]">
-        <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8">
-          <div className="console-shell p-3 md:p-4">
-            <div className="console-statusbar mb-3">
+      <div className="console-root h-screen overflow-hidden bg-[#0f141b]">
+        <div className="mx-auto flex h-full w-full max-w-[1260px] items-center px-3 py-3 md:px-6 md:py-4">
+          <div className="console-shell flex h-full w-full flex-col p-3 md:p-4">
+            <div className="console-statusbar mb-2">
               <div className="console-statusbar-left">GRAPHRAG OS v0.6.0</div>
               <div className="console-statusbar-mid">/////////////////////////</div>
               <div className="console-statusbar-right">SYSTEM ONLINE</div>
             </div>
-          <div className="mb-6 flex items-center justify-end gap-2">
-            <label className="text-xs text-slate-600" htmlFor="login-language-select">
-              {t.language}
-            </label>
-            <select
-              id="login-language-select"
-              className="h-9 rounded-sm border border-[#3e382f] bg-[#f7f0e4] px-2 text-xs text-[#25211c]"
-              value={language}
-              onChange={(event) => setLanguage(event.target.value as Language)}
-            >
-              <option value="zh">{t.chinese}</option>
-              <option value="en">{t.english}</option>
-            </select>
-          </div>
 
-          <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-            <section className="glass-panel p-8">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-                {t.consoleLabel}
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="mb-2 flex items-center justify-end gap-2">
+                <label className="text-xs text-slate-600" htmlFor="login-language-select">
+                  {t.language}
+                </label>
+                <select
+                  id="login-language-select"
+                  className="h-8 rounded-sm border border-[#3e382f] bg-[#f7f0e4] px-2 text-xs text-[#25211c]"
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value as Language)}
+                >
+                  <option value="zh">{t.chinese}</option>
+                  <option value="en">{t.english}</option>
+                </select>
               </div>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 md:text-3xl">
-                {t.productName}
-              </h1>
-              <p className="mt-2 text-sm text-slate-600">{t.loginPageTagline}</p>
-              <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-600">
-                  {t.capabilityTitle}
-                </p>
-                <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                  <li>{t.capabilityA}</li>
-                  <li>{t.capabilityB}</li>
-                  <li>{t.capabilityC}</li>
-                </ul>
-              </div>
-              <div className="mt-4 rounded-sm border border-[#4a4338] bg-[#f4ebdd] p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#3b342d]">
-                  {t.loginBoundaryTitle}
-                </p>
-                <ul className="mt-3 space-y-2 text-sm text-[#363029]">
-                  <li>{t.loginBoundaryLine1}</li>
-                  <li>{t.loginBoundaryLine2}</li>
-                  <li>{t.loginBoundaryLine3}</li>
-                </ul>
-              </div>
-            </section>
 
-            <section className="glass-panel p-8">
-              <h2 className="panel-title">{t.signInPanelTitle}</h2>
-              <div className="space-y-4">
-                <section className="rounded-sm border border-[#474035] bg-[#f2e8d8] p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <span className="text-xs font-semibold text-[#2f2a23]">{t.employeeAdminDemoTitle}</span>
-                    <span className="text-[11px] text-[#5a5247]">{t.employeeAdminDemoHint}</span>
+              <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[1.06fr_0.94fr]">
+                <section className="glass-panel flex min-h-0 flex-col p-5 md:p-6">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
+                    {t.consoleLabel}
                   </div>
-                  <div className="space-y-2">
-                    {STAFF_ADMIN_ACCOUNT_KEYS.map((key) => {
-                      const account = DEMO_ACCOUNTS[key];
-                      const isSelected = selectedDemoAccount === key;
-                      const fillLabel =
-                        key === "tech_staff"
-                          ? t.fillTechStaffDemo
-                          : key === "sales_staff"
-                            ? t.fillSalesStaffDemo
-                            : key === "marketing_staff"
-                              ? t.fillMarketingStaffDemo
-                              : key === "support_staff"
-                                ? t.fillSupportStaffDemo
-                                : key === "hr_staff"
-                                  ? t.fillHrStaffDemo
-                                  : key === "admin_staff"
-                                    ? t.fillAdminStaffDemo
-                                    : key === "product_staff"
-                                      ? t.fillProductStaffDemo
-                                      : t.fillBilingualAdminDemo;
-                      return (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => applyDemoAccount(key)}
-                          className={`rounded-sm border px-3 py-3 ${
-                            isSelected
-                              ? "border-[#bf6925] bg-[#f3dec4]"
-                              : "border-[#4a4338] bg-[#f6eee1]"
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-3 text-left">
-                            <div className="flex-1">
-                              <div className="font-mono text-sm font-semibold text-[#1f1c18]">{account.label}</div>
-                              <div className="mt-1 text-[11px] text-[#595249]">{account.email}</div>
-                            </div>
-                            <span className="rounded-sm border border-[#6e6253] bg-[#f7efe2] px-2 py-1 text-[11px] text-[#3a332b]">
+                  <h1 className="mt-1 text-xl font-semibold tracking-tight text-slate-900 md:text-2xl">
+                    {t.productName}
+                  </h1>
+                  <p className="mt-1.5 text-sm text-slate-600">{t.loginPageTagline}</p>
+                  <div className="mt-3 rounded-sm border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                      {t.capabilityTitle}
+                    </p>
+                    <ul className="mt-2 space-y-1.5 text-sm text-slate-700">
+                      <li>{t.capabilityA}</li>
+                      <li>{t.capabilityB}</li>
+                      <li>{t.capabilityC}</li>
+                    </ul>
+                  </div>
+                  <div className="mt-3 rounded-sm border border-[#4a4338] bg-[#f4ebdd] p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#3b342d]">
+                      {t.loginBoundaryTitle}
+                    </p>
+                    <ul className="mt-2 space-y-1.5 text-sm text-[#363029]">
+                      <li>{t.loginBoundaryLine1}</li>
+                      <li>{t.loginBoundaryLine2}</li>
+                      <li>{t.loginBoundaryLine3}</li>
+                    </ul>
+                  </div>
+                </section>
+
+                <section className="glass-panel flex min-h-0 flex-col p-5 md:p-6">
+                  <h2 className="panel-title">{t.signInPanelTitle}</h2>
+                  <section className="mt-2 rounded-sm border border-[#474035] bg-[#f2e8d8] p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-[#2f2a23]">{t.employeeAdminDemoTitle}</span>
+                      <span className="text-[11px] text-[#5a5247]">{t.employeeAdminDemoHint}</span>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+                      {STAFF_ADMIN_ACCOUNT_KEYS.map((key) => {
+                        const account = DEMO_ACCOUNTS[key];
+                        const isSelected = selectedDemoAccount === key;
+                        const fillLabel =
+                          key === "tech_staff"
+                            ? t.fillTechStaffDemo
+                            : key === "sales_staff"
+                              ? t.fillSalesStaffDemo
+                              : key === "marketing_staff"
+                                ? t.fillMarketingStaffDemo
+                                : key === "support_staff"
+                                  ? t.fillSupportStaffDemo
+                                  : key === "hr_staff"
+                                    ? t.fillHrStaffDemo
+                                    : key === "admin_staff"
+                                      ? t.fillAdminStaffDemo
+                                      : key === "product_staff"
+                                        ? t.fillProductStaffDemo
+                                        : t.fillBilingualAdminDemo;
+                        return (
+                          <div
+                            key={key}
+                            className={`rounded-sm border px-2 py-2 ${
+                              isSelected
+                                ? "border-[#bf6925] bg-[#f3dec4]"
+                                : "border-[#4a4338] bg-[#f6eee1]"
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              className="w-full text-left"
+                              onClick={() => applyDemoAccount(key)}
+                            >
+                              <div className="font-mono text-[11px] font-semibold text-[#1f1c18]">{account.label}</div>
+                            </button>
+                            <button
+                              type="button"
+                              className="mt-1 w-full rounded-sm border border-[#6e6253] bg-[#f7efe2] px-2 py-1 text-[11px] text-[#3a332b] transition hover:border-[#bf6925] hover:text-[#6b360e]"
+                              onClick={() => applyDemoAccount(key)}
+                            >
                               {fillLabel}
-                            </span>
+                            </button>
                           </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="mt-3 text-xs text-[#4d463d]">{t.localDemoAccountNotice}</p>
-                  <p className="mt-1 text-xs text-[#4d463d]">{t.demoPasswordNotice}</p>
-                </section>
+                        );
+                      })}
+                    </div>
+                  </section>
 
-                <form className="rounded-sm border border-[#474035] bg-[#efe4d3] p-4 space-y-3" onSubmit={onSubmitLoginForm}>
-                  <label className="block space-y-1">
-                    <span className="text-xs text-[#4f483e]">{t.email}</span>
-                    <input
-                      className="field h-9"
-                      autoComplete="username"
-                      value={loginEmail}
-                      onChange={(event) => setLoginEmail(event.target.value)}
-                      placeholder="name@example.local"
-                    />
-                  </label>
-                  <label className="block space-y-1">
-                    <span className="text-xs text-[#4f483e]">{t.password}</span>
-                    <input
-                      className="field h-9"
-                      type="password"
-                      autoComplete="current-password"
-                      value={loginPassword}
-                      onChange={(event) => setLoginPassword(event.target.value)}
-                    />
-                  </label>
-                  <button className="btn-primary w-full" type="submit" disabled={pending || !loginEmail.trim() || !loginPassword.trim()}>
-                    {pending ? t.working : t.signIn}
-                  </button>
-                </form>
-
-                <section className="rounded-sm border border-[#474035] bg-[#efe4d3] p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.1em] text-[#3b352e]">
-                    {t.guestModeTitle}
-                  </div>
-                  <div className="mt-2 rounded-sm border border-[#61584d] bg-[#f7efe1] px-3 py-2 text-sm text-[#312c25]">
-                    {t.guestModeBadge}
-                  </div>
-                  <p className="mt-2 text-xs text-[#4f483e]">{t.guestModeDescriptionLine1}</p>
-                  <p className="mt-1 text-xs text-[#4f483e]">{t.guestModeDescriptionLine2}</p>
-                  <button
-                    className="btn-primary mt-3 w-full"
-                    type="button"
-                    disabled={pending}
-                    onClick={() => loginWithDemoAccount("visitor")}
+                  <form
+                    className="mt-2 rounded-sm border border-[#474035] bg-[#efe4d3] p-3 space-y-2"
+                    onSubmit={onSubmitLoginForm}
                   >
-                    {pending && selectedDemoAccount === "visitor" ? t.working : t.enterGuestMode}
-                  </button>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <label className="block space-y-1">
+                        <span className="text-xs text-[#4f483e]">{t.email}</span>
+                        <input
+                          className="field h-8"
+                          autoComplete="username"
+                          value={loginEmail}
+                          onChange={(event) => setLoginEmail(event.target.value)}
+                          placeholder="name@example.local"
+                        />
+                      </label>
+                      <label className="block space-y-1">
+                        <span className="text-xs text-[#4f483e]">{t.password}</span>
+                        <input
+                          className="field h-8"
+                          type="password"
+                          autoComplete="current-password"
+                          value={loginPassword}
+                          onChange={(event) => setLoginPassword(event.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <button
+                      className="btn-primary w-full"
+                      type="submit"
+                      disabled={pending || !loginEmail.trim() || !loginPassword.trim()}
+                    >
+                      {pending ? t.working : t.signIn}
+                    </button>
+                    <p className="text-xs text-[#4d463d]">{t.localDemoAccountNotice}</p>
+                    <p className="text-xs text-[#4d463d]">{t.demoPasswordNotice}</p>
+                  </form>
+
+                  <section className="mt-2 rounded-sm border border-[#474035] bg-[#efe4d3] p-3">
+                    <div className="text-xs font-semibold uppercase tracking-[0.1em] text-[#3b352e]">
+                      {t.guestModeTitle}
+                    </div>
+                    <div className="mt-1 rounded-sm border border-[#61584d] bg-[#f7efe1] px-2.5 py-1.5 text-sm text-[#312c25]">
+                      {t.guestModeBadge}
+                    </div>
+                    <p className="mt-1.5 text-xs text-[#4f483e]">{t.guestModeDescriptionLine1}</p>
+                    <p className="mt-1 text-xs text-[#4f483e]">{t.guestModeDescriptionLine2}</p>
+                    <button
+                      className="btn-primary mt-2 w-full"
+                      type="button"
+                      disabled={pending}
+                      onClick={() => loginWithDemoAccount("visitor")}
+                    >
+                      {pending && selectedDemoAccount === "visitor" ? t.working : t.enterGuestMode}
+                    </button>
+                  </section>
+
+                  {message ? <div className="mt-2 notification-line">{message}</div> : <div className="mt-2 h-5" />}
                 </section>
               </div>
-
-              {message ? <div className="mt-3 notification-line">{message}</div> : null}
-            </section>
-          </div>
+            </div>
           </div>
         </div>
       </div>
