@@ -19,3 +19,7 @@ models/
 *.sqlite
 *.sqlite3
 *.tsbuildinfo
+
+# Keep application ORM/domain models tracked.
+!services/api/app/models/
+!services/api/app/models/**
