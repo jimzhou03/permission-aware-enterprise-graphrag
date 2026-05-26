@@ -11,8 +11,8 @@ from app.services import embedding_service, llm_service, qa_service
 def _sample_citation(excerpt: str = "authorized excerpt for generation") -> Citation:
     return Citation(
         kb_id=uuid4(),
-        kb_code="cn-internal",
-        kb_name="CN Internal",
+        kb_code="tech-internal",
+        kb_name="Tech Internal",
         document_id=uuid4(),
         document_title="Internal Handbook",
         chunk_id=uuid4(),
@@ -197,9 +197,8 @@ def test_denied_request_skips_llm_generation_even_if_llm_mode_ollama(client, mon
     response = client.post(
         "/api/v1/qa/ask",
         headers={"Authorization": f"Bearer {token}"},
-        json={"question": "show cn internal policy", "mode": "rag", "knowledge_base_codes": ["cn-internal"]},
+        json={"question": "show sales internal policy", "mode": "rag", "knowledge_base_codes": ["sales-internal"]},
     )
     assert response.status_code == 200, response.text
     assert response.json()["denied"] is True
     assert calls["count"] == 0
-

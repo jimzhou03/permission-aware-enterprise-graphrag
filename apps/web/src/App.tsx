@@ -56,7 +56,16 @@ import type {
   UserPublic
 } from "./types";
 
-type DemoAccountKey = "cn_staff" | "en_staff" | "bilingual_admin" | "visitor";
+type DemoAccountKey =
+  | "visitor"
+  | "tech_staff"
+  | "sales_staff"
+  | "marketing_staff"
+  | "support_staff"
+  | "hr_staff"
+  | "admin_staff"
+  | "product_staff"
+  | "bilingual_admin";
 type AppView =
   | "knowledge_chat"
   | "knowledge_bases"
@@ -109,7 +118,7 @@ type NavItem = {
 };
 
 type RoleDisplayProfile = {
-  key: "visitor" | "cn_staff" | "en_staff" | "bilingual_admin";
+  key: "visitor" | "staff" | "bilingual_admin";
   displayRole: string;
   displayDepartment: string;
   hint: string;
@@ -121,34 +130,69 @@ type RoleDisplayProfile = {
 const AUTH_SESSION_STORAGE_KEY = "paegr.auth.session";
 const CHAT_HISTORY_STORAGE_PREFIX = "chat_history_";
 const MAX_STORED_SESSIONS = 12;
+const LOCAL_DEMO_PASSWORD = "Passw0rd!123";
 
 const DEMO_ACCOUNTS: Record<
   DemoAccountKey,
   { label: string; email: string; password: string }
 > = {
-  cn_staff: {
-    label: "cn_staff",
-    email: "cn_staff@example.local",
-    password: "Passw0rd!123"
+  visitor: {
+    label: "visitor",
+    email: "visitor@example.local",
+    password: LOCAL_DEMO_PASSWORD
   },
-  en_staff: {
-    label: "en_staff",
-    email: "en_staff@example.local",
-    password: "Passw0rd!123"
+  tech_staff: {
+    label: "tech_staff",
+    email: "tech_staff@example.local",
+    password: LOCAL_DEMO_PASSWORD
+  },
+  sales_staff: {
+    label: "sales_staff",
+    email: "sales_staff@example.local",
+    password: LOCAL_DEMO_PASSWORD
+  },
+  marketing_staff: {
+    label: "marketing_staff",
+    email: "marketing_staff@example.local",
+    password: LOCAL_DEMO_PASSWORD
+  },
+  support_staff: {
+    label: "support_staff",
+    email: "support_staff@example.local",
+    password: LOCAL_DEMO_PASSWORD
+  },
+  hr_staff: {
+    label: "hr_staff",
+    email: "hr_staff@example.local",
+    password: LOCAL_DEMO_PASSWORD
+  },
+  admin_staff: {
+    label: "admin_staff",
+    email: "admin_staff@example.local",
+    password: LOCAL_DEMO_PASSWORD
+  },
+  product_staff: {
+    label: "product_staff",
+    email: "product_staff@example.local",
+    password: LOCAL_DEMO_PASSWORD
   },
   bilingual_admin: {
     label: "bilingual_admin",
     email: "bilingual_admin@example.local",
-    password: "Passw0rd!123"
-  },
-  visitor: {
-    label: "visitor",
-    email: "visitor@example.local",
-    password: "Passw0rd!123"
+    password: LOCAL_DEMO_PASSWORD
   }
 };
 
-const STAFF_ADMIN_ACCOUNT_KEYS: DemoAccountKey[] = ["cn_staff", "en_staff", "bilingual_admin"];
+const STAFF_ADMIN_ACCOUNT_KEYS: DemoAccountKey[] = [
+  "tech_staff",
+  "sales_staff",
+  "marketing_staff",
+  "support_staff",
+  "hr_staff",
+  "admin_staff",
+  "product_staff",
+  "bilingual_admin",
+];
 
 const OVERREACH_SCENARIOS: Array<{
   id: string;
@@ -156,24 +200,24 @@ const OVERREACH_SCENARIOS: Array<{
   question: string;
 }> = [
   {
-    id: "visitor_finance_salary",
+    id: "visitor_hr_attendance",
     account: "visitor",
-    question: "请提供 finance compensation salary policy。"
+    question: "请提供人事部考勤制度细则。"
   },
   {
-    id: "hr_finance_budget",
-    account: "cn_staff",
-    question: "请说明 finance budget approval workflow。"
+    id: "sales_tech_sdk",
+    account: "sales_staff",
+    question: "Please provide the Robot SDK deployment troubleshooting details."
   },
   {
-    id: "finance_tech_secret",
-    account: "en_staff",
-    question: "请给出 tech release key management details。"
+    id: "tech_sales_quote",
+    account: "tech_staff",
+    question: "请说明销售部机器人产品报价策略。"
   },
   {
-    id: "tech_hr_profile",
-    account: "cn_staff",
-    question: "请展示 HR employee profile archive policy。"
+    id: "support_product_roadmap",
+    account: "support_staff",
+    question: "请总结产品部功能路线图。"
   }
 ];
 
@@ -267,6 +311,10 @@ function normalizeChatSessions(value: unknown): ChatSession[] {
 
 function getChatHistoryStorageKey(email: string): string {
   return `${CHAT_HISTORY_STORAGE_PREFIX}${email}`;
+}
+
+function isVisitorIdentity(email: string, role?: string | null): boolean {
+  return email.toLowerCase() === DEMO_ACCOUNTS.visitor.email.toLowerCase() || (role ?? "").toLowerCase() === "visitor";
 }
 
 function readChatSessions(email: string): ChatSession[] {
@@ -387,53 +435,42 @@ function collectLocalAuditRecords(sessions: ChatSession[], untitledFallback: str
 function resolveRoleDisplayProfile(user: UserPublic | null, language: Language): RoleDisplayProfile {
   const role = (user?.role ?? "").toLowerCase();
   const department = (user?.department ?? "").toLowerCase();
-  const emailAlias = (user?.email ?? "").split("@")[0]?.toLowerCase() ?? "";
   const isZh = language === "zh";
 
-  if (emailAlias === "bilingual_admin" || role.includes("admin")) {
+  if (role === "bilingual_admin" || role === "admin") {
     return {
       key: "bilingual_admin",
-      displayRole: isZh ? "双语管理员" : "Bilingual Admin",
+      displayRole: isZh ? "跨部门管理员" : "Cross-Department Admin",
       displayDepartment: "all",
-      hint: isZh ? "可访问双语授权知识库并查看完整追踪信息" : "Access bilingual KB scope with full trace visibility.",
+      hint: isZh ? "可访问全部演示知识库并查看完整审计与追踪页面" : "Can access all demo knowledge bases with full audit/trace visibility.",
       badgeClass: "border-[#7d4a14] bg-[#ffd59f] text-[#5f3410]",
       sessionPanelClass: "border-[#c78b43] bg-[#f6e4bf]",
       scopePanelClass: "border-[#b97a2f] bg-[#f4dfb7]"
     };
   }
 
-  if (emailAlias === "cn_staff" || department === "cn") {
+  if (role === "visitor") {
     return {
-      key: "cn_staff",
-      displayRole: isZh ? "中文部门员工" : "CN Staff",
-      displayDepartment: "cn",
-      hint: isZh ? "可访问中文公开与中文内部知识库" : "Can access cn-public and cn-internal knowledge bases.",
-      badgeClass: "border-[#8b4b15] bg-[#f8d8b2] text-[#6b360e]",
-      sessionPanelClass: "border-[#b36a2c] bg-[#f3e2ca]",
-      scopePanelClass: "border-[#aa6328] bg-[#f7e8d4]"
-    };
-  }
-
-  if (emailAlias === "en_staff" || department === "en") {
-    return {
-      key: "en_staff",
-      displayRole: isZh ? "英文部门员工" : "EN Staff",
-      displayDepartment: "en",
-      hint: isZh ? "可访问英文公开与英文内部知识库" : "Can access en-public and en-internal knowledge bases.",
-      badgeClass: "border-[#4d5a68] bg-[#dce3ea] text-[#243140]",
-      sessionPanelClass: "border-[#5a6774] bg-[#e4e8ee]",
-      scopePanelClass: "border-[#586474] bg-[#ebeff4]"
+      key: "visitor",
+      displayRole: isZh ? "访客" : "Visitor",
+      displayDepartment: "public",
+      hint: isZh ? "仅可访问公开资料库 public-policy" : "Only public-policy is accessible.",
+      badgeClass: "border-[#6b665d] bg-[#ede8df] text-[#35322d]",
+      sessionPanelClass: "border-[#696157] bg-[#eee8de]",
+      scopePanelClass: "border-[#6f685f] bg-[#f2ece2]"
     };
   }
 
   return {
-    key: "visitor",
-    displayRole: isZh ? "访客" : "Visitor",
-    displayDepartment: "public",
-    hint: isZh ? "只能访问公共政策知识库" : "Can only access the public policy knowledge base.",
-    badgeClass: "border-[#6b665d] bg-[#ede8df] text-[#35322d]",
-    sessionPanelClass: "border-[#696157] bg-[#eee8de]",
-    scopePanelClass: "border-[#6f685f] bg-[#f2ece2]"
+    key: "staff",
+    displayRole: isZh ? "部门员工" : "Department Staff",
+    displayDepartment: department || (isZh ? "未标注" : "n/a"),
+    hint: isZh
+      ? "可访问 public-policy 与本部门内部知识库，权限由后端 RBAC/ACL 决定。"
+      : "Can access public-policy and own department internal KB; permissions are backend-enforced.",
+    badgeClass: "border-[#8b4b15] bg-[#f8d8b2] text-[#6b360e]",
+    sessionPanelClass: "border-[#b36a2c] bg-[#f3e2ca]",
+    scopePanelClass: "border-[#aa6328] bg-[#f7e8d4]"
   };
 }
 
@@ -492,10 +529,13 @@ function layoutGraphNodes(nodes: GraphNode[]): PositionedGraphNode[] {
 
 export default function App() {
   const [language, setLanguage] = useState<Language>(getInitialLanguage);
-  const [selectedDemoAccount, setSelectedDemoAccount] = useState<DemoAccountKey>("cn_staff");
+  const [selectedDemoAccount, setSelectedDemoAccount] = useState<DemoAccountKey>("tech_staff");
+  const [loginEmail, setLoginEmail] = useState<string>(DEMO_ACCOUNTS.tech_staff.email);
+  const [loginPassword, setLoginPassword] = useState<string>(DEMO_ACCOUNTS.tech_staff.password);
   const [token, setToken] = useState<string>("");
   const [user, setUser] = useState<UserPublic | null>(null);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [kbDocumentCountByKbId, setKbDocumentCountByKbId] = useState<Record<string, number>>({});
   const [kbDocumentsByKbId, setKbDocumentsByKbId] = useState<Record<string, KnowledgeBaseDocument[]>>({});
   const [chunksByDocumentId, setChunksByDocumentId] = useState<Record<string, DocumentChunk[]>>({});
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState("");
@@ -533,6 +573,10 @@ export default function App() {
   const t = UI_TEXT[language];
   const overreachLabels: Record<string, string> = OVERREACH_LABELS[language];
   const isAuthenticated = Boolean(token && user);
+  const isPrivilegedAdmin = user?.role === "bilingual_admin" || user?.role === "admin";
+  const isVisitorUser = user?.role === "visitor";
+  const canViewAdminViews = Boolean(isPrivilegedAdmin);
+  const canViewTechnicalFields = Boolean(isPrivilegedAdmin);
   const activeUserEmail = user?.email ?? "";
   const visibleChatSessions = historyOwnerEmail === activeUserEmail ? chatSessions : [];
   const activeChatSession = useMemo(
@@ -637,6 +681,7 @@ export default function App() {
       setHistoryOwnerEmail("");
       setChatSessions([]);
       setActiveSessionId("");
+      setKbDocumentCountByKbId({});
       setKbDocumentsByKbId({});
       setChunksByDocumentId({});
       setSelectedKnowledgeBaseId("");
@@ -650,17 +695,26 @@ export default function App() {
       setSelectedGraphNodeId("");
       return;
     }
+    if (isVisitorIdentity(user.email, user.role)) {
+      window.localStorage.removeItem(getChatHistoryStorageKey(user.email));
+      const visitorSession = createEmptyChatSession();
+      setHistoryOwnerEmail(user.email);
+      setChatSessions([visitorSession]);
+      setActiveSessionId(visitorSession.id);
+      return;
+    }
     const storedSessions = readChatSessions(user.email);
     const nextSessions = storedSessions.length > 0 ? storedSessions : [createEmptyChatSession()];
     setHistoryOwnerEmail(user.email);
     setChatSessions(nextSessions);
     setActiveSessionId(nextSessions[0].id);
-  }, [user?.email]);
+  }, [user?.email, user?.role]);
 
   useEffect(() => {
     if (!user?.email || historyOwnerEmail !== user.email) return;
+    if (isVisitorIdentity(user.email, user.role)) return;
     saveChatSessions(user.email, chatSessions);
-  }, [chatSessions, historyOwnerEmail, user?.email]);
+  }, [chatSessions, historyOwnerEmail, user?.email, user?.role]);
 
   useEffect(() => {
     if (!token) {
@@ -754,6 +808,33 @@ export default function App() {
   }, [activeView, token]);
 
   useEffect(() => {
+    if (!token || activeView !== "knowledge_bases" || knowledgeBases.length === 0) return;
+    const missing = knowledgeBases.filter((kb) => kbDocumentCountByKbId[kb.id] === undefined);
+    if (missing.length === 0) return;
+    let cancelled = false;
+    async function loadMissingDocumentCounts() {
+      const entries = await Promise.all(
+        missing.map(async (kb) => {
+          const docs = await listKnowledgeBaseDocuments(token, kb.id);
+          return { kbId: kb.id, count: docs.length };
+        })
+      );
+      if (cancelled) return;
+      setKbDocumentCountByKbId((prev) => {
+        const next = { ...prev };
+        for (const entry of entries) {
+          next[entry.kbId] = entry.count;
+        }
+        return next;
+      });
+    }
+    void loadMissingDocumentCounts();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeView, kbDocumentCountByKbId, knowledgeBases, token]);
+
+  useEffect(() => {
     if (!selectedGraphNodeId) return;
     if (!graphNodeById.has(selectedGraphNodeId)) {
       setSelectedGraphNodeId("");
@@ -762,15 +843,29 @@ export default function App() {
 
   const roleProfile = useMemo(() => resolveRoleDisplayProfile(user, language), [language, user]);
   const roleBadgeClass = useMemo(() => roleProfile.badgeClass, [roleProfile.badgeClass]);
+  const knowledgeBaseNavLabel = isVisitorUser
+    ? language === "zh"
+      ? "公开知识库"
+      : "Public Knowledge"
+    : t.navKnowledgeBases;
 
   const navItems: NavItem[] = [
     { key: "knowledge_chat", label: t.navKnowledgeChat, icon: ChatIcon },
-    { key: "knowledge_bases", label: t.navKnowledgeBases, icon: DatabaseIcon },
-    { key: "audit_logs", label: t.navAuditLogs, icon: AuditIcon },
-    { key: "system_status", label: t.navSystemStatus, icon: SystemIcon },
-    { key: "developer_trace", label: t.navDeveloperTrace, icon: TraceIcon },
-    { key: "graph_rag", label: t.navGraphRag, icon: GraphIcon }
+    { key: "knowledge_bases", label: knowledgeBaseNavLabel, icon: DatabaseIcon },
+    ...(canViewAdminViews
+      ? [
+          { key: "audit_logs" as const, label: t.navAuditLogs, icon: AuditIcon },
+          { key: "system_status" as const, label: t.navSystemStatus, icon: SystemIcon },
+          { key: "developer_trace" as const, label: t.navDeveloperTrace, icon: TraceIcon },
+          { key: "graph_rag" as const, label: t.navGraphRag, icon: GraphIcon },
+        ]
+      : []),
   ];
+
+  useEffect(() => {
+    if (navItems.some((item) => item.key === activeView)) return;
+    setActiveView("knowledge_chat");
+  }, [activeView, navItems]);
 
   function formatBoolean(value: boolean | null | undefined): string {
     if (value === null || value === undefined) return t.noValue;
@@ -816,6 +911,9 @@ export default function App() {
 
   function applyDemoAccount(account: DemoAccountKey) {
     setSelectedDemoAccount(account);
+    if (account === "visitor") return;
+    setLoginEmail(DEMO_ACCOUNTS[account].email);
+    setLoginPassword(DEMO_ACCOUNTS[account].password);
   }
 
   function applyAuthenticatedSession(accessToken: string, nextUser: UserPublic, kbs: KnowledgeBase[]) {
@@ -848,6 +946,7 @@ export default function App() {
     setGraphStatus(null);
     setGraphOverview(null);
     setSelectedGraphNodeId("");
+    setKbDocumentCountByKbId({});
     setUploadTitle("");
     setUploadFile(null);
     setUploadStatusMessage("");
@@ -858,7 +957,34 @@ export default function App() {
     setChatSessions([]);
     setActiveSessionId("");
     setActiveView("knowledge_chat");
+    if (selectedDemoAccount !== "visitor") {
+      setLoginEmail(DEMO_ACCOUNTS[selectedDemoAccount].email);
+      setLoginPassword(DEMO_ACCOUNTS[selectedDemoAccount].password);
+    }
     resetAskState();
+  }
+
+  async function onSubmitLoginForm(event: React.FormEvent) {
+    event.preventDefault();
+    if (!loginEmail.trim() || !loginPassword.trim()) {
+      setMessage(t.loginFailed);
+      return;
+    }
+    setPending(true);
+    setMessage("");
+    try {
+      await loginByCredentials(loginEmail.trim(), loginPassword);
+      resetAskState();
+      setMessage(t.loginSuccess);
+    } catch (error) {
+      setMessage(error instanceof Error ? `${t.loginFailed} ${error.message}` : t.loginFailed);
+      clearAuthSession();
+      setToken("");
+      setUser(null);
+      setKnowledgeBases([]);
+    } finally {
+      setPending(false);
+    }
   }
 
   async function loginWithDemoAccount(accountKey: DemoAccountKey) {
@@ -866,6 +992,10 @@ export default function App() {
     setPending(true);
     setMessage("");
     setSelectedDemoAccount(accountKey);
+    if (accountKey === "visitor") {
+      window.localStorage.removeItem(getChatHistoryStorageKey(account.email));
+      clearAuthSession();
+    }
     try {
       await loginByCredentials(account.email, account.password);
       resetAskState();
@@ -1227,7 +1357,7 @@ export default function App() {
         <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center px-6">
           <div className="console-shell w-full max-w-2xl p-3">
             <div className="console-statusbar mb-3">
-              <div className="console-statusbar-left">GRAPHRAG OS v0.6.0</div>
+              <div className="console-statusbar-left">GRAPHRAG OS v0.7.0</div>
               <div className="console-statusbar-mid">///////////////</div>
               <div className="console-statusbar-right">SYSTEM ONLINE</div>
             </div>
@@ -1306,44 +1436,75 @@ export default function App() {
                     {STAFF_ADMIN_ACCOUNT_KEYS.map((key) => {
                       const account = DEMO_ACCOUNTS[key];
                       const isSelected = selectedDemoAccount === key;
-                      const enterLabel =
-                        key === "cn_staff"
-                          ? t.enterCnStaffDemo
-                          : key === "en_staff"
-                            ? t.enterEnStaffDemo
-                            : t.enterAdminDemo;
+                      const fillLabel =
+                        key === "tech_staff"
+                          ? t.fillTechStaffDemo
+                          : key === "sales_staff"
+                            ? t.fillSalesStaffDemo
+                            : key === "marketing_staff"
+                              ? t.fillMarketingStaffDemo
+                              : key === "support_staff"
+                                ? t.fillSupportStaffDemo
+                                : key === "hr_staff"
+                                  ? t.fillHrStaffDemo
+                                  : key === "admin_staff"
+                                    ? t.fillAdminStaffDemo
+                                    : key === "product_staff"
+                                      ? t.fillProductStaffDemo
+                                      : t.fillBilingualAdminDemo;
                       return (
-                        <div
+                        <button
                           key={key}
+                          type="button"
+                          onClick={() => applyDemoAccount(key)}
                           className={`rounded-sm border px-3 py-3 ${
                             isSelected
                               ? "border-[#bf6925] bg-[#f3dec4]"
                               : "border-[#4a4338] bg-[#f6eee1]"
                           }`}
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <button
-                              className="flex-1 text-left"
-                              type="button"
-                              onClick={() => applyDemoAccount(key)}
-                            >
+                          <div className="flex items-start justify-between gap-3 text-left">
+                            <div className="flex-1">
                               <div className="font-mono text-sm font-semibold text-[#1f1c18]">{account.label}</div>
                               <div className="mt-1 text-[11px] text-[#595249]">{account.email}</div>
-                            </button>
-                            <button
-                              className="btn-primary whitespace-nowrap px-2.5 py-1.5 text-xs"
-                              type="button"
-                              disabled={pending}
-                              onClick={() => loginWithDemoAccount(key)}
-                            >
-                              {pending && selectedDemoAccount === key ? t.working : enterLabel}
-                            </button>
+                            </div>
+                            <span className="rounded-sm border border-[#6e6253] bg-[#f7efe2] px-2 py-1 text-[11px] text-[#3a332b]">
+                              {fillLabel}
+                            </span>
                           </div>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
+                  <p className="mt-3 text-xs text-[#4d463d]">{t.localDemoAccountNotice}</p>
+                  <p className="mt-1 text-xs text-[#4d463d]">{t.demoPasswordNotice}</p>
                 </section>
+
+                <form className="rounded-sm border border-[#474035] bg-[#efe4d3] p-4 space-y-3" onSubmit={onSubmitLoginForm}>
+                  <label className="block space-y-1">
+                    <span className="text-xs text-[#4f483e]">{t.email}</span>
+                    <input
+                      className="field h-9"
+                      autoComplete="username"
+                      value={loginEmail}
+                      onChange={(event) => setLoginEmail(event.target.value)}
+                      placeholder="name@example.local"
+                    />
+                  </label>
+                  <label className="block space-y-1">
+                    <span className="text-xs text-[#4f483e]">{t.password}</span>
+                    <input
+                      className="field h-9"
+                      type="password"
+                      autoComplete="current-password"
+                      value={loginPassword}
+                      onChange={(event) => setLoginPassword(event.target.value)}
+                    />
+                  </label>
+                  <button className="btn-primary w-full" type="submit" disabled={pending || !loginEmail.trim() || !loginPassword.trim()}>
+                    {pending ? t.working : t.signIn}
+                  </button>
+                </form>
 
                 <section className="rounded-sm border border-[#474035] bg-[#efe4d3] p-4">
                   <div className="text-xs font-semibold uppercase tracking-[0.1em] text-[#3b352e]">
@@ -1378,7 +1539,7 @@ export default function App() {
     <div className="console-root min-h-screen text-slate-900">
       <div className="console-shell mx-auto w-full max-w-[1880px] p-3 md:p-4">
         <div className="console-statusbar mb-2">
-          <div className="console-statusbar-left">GRAPHRAG OS v0.6.0</div>
+          <div className="console-statusbar-left">GRAPHRAG OS v0.7.0</div>
           <div className="console-statusbar-mid" aria-hidden="true">
             /////////////////////////
           </div>
@@ -1561,7 +1722,9 @@ export default function App() {
                               checked={selectedKbCodes.includes(kb.code)}
                               onChange={() => toggleKb(kb.code)}
                             />
-                            <span className="font-mono text-xs">{kb.code}</span>
+                            <span className={`${canViewTechnicalFields ? "font-mono" : ""} text-xs`}>
+                              {canViewTechnicalFields ? kb.code : kb.display_name || kb.name}
+                            </span>
                           </label>
                         ))}
                       </div>
@@ -1649,12 +1812,16 @@ export default function App() {
                                     <div className="space-y-2">
                                       {chatMessage.response.citations.map((item) => (
                                         <div key={item.chunk_id} className="rounded-sm border border-[#5c5448] bg-[#f2e7d7] px-3 py-2">
-                                          <div className="font-mono text-[11px] text-[#302c26]">
-                                            {item.kb_code} / {item.document_title} / {t.score}={item.score}
+                                          <div className={`${canViewTechnicalFields ? "font-mono" : ""} text-[11px] text-[#302c26]`}>
+                                            {canViewTechnicalFields
+                                              ? `${item.kb_code} / ${item.document_title} / ${t.score}=${item.score}`
+                                              : `${item.kb_name} / ${item.document_title}`}
                                           </div>
-                                          <div className="mt-1 font-mono text-[11px] text-[#5d554b]">
-                                            chunk_id: {item.chunk_id}
-                                          </div>
+                                          {canViewTechnicalFields ? (
+                                            <div className="mt-1 font-mono text-[11px] text-[#5d554b]">
+                                              chunk_id: {item.chunk_id}
+                                            </div>
+                                          ) : null}
                                           <p className="mt-1 text-xs leading-5 text-[#4e483f]">{item.excerpt}</p>
                                         </div>
                                       ))}
@@ -1664,48 +1831,52 @@ export default function App() {
 
                                 {chatMessage.response ? (
                                   <div className="mt-3 space-y-2">
-                                    <div className="flex flex-wrap gap-2">
-                                      <button
-                                        className="btn-secondary px-2 py-1 text-xs font-semibold"
-                                        type="button"
-                                        onClick={() => openTraceView(chatMessage.response!.request_id)}
-                                      >
-                                        {t.traceViewAction}
-                                      </button>
-                                      {chatMessage.response.graph_paths.length > 0 ? (
+                                    {canViewAdminViews ? (
+                                      <div className="flex flex-wrap gap-2">
                                         <button
                                           className="btn-secondary px-2 py-1 text-xs font-semibold"
                                           type="button"
-                                          onClick={() => openGraphView(chatMessage.response!.request_id)}
+                                          onClick={() => openTraceView(chatMessage.response!.request_id)}
                                         >
-                                          {t.traceViewGraphAction}
+                                          {t.traceViewAction}
                                         </button>
-                                      ) : null}
-                                    </div>
-                                    <details className="rounded-sm border border-[#474035] bg-[#efe5d6] px-3 py-2 font-mono text-xs text-[#2f2b25]">
-                                      <summary className="cursor-pointer font-medium text-[#26231f]">
-                                        {t.technicalDetails}
-                                      </summary>
-                                      <div className="mt-2 space-y-1 font-mono text-[11px]">
-                                        <div>request_id: {chatMessage.response.request_id}</div>
-                                        <div>cache_hit: {String(chatMessage.response.cache_hit)}</div>
-                                        <div>mode: {chatMessage.response.mode}</div>
-                                        <div>
-                                          router: {chatMessage.response.router_mode}/{chatMessage.response.router_model}
-                                        </div>
-                                        <div>router_fallback_used: {String(chatMessage.response.router_fallback_used)}</div>
-                                        {chatMessage.response.router_error ? (
-                                          <div>router_error: {chatMessage.response.router_error}</div>
+                                        {chatMessage.response.graph_paths.length > 0 ? (
+                                          <button
+                                            className="btn-secondary px-2 py-1 text-xs font-semibold"
+                                            type="button"
+                                            onClick={() => openGraphView(chatMessage.response!.request_id)}
+                                          >
+                                            {t.traceViewGraphAction}
+                                          </button>
                                         ) : null}
-                                        <div>
-                                          function_trace_summary:{" "}
-                                          {(chatMessage.response.function_trace_summary ?? []).join(" | ") || "-"}
-                                        </div>
-                                        <div>
-                                          allowed_kb_ids(frontend): {knowledgeBases.map((kb) => kb.id).join(", ") || "-"}
-                                        </div>
                                       </div>
-                                    </details>
+                                    ) : null}
+                                    {canViewTechnicalFields ? (
+                                      <details className="rounded-sm border border-[#474035] bg-[#efe5d6] px-3 py-2 font-mono text-xs text-[#2f2b25]">
+                                        <summary className="cursor-pointer font-medium text-[#26231f]">
+                                          {t.technicalDetails}
+                                        </summary>
+                                        <div className="mt-2 space-y-1 font-mono text-[11px]">
+                                          <div>request_id: {chatMessage.response.request_id}</div>
+                                          <div>cache_hit: {String(chatMessage.response.cache_hit)}</div>
+                                          <div>mode: {chatMessage.response.mode}</div>
+                                          <div>
+                                            router: {chatMessage.response.router_mode}/{chatMessage.response.router_model}
+                                          </div>
+                                          <div>router_fallback_used: {String(chatMessage.response.router_fallback_used)}</div>
+                                          {chatMessage.response.router_error ? (
+                                            <div>router_error: {chatMessage.response.router_error}</div>
+                                          ) : null}
+                                          <div>
+                                            function_trace_summary:{" "}
+                                            {(chatMessage.response.function_trace_summary ?? []).join(" | ") || "-"}
+                                          </div>
+                                          <div>
+                                            allowed_kb_ids(frontend): {knowledgeBases.map((kb) => kb.id).join(", ") || "-"}
+                                          </div>
+                                        </div>
+                                      </details>
+                                    ) : null}
                                   </div>
                                 ) : null}
                               </article>
@@ -1771,11 +1942,13 @@ export default function App() {
                       <table className="w-full border-collapse text-left text-sm">
                         <thead>
                           <tr className="border-b border-slate-200 text-slate-600">
-                            <th className="px-2 py-2">kb_id</th>
-                            <th className="px-2 py-2">{t.knowledgeBaseCode}</th>
+                            {canViewTechnicalFields ? <th className="px-2 py-2">kb_id</th> : null}
+                            {canViewTechnicalFields ? <th className="px-2 py-2">{t.knowledgeBaseCode}</th> : null}
                             <th className="px-2 py-2">{t.kbDisplayName}</th>
+                            <th className="px-2 py-2">{t.kbDescription}</th>
                             <th className="px-2 py-2">{t.kbLanguage}</th>
                             <th className="px-2 py-2">{t.kbDepartment}</th>
+                            <th className="px-2 py-2">{t.documentCountLabel}</th>
                             <th className="px-2 py-2"></th>
                           </tr>
                         </thead>
@@ -1784,9 +1957,10 @@ export default function App() {
                             const selected = selectedKnowledgeBaseId === kb.id;
                             return (
                               <tr key={kb.id} className={`border-b border-slate-100 ${selected ? "bg-white" : ""}`}>
-                                <td className="px-2 py-2 font-mono text-xs">{kb.id}</td>
-                                <td className="px-2 py-2 font-mono text-xs">{kb.code}</td>
+                                {canViewTechnicalFields ? <td className="px-2 py-2 font-mono text-xs">{kb.id}</td> : null}
+                                {canViewTechnicalFields ? <td className="px-2 py-2 font-mono text-xs">{kb.code}</td> : null}
                                 <td className="px-2 py-2">{kb.display_name || kb.name}</td>
+                                <td className="px-2 py-2 text-xs text-slate-600">{kb.description || t.noValue}</td>
                                 <td className="px-2 py-2">
                                   {kb.language === "zh"
                                     ? t.languageChinese
@@ -1794,7 +1968,10 @@ export default function App() {
                                       ? t.languageEnglish
                                       : kb.language}
                                 </td>
-                                <td className="px-2 py-2 font-mono text-xs">{kb.department ?? t.noValue}</td>
+                                <td className={`px-2 py-2 text-xs ${canViewTechnicalFields ? "font-mono" : ""}`}>
+                                  {kb.department ?? t.noValue}
+                                </td>
+                                <td className="px-2 py-2 text-xs">{kbDocumentCountByKbId[kb.id] ?? t.noValue}</td>
                                 <td className="px-2 py-2">
                                   <button
                                     className="btn-secondary px-2 py-1 text-xs"
@@ -1821,8 +1998,12 @@ export default function App() {
                         <p className="text-sm font-medium text-slate-700">{t.uploadDocumentTitle}</p>
                         <div className="text-xs text-slate-500">
                           {t.uploadTargetKnowledgeBase}:{" "}
-                          <span className="font-mono text-slate-700">
-                            {selectedKnowledgeBase?.code ?? t.noValue}
+                          <span className={`${canViewTechnicalFields ? "font-mono" : ""} text-slate-700`}>
+                            {selectedKnowledgeBase
+                              ? canViewTechnicalFields
+                                ? selectedKnowledgeBase.code
+                                : selectedKnowledgeBase.display_name || selectedKnowledgeBase.name
+                              : t.noValue}
                           </span>
                         </div>
                       </div>
@@ -1835,7 +2016,7 @@ export default function App() {
                                 className="field h-9"
                                 value={uploadTitle}
                                 onChange={(event) => setUploadTitle(event.target.value)}
-                                placeholder={selectedKnowledgeBase.code}
+                                placeholder={selectedKnowledgeBase.display_name || selectedKnowledgeBase.name}
                               />
                             </label>
                             <label className="block space-y-1">
@@ -1876,8 +2057,12 @@ export default function App() {
                         <p className="text-sm font-medium text-slate-700">{t.documentsPanelTitle}</p>
                         <div className="text-xs text-slate-500">
                           {t.selectedKnowledgeBase}:{" "}
-                          <span className="font-mono text-slate-700">
-                            {selectedKnowledgeBase?.code ?? t.noValue}
+                          <span className={`${canViewTechnicalFields ? "font-mono" : ""} text-slate-700`}>
+                            {selectedKnowledgeBase
+                              ? canViewTechnicalFields
+                                ? selectedKnowledgeBase.code
+                                : selectedKnowledgeBase.display_name || selectedKnowledgeBase.name
+                              : t.noValue}
                           </span>
                         </div>
                       </div>
@@ -1942,8 +2127,12 @@ export default function App() {
                         <p className="text-sm font-medium text-slate-700">{t.chunkViewerTitle}</p>
                         <div className="text-xs text-slate-500">
                           {t.selectedDocument}:{" "}
-                          <span className="font-mono text-slate-700">
-                            {selectedDocument?.id ?? t.noValue}
+                          <span className={`${canViewTechnicalFields ? "font-mono" : ""} text-slate-700`}>
+                            {selectedDocument
+                              ? canViewTechnicalFields
+                                ? selectedDocument.id
+                                : selectedDocument.title
+                              : t.noValue}
                           </span>
                         </div>
                       </div>
@@ -1955,9 +2144,17 @@ export default function App() {
                                 <summary className="cursor-pointer">
                                   <div className="grid gap-1 text-xs md:grid-cols-[72px_minmax(0,1fr)_170px_150px]">
                                     <div className="font-mono text-slate-600">{t.chunkIndex}: {chunk.chunk_index}</div>
-                                    <div className="font-mono text-slate-700">{t.chunkId}: {chunk.id}</div>
-                                    <div className="text-slate-600">{t.embeddingStatus}: {chunk.has_embedding ? t.embeddingPresent : t.embeddingMissing}</div>
-                                    <div className="text-slate-600">{t.embeddingDimension}: {chunk.embedding_dimension}</div>
+                                    <div className="font-mono text-slate-700">
+                                      {canViewTechnicalFields ? `${t.chunkId}: ${chunk.id}` : t.contentPreview}
+                                    </div>
+                                    <div className="text-slate-600">
+                                      {canViewTechnicalFields
+                                        ? `${t.embeddingStatus}: ${chunk.has_embedding ? t.embeddingPresent : t.embeddingMissing}`
+                                        : ""}
+                                    </div>
+                                    <div className="text-slate-600">
+                                      {canViewTechnicalFields ? `${t.embeddingDimension}: ${chunk.embedding_dimension}` : ""}
+                                    </div>
                                   </div>
                                   <p className="mt-1 text-sm text-slate-700">{chunk.content_preview}</p>
                                 </summary>
@@ -2019,13 +2216,13 @@ export default function App() {
                 <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-3">
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <p className="text-sm font-medium text-slate-700">{t.adminAuditLogs}</p>
-                    {user?.role?.includes("admin") ? (
+                    {canViewAdminViews ? (
                       <button className="btn-secondary" onClick={onLoadAdminAudit} disabled={pending} type="button">
                         {t.loadAuditLogs}
                       </button>
                     ) : null}
                   </div>
-                  {user?.role?.includes("admin") ? (
+                  {canViewAdminViews ? (
                     auditLogs.length > 0 ? (
                       <div className="max-h-[260px] overflow-y-auto overflow-x-auto">
                         <table className="w-full border-collapse text-left text-xs">

@@ -22,9 +22,9 @@ settings = get_settings()
 
 
 def _infer_kb_language(kb: KnowledgeBase) -> str:
-    if kb.code.startswith("cn-") or (kb.department and kb.department.code == "cn"):
+    if kb.code.startswith("cn-") or (kb.department and kb.department.code in {"cn", "sales", "marketing", "support", "hr", "admin", "product"}):
         return "zh"
-    if kb.code.startswith("en-") or (kb.department and kb.department.code == "en"):
+    if kb.code.startswith("en-") or (kb.department and kb.department.code in {"en", "tech"}):
         return "en"
     return "multi"
 

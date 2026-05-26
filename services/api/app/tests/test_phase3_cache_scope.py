@@ -8,8 +8,8 @@ def _login(client, email: str, password: str = "Passw0rd!123") -> str:
 
 
 def test_same_user_same_question_hits_cache(client):
-    token = _login(client, "cn_staff@example.local")
-    question = f"请总结中文公开指引缓存测试 {uuid4().hex}"
+    token = _login(client, "sales_staff@example.local")
+    question = f"请总结销售部报价策略缓存测试 {uuid4().hex}"
     payload = {"question": question, "mode": "rag", "knowledge_base_codes": []}
 
     first = client.post("/api/v1/qa/ask", headers={"Authorization": f"Bearer {token}"}, json=payload)
@@ -33,9 +33,9 @@ def test_same_user_same_question_hits_cache(client):
 
 
 def test_cache_key_isolation_between_roles(client):
-    cn_token = _login(client, "cn_staff@example.local")
-    en_token = _login(client, "en_staff@example.local")
-    question = f"public handbook cache scope {uuid4().hex}"
+    cn_token = _login(client, "sales_staff@example.local")
+    en_token = _login(client, "tech_staff@example.local")
+    question = f"public policy cache scope {uuid4().hex}"
     payload = {"question": question, "mode": "auto", "knowledge_base_codes": []}
 
     cn_first = client.post("/api/v1/qa/ask", headers={"Authorization": f"Bearer {cn_token}"}, json=payload)

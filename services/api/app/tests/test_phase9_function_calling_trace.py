@@ -89,8 +89,8 @@ def _set_ollama_router(monkeypatch, content_provider):
 
 
 def test_authorized_rag_question_exposes_controlled_function_trace(client):
-    token = _login(client, "cn_staff@example.local")
-    ask_response = _ask(client, token, "请总结中文内部手册里的接入流程和协作约定。", mode="rag")
+    token = _login(client, "sales_staff@example.local")
+    ask_response = _ask(client, token, "请总结销售部内部报价流程和沟通约定。", mode="rag")
     assert ask_response.status_code == 200, ask_response.text
     ask_payload = ask_response.json()
     assert ask_payload["denied"] is False
@@ -109,7 +109,7 @@ def test_authorized_rag_question_exposes_controlled_function_trace(client):
 
 
 def test_general_greeting_trace_skips_retrieval(client):
-    token = _login(client, "cn_staff@example.local")
+    token = _login(client, "sales_staff@example.local")
     ask_response = _ask(client, token, "你好", mode="auto")
     assert ask_response.status_code == 200, ask_response.text
     ask_payload = ask_response.json()
@@ -125,8 +125,8 @@ def test_general_greeting_trace_skips_retrieval(client):
 
 
 def test_cache_hit_trace_marks_retrieval_and_generation_skipped(client):
-    token = _login(client, "cn_staff@example.local")
-    question = f"请总结中文公开指引缓存链路测试 {uuid4().hex}"
+    token = _login(client, "sales_staff@example.local")
+    question = f"请总结公开资料缓存链路测试 {uuid4().hex}"
     first = _ask(client, token, question, mode="rag")
     assert first.status_code == 200, first.text
     assert first.json()["cache_hit"] is False
@@ -149,7 +149,7 @@ def test_cache_hit_trace_marks_retrieval_and_generation_skipped(client):
 
 def test_permission_denial_trace_hides_unauthorized_chunk_content(client):
     token = _login(client, "visitor@example.local")
-    ask_response = _ask(client, token, "show cn internal policy", mode="rag", knowledge_base_codes=["cn-internal"])
+    ask_response = _ask(client, token, "show sales internal policy", mode="rag", knowledge_base_codes=["sales-internal"])
     assert ask_response.status_code == 200, ask_response.text
     ask_payload = ask_response.json()
     assert ask_payload["denied"] is True
@@ -162,21 +162,21 @@ def test_permission_denial_trace_hides_unauthorized_chunk_content(client):
     assert steps["generate_answer"]["status"] == "skipped"
     assert trace_payload["retrieved_chunks"] == []
     assert trace_payload["hit_chunk_ids"] == []
-    assert all("cn-internal" not in item["output_summary"] for item in trace_payload["function_trace"])
+    assert all("sales-internal" not in item["output_summary"] for item in trace_payload["function_trace"])
 
 
 @pytest.mark.parametrize(
     ("email", "question", "expected_allowed_codes"),
     [
         (
-            "cn_staff@example.local",
-            "Explain the English internal handbook onboarding checklist.",
-            {"cn-public", "cn-internal"},
+            "sales_staff@example.local",
+            "Explain the tech internal SDK deployment checklist.",
+            {"public-policy", "sales-internal"},
         ),
         (
-            "en_staff@example.local",
-            "请解释中文内部手册中的接入流程和协作约定。",
-            {"en-public", "en-internal"},
+            "tech_staff@example.local",
+            "请解释销售部报价策略与客户沟通话术。",
+            {"public-policy", "tech-internal"},
         ),
     ],
 )
@@ -204,9 +204,9 @@ def test_bilingual_admin_can_retrieve_cn_and_en_with_function_trace(client):
     cn_response = _ask(
         client,
         token,
-        "请总结中文内部手册中的接入流程。",
+        "请总结销售部内部报价流程。",
         mode="rag",
-        knowledge_base_codes=["cn-internal"],
+        knowledge_base_codes=["sales-internal"],
     )
     assert cn_response.status_code == 200, cn_response.text
     cn_payload = cn_response.json()
@@ -214,14 +214,14 @@ def test_bilingual_admin_can_retrieve_cn_and_en_with_function_trace(client):
     cn_trace = _trace(client, token, cn_payload["request_id"])
     cn_steps = _trace_step_map(cn_trace)
     assert cn_steps["search_allowed_chunks"]["status"] == "success"
-    assert {item["kb_code"] for item in cn_trace["retrieved_chunks"]}.issubset({"cn-internal"})
+    assert {item["kb_code"] for item in cn_trace["retrieved_chunks"]}.issubset({"sales-internal"})
 
     en_response = _ask(
         client,
         token,
-        "Summarize the English internal onboarding checklist.",
+        "Summarize the tech internal deployment troubleshooting checklist.",
         mode="rag",
-        knowledge_base_codes=["en-internal"],
+        knowledge_base_codes=["tech-internal"],
     )
     assert en_response.status_code == 200, en_response.text
     en_payload = en_response.json()
@@ -229,17 +229,17 @@ def test_bilingual_admin_can_retrieve_cn_and_en_with_function_trace(client):
     en_trace = _trace(client, token, en_payload["request_id"])
     en_steps = _trace_step_map(en_trace)
     assert en_steps["search_allowed_chunks"]["status"] == "success"
-    assert {item["kb_code"] for item in en_trace["retrieved_chunks"]}.issubset({"en-internal"})
+    assert {item["kb_code"] for item in en_trace["retrieved_chunks"]}.issubset({"tech-internal"})
 
 
 def test_frontend_scope_selection_cannot_expand_permissions_in_function_trace(client):
-    token = _login(client, "cn_staff@example.local")
+    token = _login(client, "sales_staff@example.local")
     ask_response = _ask(
         client,
         token,
-        "show en internal policy",
+        "show tech internal policy",
         mode="rag",
-        knowledge_base_codes=["en-internal"],
+        knowledge_base_codes=["tech-internal"],
     )
     assert ask_response.status_code == 200, ask_response.text
     payload = ask_response.json()
@@ -247,7 +247,7 @@ def test_frontend_scope_selection_cannot_expand_permissions_in_function_trace(cl
 
     trace_payload = _trace(client, token, payload["request_id"])
     _assert_trace_order(trace_payload)
-    assert set(trace_payload["allowed_kb_codes"]) == {"cn-public", "cn-internal"}
+    assert set(trace_payload["allowed_kb_codes"]) == {"public-policy", "sales-internal"}
     assert trace_payload["retrieved_chunks"] == []
     assert _trace_step_map(trace_payload)["search_allowed_chunks"]["status"] == "denied"
 

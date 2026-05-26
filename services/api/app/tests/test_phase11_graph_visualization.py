@@ -16,11 +16,17 @@ def _login(client, email: str, password: str = "Passw0rd!123") -> str:
     return response.json()["access_token"]
 
 
-def _ask(client, token: str, question: str, mode: str = "graphrag") -> dict:
+def _ask(
+    client,
+    token: str,
+    question: str,
+    mode: str = "graphrag",
+    knowledge_base_codes: list[str] | None = None,
+) -> dict:
     response = client.post(
         "/api/v1/qa/ask",
         headers={"Authorization": f"Bearer {token}"},
-        json={"question": question, "mode": mode, "knowledge_base_codes": []},
+        json={"question": question, "mode": mode, "knowledge_base_codes": knowledge_base_codes or []},
     )
     assert response.status_code == 200, response.text
     return response.json()
@@ -69,7 +75,7 @@ def test_zh_navigation_labels_localized():
 
 
 def test_graph_status_endpoint_returns_safe_runtime_status(client):
-    token = _login(client, "cn_staff@example.local")
+    token = _login(client, "sales_staff@example.local")
     response = client.get("/api/v1/graph/status", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200, response.text
     payload = response.json()
@@ -85,11 +91,20 @@ def test_graph_status_endpoint_returns_safe_runtime_status(client):
     ("email", "expected_codes"),
     [
         ("visitor@example.local", {"public-policy"}),
-        ("cn_staff@example.local", {"cn-public", "cn-internal"}),
-        ("en_staff@example.local", {"en-public", "en-internal"}),
+        ("sales_staff@example.local", {"public-policy", "sales-internal"}),
+        ("tech_staff@example.local", {"public-policy", "tech-internal"}),
         (
             "bilingual_admin@example.local",
-            {"cn-public", "cn-internal", "en-public", "en-internal", "public-policy"},
+            {
+                "public-policy",
+                "tech-internal",
+                "sales-internal",
+                "marketing-internal",
+                "support-internal",
+                "hr-internal",
+                "admin-internal",
+                "product-internal",
+            },
         ),
     ],
 )
@@ -104,9 +119,15 @@ def test_graph_overview_scope_matches_backend_allowed_kbs(client, email: str, ex
 
 
 def test_unauthorized_graph_trace_viewer_cannot_see_internal_nodes(client):
-    cn_token = _login(client, "cn_staff@example.local")
+    cn_token = _login(client, "sales_staff@example.local")
     visitor_token = _login(client, "visitor@example.local")
-    ask_payload = _ask(client, cn_token, f"请总结中文内部制度图谱路径 {uuid4().hex}", mode="graphrag")
+    ask_payload = _ask(
+        client,
+        cn_token,
+        f"请总结销售内部制度图谱路径 {uuid4().hex}",
+        mode="graphrag",
+        knowledge_base_codes=["sales-internal"],
+    )
     assert ask_payload["denied"] is False
 
     _grant_role_permission("visitor", "audit:read")
@@ -123,10 +144,10 @@ def test_unauthorized_graph_trace_viewer_cannot_see_internal_nodes(client):
 
 
 def test_qa_graph_endpoint_respects_request_ownership_and_permission(client):
-    cn_token = _login(client, "cn_staff@example.local")
-    en_token = _login(client, "en_staff@example.local")
+    cn_token = _login(client, "sales_staff@example.local")
+    en_token = _login(client, "tech_staff@example.local")
 
-    ask_payload = _ask(client, cn_token, f"请描述中文公开制度图谱 {uuid4().hex}", mode="graphrag")
+    ask_payload = _ask(client, cn_token, f"请描述公开制度图谱 {uuid4().hex}", mode="graphrag")
     request_id = ask_payload["request_id"]
 
     forbidden = client.get(
@@ -142,15 +163,15 @@ def test_qa_graph_endpoint_respects_request_ownership_and_permission(client):
     assert owner.status_code == 200, owner.text
     owner_payload = owner.json()
     assert owner_payload["request_id"] == request_id
-    assert set(owner_payload["allowed_kb_codes"]) == {"cn-public", "cn-internal"}
+    assert set(owner_payload["allowed_kb_codes"]) == {"public-policy", "sales-internal"}
 
 
 def test_neo4j_unavailable_fallback_does_not_break_graphrag_qa(client):
     previous = neo4j_service._disabled
     neo4j_service._disabled = True
     try:
-        token = _login(client, "cn_staff@example.local")
-        ask_payload = _ask(client, token, f"请给我中文公开政策图谱说明 {uuid4().hex}", mode="graphrag")
+        token = _login(client, "sales_staff@example.local")
+        ask_payload = _ask(client, token, f"请给我公开政策图谱说明 {uuid4().hex}", mode="graphrag")
         assert ask_payload["denied"] is False
 
         trace_response = client.get(

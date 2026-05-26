@@ -9,21 +9,21 @@ def list_overreach_cases() -> dict:
     return {
         "cases": [
             {
-                "id": "visitor_finance_compensation",
+                "id": "visitor_hr_internal",
                 "role": "visitor",
-                "question": "Can I read finance compensation policy details?",
+                "question": "请提供人事部考勤制度细则。",
                 "expected": "denied",
             },
             {
-                "id": "cn_staff_en_internal",
-                "role": "cn_staff",
-                "question": "Explain the English internal handbook release coordination policy.",
+                "id": "sales_staff_tech_internal",
+                "role": "sales_staff",
+                "question": "Explain the SDK deployment troubleshooting checklist.",
                 "expected": "denied",
             },
             {
-                "id": "en_staff_cn_internal",
-                "role": "en_staff",
-                "question": "请解释中文内部手册中的变更发布节奏。",
+                "id": "tech_staff_sales_internal",
+                "role": "tech_staff",
+                "question": "请解释销售部的渠道返点政策。",
                 "expected": "denied",
             },
         ]

@@ -58,7 +58,7 @@ def _set_ollama_router(monkeypatch, content_provider):
 
 
 def test_rules_router_still_works_by_default(client):
-    token = _login(client, "cn_staff@example.local")
+    token = _login(client, "sales_staff@example.local")
     response = _ask(client, token, "你好", mode="auto")
     assert response.status_code == 200, response.text
     payload = response.json()
@@ -74,29 +74,29 @@ def test_ollama_router_accepts_valid_json(client, monkeypatch):
             {
                 "language": "zh",
                 "intent": "policy_question",
-                "target_department": "cn",
+                "target_department": "sales",
                 "need_rag": True,
                 "confidence": 0.91,
-                "reason": "route to cn policy knowledge",
+                "reason": "route to sales policy knowledge",
             }
         )
 
     _set_ollama_router(monkeypatch, _content_provider)
-    token = _login(client, "cn_staff@example.local")
-    response = _ask(client, token, "说一下中文内部制度", mode="auto")
+    token = _login(client, "sales_staff@example.local")
+    response = _ask(client, token, "说一下销售内部制度", mode="auto")
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["route"]["router_mode"] == "ollama"
     assert payload["route"]["router_fallback_used"] is False
     assert payload["route"]["intent"] == "policy_question"
-    assert payload["route"]["target_department"] == "cn"
+    assert payload["route"]["target_department"] == "sales"
     assert payload["route"]["need_rag"] is True
 
 
 def test_ollama_invalid_json_falls_back_to_rules(client, monkeypatch):
     _set_ollama_router(monkeypatch, lambda **kwargs: "not-a-json")
-    token = _login(client, "cn_staff@example.local")
-    response = _ask(client, token, "说一下中文内部制度", mode="auto")
+    token = _login(client, "sales_staff@example.local")
+    response = _ask(client, token, "说一下销售内部制度", mode="auto")
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["route"]["router_mode"] == "ollama"
@@ -126,8 +126,8 @@ def test_ollama_timeout_falls_back_to_rules(client, monkeypatch):
         local_router_service.OllamaQwenRouter(fallback=local_router_service.RuleBasedLocalModelRouter()),
     )
 
-    token = _login(client, "cn_staff@example.local")
-    response = _ask(client, token, "Explain the English internal handbook onboarding checklist.", mode="auto")
+    token = _login(client, "sales_staff@example.local")
+    response = _ask(client, token, "Explain the tech internal SDK deployment checklist.", mode="auto")
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["route"]["router_mode"] == "ollama"
@@ -157,18 +157,18 @@ def test_ollama_router_cannot_expand_permissions_for_visitor(client, monkeypatch
     assert payload["citations"] == []
 
 
-def test_ollama_router_cn_and_en_isolation_still_enforced(client, monkeypatch):
+def test_ollama_router_sales_and_tech_isolation_still_enforced(client, monkeypatch):
     def _content_provider(**kwargs):
         question = (kwargs.get("payload") or {}).get("messages", [{}, {"content": ""}])[1]["content"].lower()
-        if "english" in question:
-            department = "en"
-        elif "中文" in question:
-            department = "cn"
+        if "tech" in question or "sdk" in question:
+            department = "tech"
+        elif "销售" in question or "pricing" in question:
+            department = "sales"
         else:
             department = "unknown"
         return json.dumps(
             {
-                "language": "en" if department == "en" else "zh",
+                "language": "en" if department == "tech" else "zh",
                 "intent": "knowledge_lookup",
                 "target_department": department,
                 "need_rag": True,
@@ -179,28 +179,28 @@ def test_ollama_router_cn_and_en_isolation_still_enforced(client, monkeypatch):
 
     _set_ollama_router(monkeypatch, _content_provider)
 
-    cn_token = _login(client, "cn_staff@example.local")
-    cn_response = _ask(client, cn_token, "Explain the English internal handbook onboarding checklist.", mode="auto")
+    cn_token = _login(client, "sales_staff@example.local")
+    cn_response = _ask(client, cn_token, "Explain the tech internal SDK deployment checklist.", mode="auto")
     assert cn_response.status_code == 200, cn_response.text
     cn_payload = cn_response.json()
     assert cn_payload["denied"] is True or {
         item["kb_code"] for item in cn_payload.get("citations", [])
-    }.issubset({"cn-public", "cn-internal"})
+    }.issubset({"public-policy", "sales-internal"})
 
-    en_token = _login(client, "en_staff@example.local")
-    en_response = _ask(client, en_token, "请解释中文内部手册中的接入流程和协作约定。", mode="auto")
+    en_token = _login(client, "tech_staff@example.local")
+    en_response = _ask(client, en_token, "请解释销售部报价策略与客户沟通话术。", mode="auto")
     assert en_response.status_code == 200, en_response.text
     en_payload = en_response.json()
     assert en_payload["denied"] is True or {
         item["kb_code"] for item in en_payload.get("citations", [])
-    }.issubset({"en-public", "en-internal"})
+    }.issubset({"public-policy", "tech-internal"})
 
 
 def test_ollama_router_admin_can_still_retrieve_authorized_bilingual_content(client, monkeypatch):
     def _content_provider(**kwargs):
         question = (kwargs.get("payload") or {}).get("messages", [{}, {"content": ""}])[1]["content"]
-        department = "cn" if "中文" in question else "en"
-        language = "zh" if department == "cn" else "en"
+        department = "sales" if "销售" in question else "tech"
+        language = "zh" if department == "sales" else "en"
         return json.dumps(
             {
                 "language": language,
@@ -215,23 +215,23 @@ def test_ollama_router_admin_can_still_retrieve_authorized_bilingual_content(cli
     _set_ollama_router(monkeypatch, _content_provider)
 
     token = _login(client, "bilingual_admin@example.local")
-    cn_response = _ask(client, token, "请总结中文内部手册中的接入流程。", mode="rag", knowledge_base_codes=["cn-internal"])
+    cn_response = _ask(client, token, "请总结销售部内部报价流程。", mode="rag", knowledge_base_codes=["sales-internal"])
     assert cn_response.status_code == 200, cn_response.text
     cn_payload = cn_response.json()
     assert cn_payload["denied"] is False
-    assert {item["kb_code"] for item in cn_payload["citations"]}.issubset({"cn-internal"})
+    assert {item["kb_code"] for item in cn_payload["citations"]}.issubset({"sales-internal"})
 
     en_response = _ask(
         client,
         token,
-        "Summarize the English internal onboarding checklist.",
+        "Summarize the tech internal deployment troubleshooting checklist.",
         mode="rag",
-        knowledge_base_codes=["en-internal"],
+        knowledge_base_codes=["tech-internal"],
     )
     assert en_response.status_code == 200, en_response.text
     en_payload = en_response.json()
     assert en_payload["denied"] is False
-    assert {item["kb_code"] for item in en_payload["citations"]}.issubset({"en-internal"})
+    assert {item["kb_code"] for item in en_payload["citations"]}.issubset({"tech-internal"})
 
 
 def test_trace_contains_safe_router_metadata(client, monkeypatch):
@@ -240,7 +240,7 @@ def test_trace_contains_safe_router_metadata(client, monkeypatch):
             {
                 "language": "zh",
                 "intent": "policy_question",
-                "target_department": "cn",
+                "target_department": "sales",
                 "need_rag": True,
                 "confidence": 0.84,
                 "reason": "trace metadata check",
@@ -249,8 +249,8 @@ def test_trace_contains_safe_router_metadata(client, monkeypatch):
 
     _set_ollama_router(monkeypatch, _content_provider)
 
-    token = _login(client, "cn_staff@example.local")
-    ask_response = _ask(client, token, "请总结中文公开指引中的沟通规范。", mode="auto")
+    token = _login(client, "sales_staff@example.local")
+    ask_response = _ask(client, token, "请总结销售部客户沟通规范。", mode="auto")
     assert ask_response.status_code == 200, ask_response.text
     request_id = ask_response.json()["request_id"]
 
@@ -271,7 +271,7 @@ def test_retrieval_config_reports_ollama_router_runtime(client, monkeypatch):
             {
                 "language": "en",
                 "intent": "knowledge_lookup",
-                "target_department": "en",
+                "target_department": "tech",
                 "need_rag": True,
                 "confidence": 0.86,
                 "reason": "runtime status check",
@@ -279,8 +279,8 @@ def test_retrieval_config_reports_ollama_router_runtime(client, monkeypatch):
         )
 
     _set_ollama_router(monkeypatch, _content_provider)
-    token = _login(client, "en_staff@example.local")
-    ask_response = _ask(client, token, "Summarize the English internal onboarding flow.", mode="auto")
+    token = _login(client, "tech_staff@example.local")
+    ask_response = _ask(client, token, "Summarize the tech internal SDK deployment flow.", mode="auto")
     assert ask_response.status_code == 200, ask_response.text
 
     config_response = client.get("/api/v1/system/retrieval-config", headers={"Authorization": f"Bearer {token}"})

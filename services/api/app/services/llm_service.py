@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import re
 
 import httpx
 
@@ -53,17 +54,40 @@ def _build_context_block(citations: list[Citation], graph_paths: list[GraphPath]
     return "\n".join(lines)
 
 
-def _render_mock_answer(citations: list[Citation], graph_paths: list[GraphPath]) -> str:
-    if not citations:
-        return "No relevant authorized documents were found."
+def _is_zh_text(text: str) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff]", text))
 
-    lines = ["Authorized answer generated from the following scoped knowledge:"]
-    for index, citation in enumerate(citations, start=1):
-        lines.append(f"{index}. [{citation.kb_code}] {citation.document_title}: {citation.excerpt}")
+
+def _render_mock_answer(question: str, citations: list[Citation], graph_paths: list[GraphPath]) -> str:
+    is_zh = _is_zh_text(question)
+    if not citations:
+        if is_zh:
+            return "未在当前授权知识库中检索到可用内容。"
+        return "No relevant content was found in the currently authorized knowledge bases."
+
+    top_citations = citations[:4]
+    if is_zh:
+        lines = ["基于当前账号已授权知识库，整理结论如下：", ""]
+        for index, citation in enumerate(top_citations, start=1):
+            lines.append(f"{index}. {citation.document_title}")
+            lines.append(f"   要点：{citation.excerpt}")
+        lines.append("")
+        lines.append("来源摘要：")
+        for citation in top_citations:
+            lines.append(f"- {citation.kb_name} / {citation.document_title}")
+    else:
+        lines = ["Summary based on your currently authorized knowledge bases:", ""]
+        for index, citation in enumerate(top_citations, start=1):
+            lines.append(f"{index}. {citation.document_title}")
+            lines.append(f"   Key point: {citation.excerpt}")
+        lines.append("")
+        lines.append("Source summary:")
+        for citation in top_citations:
+            lines.append(f"- {citation.kb_name} / {citation.document_title}")
 
     if graph_paths:
         lines.append("")
-        lines.append("Graph evidence paths:")
+        lines.append("图谱证据路径：" if is_zh else "Graph evidence paths:")
         for index, path in enumerate(graph_paths, start=1):
             lines.append(f"{index}. {' -> '.join(path.path)}")
     return "\n".join(lines)
@@ -118,7 +142,10 @@ class MockGeneratorProvider(BaseGeneratorProvider):
         return "mock"
 
     def generate(self, question: str, citations: list[Citation], graph_paths: list[GraphPath]) -> GeneratedAnswer:
-        return GeneratedAnswer(answer=_render_mock_answer(citations, graph_paths), model=f"mock:{self.model_name}")
+        return GeneratedAnswer(
+            answer=_render_mock_answer(question, citations, graph_paths),
+            model=f"mock:{self.model_name}",
+        )
 
 
 class OpenAICompatibleGeneratorProvider(BaseGeneratorProvider):
@@ -201,4 +228,3 @@ def generate_answer(question: str, citations: list[Citation], graph_paths: list[
         generated = fallback.generate(question, citations, graph_paths)
         generated.model = f"mock-fallback:{provider.provider_name}:{provider.model_name}"
         return generated
-
