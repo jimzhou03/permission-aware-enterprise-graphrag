@@ -19,7 +19,12 @@ settings = get_settings()
 DEPARTMENT_KEYWORDS: dict[str, tuple[str, ...]] = {
     "finance": ("finance", "salary", "compensation", "payroll", "reimbursement", "budget", "财务", "薪酬", "报销", "预算"),
     "hr": ("hr", "recruit", "hiring", "leave", "attendance", "招聘", "人事", "请假", "考勤"),
-    "tech": ("tech", "deploy", "release", "incident", "service", "技术", "发布", "故障", "运维"),
+    "tech": ("tech", "sdk", "api", "deploy", "release", "incident", "integration", "技术", "发布", "部署"),
+    "sales": ("sales", "quote", "pricing", "channel", "deal", "销售", "报价", "客户沟通", "渠道"),
+    "marketing": ("marketing", "brand", "campaign", "expo", "market", "市场", "品牌", "展会", "宣传"),
+    "support": ("support", "after-sales", "ticket", "warranty", "repair", "客服", "售后", "保修", "工单", "故障"),
+    "admin": ("admin", "administration", "meeting room", "procurement", "asset", "行政", "会议室", "采购", "资产"),
+    "product": ("product", "spec", "roadmap", "feature", "competition", "产品", "规格", "路线图", "竞品"),
     "cn": ("cn", "chinese", "中文", "汉语", "china policy", "中国内部"),
     "en": ("en", "english", "英文", "internal english", "english internal"),
     "public": ("public", "visitor", "badge", "访客", "公开", "公示"),
@@ -48,7 +53,19 @@ SECURITY_TEST_KEYWORDS = (
 )
 GREETING_ZH = {"你好", "您好", "早上好", "晚上好"}
 GREETING_EN = {"hello", "hi", "good morning", "good evening"}
-KNOWN_DEPARTMENTS = {"hr", "finance", "tech", "cn", "en", "public"}
+KNOWN_DEPARTMENTS = {
+    "hr",
+    "finance",
+    "tech",
+    "sales",
+    "marketing",
+    "support",
+    "admin",
+    "product",
+    "cn",
+    "en",
+    "public",
+}
 
 
 class OllamaRouterOutput(BaseModel):
@@ -125,7 +142,12 @@ def detect_language(question: str) -> RouterLanguage:
 
 def detect_target_department(question: str) -> str | None:
     lowered = question.lower()
+    public_keywords = DEPARTMENT_KEYWORDS.get("public", ())
+    if any(word in lowered for word in public_keywords):
+        return "public"
     for department, keywords in DEPARTMENT_KEYWORDS.items():
+        if department == "public":
+            continue
         if any(word in lowered for word in keywords):
             return department
     return None
@@ -239,7 +261,7 @@ def _build_ollama_prompt() -> str:
         "Return exactly keys: language, intent, target_department, need_rag, confidence, reason.\n"
         "language must be one of: zh, en, unknown.\n"
         "intent must be one of: greeting, policy_question, knowledge_lookup, security_test, unsupported.\n"
-        "target_department must be one of: cn, en, hr, finance, tech, public, unknown.\n"
+        "target_department must be one of: tech, sales, marketing, support, hr, admin, product, finance, public, cn, en, unknown.\n"
         "need_rag must be boolean.\n"
         "confidence must be a float between 0 and 1.\n"
         "reason must be short."

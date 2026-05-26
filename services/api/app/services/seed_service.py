@@ -153,15 +153,25 @@ def _deactivate_unmanaged_knowledge_bases(db: Session, managed_codes: set[str]) 
 
 def seed_demo_data(db: Session) -> None:
     role_map = {
-        "bilingual_admin": _get_or_create_role(db, "bilingual_admin", "Bilingual demo administrator"),
-        "cn_staff": _get_or_create_role(db, "cn_staff", "Chinese department demo staff"),
-        "en_staff": _get_or_create_role(db, "en_staff", "English department demo staff"),
+        "bilingual_admin": _get_or_create_role(db, "bilingual_admin", "Cross-department demo administrator"),
+        "tech_staff": _get_or_create_role(db, "tech_staff", "Technology department demo staff"),
+        "sales_staff": _get_or_create_role(db, "sales_staff", "Sales department demo staff"),
+        "marketing_staff": _get_or_create_role(db, "marketing_staff", "Marketing department demo staff"),
+        "support_staff": _get_or_create_role(db, "support_staff", "Support department demo staff"),
+        "hr_staff": _get_or_create_role(db, "hr_staff", "HR department demo staff"),
+        "admin_staff": _get_or_create_role(db, "admin_staff", "Administration department demo staff"),
+        "product_staff": _get_or_create_role(db, "product_staff", "Product department demo staff"),
         "visitor": _get_or_create_role(db, "visitor", "Public visitor"),
     }
     dept_map = {
         "public": _get_or_create_department(db, "public", "Public"),
-        "cn": _get_or_create_department(db, "cn", "Chinese Department"),
-        "en": _get_or_create_department(db, "en", "English Department"),
+        "tech": _get_or_create_department(db, "tech", "Technology Department"),
+        "sales": _get_or_create_department(db, "sales", "Sales Department"),
+        "marketing": _get_or_create_department(db, "marketing", "Marketing Department"),
+        "support": _get_or_create_department(db, "support", "Support Department"),
+        "hr": _get_or_create_department(db, "hr", "Human Resources Department"),
+        "admin": _get_or_create_department(db, "admin", "Administration Department"),
+        "product": _get_or_create_department(db, "product", "Product Department"),
     }
 
     perm_map = {
@@ -172,13 +182,23 @@ def seed_demo_data(db: Session) -> None:
     }
 
     _bind_role_permissions(db, role_map["bilingual_admin"], list(perm_map.keys()), perm_map)
-    _bind_role_permissions(db, role_map["cn_staff"], ["qa:ask"], perm_map)
-    _bind_role_permissions(db, role_map["en_staff"], ["qa:ask"], perm_map)
+    _bind_role_permissions(db, role_map["tech_staff"], ["qa:ask"], perm_map)
+    _bind_role_permissions(db, role_map["sales_staff"], ["qa:ask"], perm_map)
+    _bind_role_permissions(db, role_map["marketing_staff"], ["qa:ask"], perm_map)
+    _bind_role_permissions(db, role_map["support_staff"], ["qa:ask"], perm_map)
+    _bind_role_permissions(db, role_map["hr_staff"], ["qa:ask"], perm_map)
+    _bind_role_permissions(db, role_map["admin_staff"], ["qa:ask"], perm_map)
+    _bind_role_permissions(db, role_map["product_staff"], ["qa:ask"], perm_map)
     _bind_role_permissions(db, role_map["visitor"], ["qa:ask"], perm_map)
 
     managed_users = {
-        "cn_staff@example.local",
-        "en_staff@example.local",
+        "tech_staff@example.local",
+        "sales_staff@example.local",
+        "marketing_staff@example.local",
+        "support_staff@example.local",
+        "hr_staff@example.local",
+        "admin_staff@example.local",
+        "product_staff@example.local",
         "bilingual_admin@example.local",
         "visitor@example.local",
     }
@@ -186,17 +206,52 @@ def seed_demo_data(db: Session) -> None:
 
     _get_or_create_user(
         db,
-        "cn_staff@example.local",
-        "CN Staff User",
-        role_map["cn_staff"],
-        dept_map["cn"],
+        "tech_staff@example.local",
+        "Tech Staff User",
+        role_map["tech_staff"],
+        dept_map["tech"],
     )
     _get_or_create_user(
         db,
-        "en_staff@example.local",
-        "EN Staff User",
-        role_map["en_staff"],
-        dept_map["en"],
+        "sales_staff@example.local",
+        "Sales Staff User",
+        role_map["sales_staff"],
+        dept_map["sales"],
+    )
+    _get_or_create_user(
+        db,
+        "marketing_staff@example.local",
+        "Marketing Staff User",
+        role_map["marketing_staff"],
+        dept_map["marketing"],
+    )
+    _get_or_create_user(
+        db,
+        "support_staff@example.local",
+        "Support Staff User",
+        role_map["support_staff"],
+        dept_map["support"],
+    )
+    _get_or_create_user(
+        db,
+        "hr_staff@example.local",
+        "HR Staff User",
+        role_map["hr_staff"],
+        dept_map["hr"],
+    )
+    _get_or_create_user(
+        db,
+        "admin_staff@example.local",
+        "Administration Staff User",
+        role_map["admin_staff"],
+        dept_map["admin"],
+    )
+    _get_or_create_user(
+        db,
+        "product_staff@example.local",
+        "Product Staff User",
+        role_map["product_staff"],
+        dept_map["product"],
     )
     _get_or_create_user(
         db,
@@ -213,61 +268,114 @@ def seed_demo_data(db: Session) -> None:
         dept_map["public"],
     )
 
-    kb_cn_public = _get_or_create_knowledge_base(
-        db,
-        "cn-public",
-        "CN Public Policy",
-        "Fictional Chinese public policy handbook for internal demo.",
-        "private",
-        dept_map["cn"],
-    )
-    kb_cn_internal = _get_or_create_knowledge_base(
-        db,
-        "cn-internal",
-        "CN Internal Handbook",
-        "Fictional Chinese internal department handbook for demo.",
-        "private",
-        dept_map["cn"],
-    )
-    kb_en_public = _get_or_create_knowledge_base(
-        db,
-        "en-public",
-        "EN Public Policy",
-        "Fictional English public policy handbook for internal demo.",
-        "private",
-        dept_map["en"],
-    )
-    kb_en_internal = _get_or_create_knowledge_base(
-        db,
-        "en-internal",
-        "EN Internal Handbook",
-        "Fictional English internal department handbook for demo.",
-        "private",
-        dept_map["en"],
-    )
     kb_public_policy = _get_or_create_knowledge_base(
         db,
         "public-policy",
-        "Public Policy Handbook",
-        "Fictional visitor-safe public handbook for demo.",
+        "公开资料中心",
+        "星海智造机器人有限公司公开介绍、访客须知与公开产品简介。",
         "private",
         dept_map["public"],
     )
+    kb_tech_internal = _get_or_create_knowledge_base(
+        db,
+        "tech-internal",
+        "技术部内部知识库",
+        "Robot SDK Manual, API Integration Guide, Deployment Troubleshooting.",
+        "private",
+        dept_map["tech"],
+    )
+    kb_sales_internal = _get_or_create_knowledge_base(
+        db,
+        "sales-internal",
+        "销售部内部知识库",
+        "机器人产品报价策略、客户沟通话术、渠道合作政策。",
+        "private",
+        dept_map["sales"],
+    )
+    kb_marketing_internal = _get_or_create_knowledge_base(
+        db,
+        "marketing-internal",
+        "市场部内部知识库",
+        "品牌定位、展会方案、宣传内容规范。",
+        "private",
+        dept_map["marketing"],
+    )
+    kb_support_internal = _get_or_create_knowledge_base(
+        db,
+        "support-internal",
+        "客服部内部知识库",
+        "售后流程、保修政策、常见故障处理。",
+        "private",
+        dept_map["support"],
+    )
+    kb_hr_internal = _get_or_create_knowledge_base(
+        db,
+        "hr-internal",
+        "人事部内部知识库",
+        "入职流程、考勤制度、绩效制度。",
+        "private",
+        dept_map["hr"],
+    )
+    kb_admin_internal = _get_or_create_knowledge_base(
+        db,
+        "admin-internal",
+        "行政部内部知识库",
+        "会议室管理、采购流程、办公资产管理。",
+        "private",
+        dept_map["admin"],
+    )
+    kb_product_internal = _get_or_create_knowledge_base(
+        db,
+        "product-internal",
+        "产品部内部知识库",
+        "机器人产品规格、功能路线图、竞品分析。",
+        "private",
+        dept_map["product"],
+    )
 
-    managed_kb_codes = {"cn-public", "cn-internal", "en-public", "en-internal", "public-policy"}
+    managed_kb_codes = {
+        "public-policy",
+        "tech-internal",
+        "sales-internal",
+        "marketing-internal",
+        "support-internal",
+        "hr-internal",
+        "admin-internal",
+        "product-internal",
+    }
     _deactivate_unmanaged_knowledge_bases(db, managed_kb_codes)
 
     # Explicit ACL entries keep policy deterministic and reviewable.
-    _ensure_acl(db, kb_cn_public, role=role_map["cn_staff"])
-    _ensure_acl(db, kb_cn_internal, role=role_map["cn_staff"])
-    _ensure_acl(db, kb_en_public, role=role_map["en_staff"])
-    _ensure_acl(db, kb_en_internal, role=role_map["en_staff"])
+    _ensure_acl(db, kb_public_policy, role=role_map["tech_staff"])
+    _ensure_acl(db, kb_tech_internal, role=role_map["tech_staff"])
+
+    _ensure_acl(db, kb_public_policy, role=role_map["sales_staff"])
+    _ensure_acl(db, kb_sales_internal, role=role_map["sales_staff"])
+
+    _ensure_acl(db, kb_public_policy, role=role_map["marketing_staff"])
+    _ensure_acl(db, kb_marketing_internal, role=role_map["marketing_staff"])
+
+    _ensure_acl(db, kb_public_policy, role=role_map["support_staff"])
+    _ensure_acl(db, kb_support_internal, role=role_map["support_staff"])
+
+    _ensure_acl(db, kb_public_policy, role=role_map["hr_staff"])
+    _ensure_acl(db, kb_hr_internal, role=role_map["hr_staff"])
+
+    _ensure_acl(db, kb_public_policy, role=role_map["admin_staff"])
+    _ensure_acl(db, kb_admin_internal, role=role_map["admin_staff"])
+
+    _ensure_acl(db, kb_public_policy, role=role_map["product_staff"])
+    _ensure_acl(db, kb_product_internal, role=role_map["product_staff"])
+
     _ensure_acl(db, kb_public_policy, role=role_map["visitor"])
 
-    _ensure_acl(db, kb_cn_public, role=role_map["bilingual_admin"])
-    _ensure_acl(db, kb_cn_internal, role=role_map["bilingual_admin"])
-    _ensure_acl(db, kb_en_public, role=role_map["bilingual_admin"])
-    _ensure_acl(db, kb_en_internal, role=role_map["bilingual_admin"])
+    _ensure_acl(db, kb_tech_internal, role=role_map["bilingual_admin"])
+    _ensure_acl(db, kb_sales_internal, role=role_map["bilingual_admin"])
+    _ensure_acl(db, kb_marketing_internal, role=role_map["bilingual_admin"])
+    _ensure_acl(db, kb_support_internal, role=role_map["bilingual_admin"])
+    _ensure_acl(db, kb_hr_internal, role=role_map["bilingual_admin"])
+    _ensure_acl(db, kb_admin_internal, role=role_map["bilingual_admin"])
+    _ensure_acl(db, kb_product_internal, role=role_map["bilingual_admin"])
     _ensure_acl(db, kb_public_policy, role=role_map["bilingual_admin"])
 
     db.commit()

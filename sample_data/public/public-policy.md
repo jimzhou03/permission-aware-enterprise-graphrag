@@ -1,21 +1,25 @@
-# Public Visitor-safe Handbook (Fictional)
+# 星海智造机器人有限公司公开资料
 
-This handbook is fictional and contains only visitor-safe information for demo purposes.
+本文档为虚构演示资料，用于本地权限感知 GraphRAG 系统展示。
 
-## Welcome Information
+## 公司公开介绍
 
-- Welcome to the demonstration workspace.
-- Front-desk assistance is available during office hours.
-- Visitors should keep their badges visible.
+星海智造机器人有限公司面向企业、学校和园区提供服务机器人解决方案，产品线包括：
 
-## Facility Basics
+- 服务机器人（前台咨询、业务导引）
+- 巡检机器人（园区巡检、设备点检）
+- 迎宾机器人（展厅接待、活动接待）
+- 配送机器人（园区内短途配送）
 
-- Meeting rooms must be reserved in advance.
-- Shared spaces should be kept clean after use.
-- Follow posted safety signs in all corridors.
+## 访客须知
 
-## Public Contact Process
+- 访客进入办公区需在前台登记并佩戴访客证。
+- 访客仅可访问公开展示区与会议区，不可进入内部工位区。
+- 涉及内部流程、报价、客户信息的问题请联系授权员工。
 
-- Use the public support channel for general questions.
-- Requests requiring internal access are redirected to authorized staff.
-- Public guidance is versioned and reviewed periodically.
+## 公开产品简介
+
+- S 系列服务机器人：支持多轮问答、路径指引与基础业务引导。
+- P 系列巡检机器人：支持定时巡检、异常告警与巡检记录导出。
+- G 系列迎宾机器人：支持活动接待脚本、场景化讲解与多语言欢迎。
+- D 系列配送机器人：支持楼层内配送任务分发、路线避障与状态回传。

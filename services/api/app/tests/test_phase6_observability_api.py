@@ -34,12 +34,21 @@ def _grant_role_permission(role_name: str, permission_code: str) -> None:
 @pytest.mark.parametrize(
     ("email", "expected_codes"),
     [
-        ("cn_staff@example.local", {"cn-public", "cn-internal"}),
-        ("en_staff@example.local", {"en-public", "en-internal"}),
+        ("sales_staff@example.local", {"sales-internal", "public-policy"}),
+        ("tech_staff@example.local", {"tech-internal", "public-policy"}),
         ("visitor@example.local", {"public-policy"}),
         (
             "bilingual_admin@example.local",
-            {"cn-public", "cn-internal", "en-public", "en-internal", "public-policy"},
+            {
+                "public-policy",
+                "tech-internal",
+                "sales-internal",
+                "marketing-internal",
+                "support-internal",
+                "hr-internal",
+                "admin-internal",
+                "product-internal",
+            },
         ),
     ],
 )
@@ -53,13 +62,13 @@ def test_v018_knowledge_base_scope_matrix(client, email: str, expected_codes: se
 
 
 def test_document_and_chunk_access_scope_enforced(client):
-    cn_token = _login(client, "cn_staff@example.local")
+    cn_token = _login(client, "sales_staff@example.local")
     visitor_token = _login(client, "visitor@example.local")
 
     cn_kb_response = client.get("/api/v1/knowledge-bases", headers={"Authorization": f"Bearer {cn_token}"})
     assert cn_kb_response.status_code == 200, cn_kb_response.text
     cn_kbs = cn_kb_response.json()
-    cn_internal = next(item for item in cn_kbs if item["code"] == "cn-internal")
+    cn_internal = next(item for item in cn_kbs if item["code"] == "sales-internal")
 
     cn_docs_response = client.get(
         f"/api/v1/knowledge-bases/{cn_internal['id']}/documents",
@@ -104,13 +113,13 @@ def test_document_and_chunk_access_scope_enforced(client):
 
 
 def test_trace_endpoint_filters_chunk_content_for_unauthorized_audit_reader(client):
-    cn_token = _login(client, "cn_staff@example.local")
+    cn_token = _login(client, "sales_staff@example.local")
     visitor_token = _login(client, "visitor@example.local")
 
     ask_response = client.post(
         "/api/v1/qa/ask",
         headers={"Authorization": f"Bearer {cn_token}"},
-        json={"question": "请总结中文内部手册里的接入流程和协作约定。", "mode": "rag", "knowledge_base_codes": []},
+        json={"question": "请总结销售部内部话术与报价策略。", "mode": "rag", "knowledge_base_codes": ["sales-internal"]},
     )
     assert ask_response.status_code == 200, ask_response.text
     ask_payload = ask_response.json()
@@ -128,7 +137,7 @@ def test_trace_endpoint_filters_chunk_content_for_unauthorized_audit_reader(clie
     assert trace_payload["hit_chunk_ids"]
     assert trace_payload["retrieved_chunks"] == []
     assert any("omitted" in item for item in trace_payload["trace_limits"])
-    assert set(trace_payload["allowed_kb_codes"]) == {"cn-public", "cn-internal"}
+    assert set(trace_payload["allowed_kb_codes"]) == {"public-policy", "sales-internal"}
     assert trace_payload["router_mode"] in {"rules", "ollama"}
     assert trace_payload["router_model"]
     assert trace_payload["router_availability"] in {"available", "unavailable", "not_checked"}
@@ -147,7 +156,7 @@ def test_trace_endpoint_filters_chunk_content_for_unauthorized_audit_reader(clie
 
 
 def test_retrieval_config_endpoint_reports_mock_mvp_runtime(client):
-    token = _login(client, "cn_staff@example.local")
+    token = _login(client, "sales_staff@example.local")
     response = client.get(
         "/api/v1/system/retrieval-config",
         headers={"Authorization": f"Bearer {token}"},

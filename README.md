@@ -6,6 +6,9 @@ Permission-Aware Enterprise GraphRAG Assistant is a full-stack enterprise AI kno
 
 This repository is a local runnable full-stack implementation and engineering showcase with production-inspired architecture and explicit security boundaries.
 
+Current demo scenario (v0.7.0) uses a fictional company: **星海智造机器人有限公司 (StarSea Intelligent Robotics)**.  
+The company sells service robots, inspection robots, receptionist robots, and delivery robots for enterprises, schools, and campuses.
+
 ## Why This Project
 
 Enterprise knowledge systems are permission-sensitive by default:
@@ -22,7 +25,7 @@ This project focuses on deterministic backend authorization, then retrieval, the
 
 - JWT authentication.
 - RBAC and knowledge base ACL.
-- Bilingual department knowledge isolation.
+- Multi-department knowledge isolation with visitor/staff/admin scope boundaries.
 - Permission-scoped pgvector SQL retrieval.
 - Redis permission-aware cache and KB-version invalidation.
 - Markdown/TXT document upload and re-indexing.
@@ -172,14 +175,20 @@ Detailed SQL / Redis CLI / Cypher cookbook: [docs/dev-observability.md](docs/dev
 
 ## Preconfigured Local Accounts
 
-These are preconfigured local accounts for local validation and role-based walkthrough.
+These are preconfigured **local demo accounts** for role-based walkthroughs.  
+They are not production authentication credentials.
 
-| Role | Email | Password | Access Scope |
+| Role | Email | Demo Password (Local) | Access Scope |
 | --- | --- | --- | --- |
-| `bilingual_admin` | [bilingual_admin@example.local](mailto:bilingual_admin@example.local) | `Passw0rd!123` | all bilingual and public knowledge bases |
-| `cn_staff` | [cn_staff@example.local](mailto:cn_staff@example.local) | `Passw0rd!123` | `cn-public` and `cn-internal` |
-| `en_staff` | [en_staff@example.local](mailto:en_staff@example.local) | `Passw0rd!123` | `en-public` and `en-internal` |
-| `visitor` | [visitor@example.local](mailto:visitor@example.local) | `Passw0rd!123` | `public-policy` only |
+| `visitor` | `visitor@example.local` | one-click guest entry | `public-policy` only |
+| `tech_staff` | `tech_staff@example.local` | `Passw0rd!123` | `tech-internal`, `public-policy` |
+| `sales_staff` | `sales_staff@example.local` | `Passw0rd!123` | `sales-internal`, `public-policy` |
+| `marketing_staff` | `marketing_staff@example.local` | `Passw0rd!123` | `marketing-internal`, `public-policy` |
+| `support_staff` | `support_staff@example.local` | `Passw0rd!123` | `support-internal`, `public-policy` |
+| `hr_staff` | `hr_staff@example.local` | `Passw0rd!123` | `hr-internal`, `public-policy` |
+| `admin_staff` | `admin_staff@example.local` | `Passw0rd!123` | `admin-internal`, `public-policy` |
+| `product_staff` | `product_staff@example.local` | `Passw0rd!123` | `product-internal`, `public-policy` |
+| `bilingual_admin` | `bilingual_admin@example.local` | `Passw0rd!123` | all demo knowledge bases + admin views |
 
 ## Demo Walkthrough
 
@@ -188,11 +197,11 @@ These are preconfigured local accounts for local validation and role-based walkt
    - `docker compose up -d --build`
 2. Login as `bilingual_admin@example.local`.
 3. Open `Knowledge Bases` and inspect Knowledge Base / Document / Chunk viewers.
-4. Send one Chinese department question in `Knowledge Chat`.
+4. Send one department question in `Knowledge Chat`.
 5. Open `Developer Trace` and inspect retrieval/function trace steps.
 6. Open `GraphRAG` page and inspect graph overview/path view.
 7. Open `Audit Logs` and locate the latest `request_id`.
-8. Switch `visitor` / `cn_staff` / `en_staff` to validate permission isolation behavior.
+8. Switch `visitor` / `tech_staff` / `sales_staff` / `marketing_staff` / `support_staff` / `hr_staff` / `admin_staff` / `product_staff` to validate isolation behavior.
 9. Open Adminer (`http://127.0.0.1:8081`) to inspect PostgreSQL tables and rows.
 10. Open Neo4j Browser (`http://127.0.0.1:7474`) to inspect graph nodes/relationships.
 11. Open Redis Commander (`http://127.0.0.1:8082`) to inspect permission-aware cache keys and TTL.

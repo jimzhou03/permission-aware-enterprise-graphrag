@@ -5,7 +5,7 @@ def _login(client, email: str, password: str = "Passw0rd!123") -> str:
 
 
 def test_admin_can_read_audit_logs(client):
-    staff_token = _login(client, "cn_staff@example.local")
+    staff_token = _login(client, "sales_staff@example.local")
     client.post(
         "/api/v1/qa/ask",
         headers={"Authorization": f"Bearer {staff_token}"},
@@ -24,7 +24,7 @@ def test_admin_can_read_audit_logs(client):
 
 
 def test_non_admin_without_audit_permission_forbidden(client):
-    staff_token = _login(client, "cn_staff@example.local")
+    staff_token = _login(client, "sales_staff@example.local")
     response = client.get(
         "/api/v1/admin/audit-logs",
         headers={"Authorization": f"Bearer {staff_token}"},

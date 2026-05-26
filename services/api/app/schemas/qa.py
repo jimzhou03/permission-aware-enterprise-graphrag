@@ -16,7 +16,20 @@ RouterIntent = Literal[
     "security_test",
     "unsupported",
 ]
-RouterTargetDepartment = Literal["cn", "en", "hr", "finance", "tech", "public", "unknown"]
+RouterTargetDepartment = Literal[
+    "cn",
+    "en",
+    "hr",
+    "finance",
+    "tech",
+    "sales",
+    "marketing",
+    "support",
+    "admin",
+    "product",
+    "public",
+    "unknown",
+]
 
 
 class AskRequest(BaseModel):

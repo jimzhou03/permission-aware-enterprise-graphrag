@@ -21,7 +21,7 @@ def _knowledge_base_by_code(client, token: str, code: str) -> dict:
 
 def test_bilingual_admin_can_upload_md_and_view_document_and_chunks(client):
     token = _login(client, "bilingual_admin@example.local")
-    kb = _knowledge_base_by_code(client, token, "cn-public")
+    kb = _knowledge_base_by_code(client, token, "public-policy")
     before_version = kb["version"]
 
     upload_response = client.post(
@@ -34,7 +34,7 @@ def test_bilingual_admin_can_upload_md_and_view_document_and_chunks(client):
     upload_payload = upload_response.json()
     assert upload_payload["action"] == "document_upload"
     assert upload_payload["status"] == "success"
-    assert upload_payload["knowledge_base_code"] == "cn-public"
+    assert upload_payload["knowledge_base_code"] == "public-policy"
     assert upload_payload["chunk_count"] > 0
     assert upload_payload["knowledge_base_version"] >= before_version + 1
 
@@ -58,13 +58,13 @@ def test_bilingual_admin_can_upload_md_and_view_document_and_chunks(client):
     assert all(item["has_embedding"] for item in chunks)
     assert all(item["embedding_dimension"] == settings.embedding_dimensions for item in chunks)
 
-    kb_after = _knowledge_base_by_code(client, token, "cn-public")
+    kb_after = _knowledge_base_by_code(client, token, "public-policy")
     assert kb_after["version"] >= before_version + 1
 
 
-def test_cn_staff_cannot_upload_even_in_allowed_read_scope(client):
-    token = _login(client, "cn_staff@example.local")
-    kb = _knowledge_base_by_code(client, token, "cn-public")
+def test_sales_staff_cannot_upload_even_in_allowed_read_scope(client):
+    token = _login(client, "sales_staff@example.local")
+    kb = _knowledge_base_by_code(client, token, "sales-internal")
     response = client.post(
         f"/api/v1/knowledge-bases/{kb['id']}/documents/upload",
         headers={"Authorization": f"Bearer {token}"},
@@ -86,7 +86,7 @@ def test_visitor_cannot_upload(client):
 
 def test_upload_rejects_unsupported_file_types(client):
     token = _login(client, "bilingual_admin@example.local")
-    kb = _knowledge_base_by_code(client, token, "cn-public")
+    kb = _knowledge_base_by_code(client, token, "public-policy")
     response = client.post(
         f"/api/v1/knowledge-bases/{kb['id']}/documents/upload",
         headers={"Authorization": f"Bearer {token}"},
@@ -97,7 +97,7 @@ def test_upload_rejects_unsupported_file_types(client):
 
 def test_upload_rejects_oversized_payload(client):
     token = _login(client, "bilingual_admin@example.local")
-    kb = _knowledge_base_by_code(client, token, "cn-public")
+    kb = _knowledge_base_by_code(client, token, "public-policy")
     oversized_payload = b"A" * (settings.upload_max_size_bytes + 1)
     response = client.post(
         f"/api/v1/knowledge-bases/{kb['id']}/documents/upload",
@@ -110,12 +110,12 @@ def test_upload_rejects_oversized_payload(client):
 def test_visitor_cannot_view_uploaded_internal_document_chunks(client):
     admin_token = _login(client, "bilingual_admin@example.local")
     visitor_token = _login(client, "visitor@example.local")
-    kb = _knowledge_base_by_code(client, admin_token, "cn-internal")
+    kb = _knowledge_base_by_code(client, admin_token, "sales-internal")
 
     upload_response = client.post(
         f"/api/v1/knowledge-bases/{kb['id']}/documents/upload",
         headers={"Authorization": f"Bearer {admin_token}"},
-        files={"file": ("cn-internal-upload.md", b"# Internal\n\nConfidential onboarding process.", "text/markdown")},
+        files={"file": ("sales-internal-upload.md", b"# Internal\n\nConfidential sales strategy.", "text/markdown")},
     )
     assert upload_response.status_code == 200, upload_response.text
     document_id = upload_response.json()["document_id"]
@@ -129,12 +129,12 @@ def test_visitor_cannot_view_uploaded_internal_document_chunks(client):
 
 def test_reindex_endpoint_rebuilds_chunks_and_updates_versions(client):
     token = _login(client, "bilingual_admin@example.local")
-    kb = _knowledge_base_by_code(client, token, "en-public")
+    kb = _knowledge_base_by_code(client, token, "tech-internal")
 
     upload_response = client.post(
         f"/api/v1/knowledge-bases/{kb['id']}/documents/upload",
         headers={"Authorization": f"Bearer {token}"},
-        files={"file": ("en-public-reindex.md", b"# Reindex\n\nLine A.\n\nLine B.\n\nLine C.", "text/markdown")},
+        files={"file": ("tech-internal-reindex.md", b"# Reindex\n\nLine A.\n\nLine B.\n\nLine C.", "text/markdown")},
     )
     assert upload_response.status_code == 200, upload_response.text
     upload_payload = upload_response.json()

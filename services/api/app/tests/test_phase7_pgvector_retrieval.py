@@ -47,11 +47,11 @@ def test_pgvector_runtime_prefers_sql_path_when_enabled(monkeypatch, client):
     try:
         kbs = list(
             db.scalars(
-                select(KnowledgeBase).where(KnowledgeBase.code.in_(["cn-public", "cn-internal"]))
+                select(KnowledgeBase).where(KnowledgeBase.code.in_(["public-policy", "tech-internal"]))
             ).all()
         )
         allowed_ids = [kb.id for kb in kbs]
-        internal_kb = next(kb for kb in kbs if kb.code == "cn-internal")
+        internal_kb = next(kb for kb in kbs if kb.code == "tech-internal")
 
         calls: dict[str, object] = {}
 
@@ -76,7 +76,7 @@ def test_pgvector_runtime_prefers_sql_path_when_enabled(monkeypatch, client):
             db=db,
             question="test",
             allowed_kb_ids=allowed_ids,
-            scoped_kb_codes=["cn-internal"],
+            scoped_kb_codes=["tech-internal"],
             top_k=3,
             runtime=runtime,
         )
@@ -92,7 +92,7 @@ def test_pgvector_sql_failure_falls_back_to_python(monkeypatch, client):
     try:
         kbs = list(
             db.scalars(
-                select(KnowledgeBase).where(KnowledgeBase.code.in_(["cn-public", "cn-internal"]))
+                select(KnowledgeBase).where(KnowledgeBase.code.in_(["public-policy", "tech-internal"]))
             ).all()
         )
         allowed_ids = [kb.id for kb in kbs]
@@ -134,7 +134,7 @@ def test_pgvector_sql_statement_contains_kb_scope_filter(monkeypatch, client):
     try:
         kbs = list(
             db.scalars(
-                select(KnowledgeBase).where(KnowledgeBase.code.in_(["cn-public", "cn-internal"]))
+                select(KnowledgeBase).where(KnowledgeBase.code.in_(["public-policy", "tech-internal"]))
             ).all()
         )
         kb_by_id = {kb.id: kb for kb in kbs}

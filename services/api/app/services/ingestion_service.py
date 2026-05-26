@@ -26,33 +26,63 @@ SUPPORTED_UPLOAD_MIME_TYPES = {
 
 SAMPLE_DOCUMENT_MANIFEST: list[dict[str, Any]] = [
     {
-        "kb_code": "cn-public",
-        "title": "CN Public Policy Handbook",
-        "path": ROOT_DIR / "sample_data" / "cn" / "cn-public-policy.md",
-        "source_label": "fictional-enterprise-doc",
-    },
-    {
-        "kb_code": "cn-internal",
-        "title": "CN Internal Department Handbook",
-        "path": ROOT_DIR / "sample_data" / "cn" / "cn-internal-handbook.md",
-        "source_label": "fictional-enterprise-doc",
-    },
-    {
-        "kb_code": "en-public",
-        "title": "EN Public Policy Handbook",
-        "path": ROOT_DIR / "sample_data" / "en" / "en-public-policy.md",
-        "source_label": "fictional-enterprise-doc",
-    },
-    {
-        "kb_code": "en-internal",
-        "title": "EN Internal Department Handbook",
-        "path": ROOT_DIR / "sample_data" / "en" / "en-internal-handbook.md",
-        "source_label": "fictional-enterprise-doc",
-    },
-    {
         "kb_code": "public-policy",
-        "title": "Public Visitor-safe Policy Handbook",
+        "title": "StarSea Public Policy",
         "path": ROOT_DIR / "sample_data" / "public" / "public-policy.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "tech-internal",
+        "title": "Robot SDK Manual",
+        "path": ROOT_DIR / "sample_data" / "tech" / "robot-sdk-manual.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "tech-internal",
+        "title": "API Integration Guide",
+        "path": ROOT_DIR / "sample_data" / "tech" / "api-integration-guide.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "tech-internal",
+        "title": "Deployment Troubleshooting",
+        "path": ROOT_DIR / "sample_data" / "tech" / "deployment-troubleshooting.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "sales-internal",
+        "title": "销售策略与话术手册",
+        "path": ROOT_DIR / "sample_data" / "sales" / "sales-internal.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "marketing-internal",
+        "title": "市场活动与品牌规范手册",
+        "path": ROOT_DIR / "sample_data" / "marketing" / "marketing-internal.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "support-internal",
+        "title": "客服售后流程手册",
+        "path": ROOT_DIR / "sample_data" / "support" / "support-internal.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "hr-internal",
+        "title": "人事制度手册",
+        "path": ROOT_DIR / "sample_data" / "hr" / "hr-internal.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "admin-internal",
+        "title": "行政流程手册",
+        "path": ROOT_DIR / "sample_data" / "admin" / "admin-internal.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "product-internal",
+        "title": "产品规划与规格手册",
+        "path": ROOT_DIR / "sample_data" / "product" / "product-internal.md",
         "source_label": "fictional-enterprise-doc",
     },
 ]

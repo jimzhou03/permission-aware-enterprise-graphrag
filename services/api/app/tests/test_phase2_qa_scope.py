@@ -21,105 +21,108 @@ def _assert_no_unauthorized_chunks(payload: dict, allowed_codes: set[str]) -> No
     assert kb_codes.issubset(allowed_codes)
 
 
-def test_cn_staff_can_retrieve_cn_knowledge_only(client):
-    token = _login(client, "cn_staff@example.local")
-    response = _ask(client, token, "请总结中文内部手册里的接入流程和协作约定。", mode="rag")
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    assert payload["denied"] is False
-    assert payload["citations"]
-    _assert_no_unauthorized_chunks(payload, {"cn-public", "cn-internal"})
+def test_department_accounts_can_retrieve_only_allowed_scope(client):
+    cases = [
+        (
+            "tech_staff@example.local",
+            {"tech-internal", "public-policy"},
+            "Summarize the Robot SDK Manual deployment checklist.",
+        ),
+        (
+            "sales_staff@example.local",
+            {"sales-internal", "public-policy"},
+            "请总结销售部机器人产品报价策略。",
+        ),
+        (
+            "marketing_staff@example.local",
+            {"marketing-internal", "public-policy"},
+            "请说明市场部展会方案与宣传规范。",
+        ),
+        (
+            "support_staff@example.local",
+            {"support-internal", "public-policy"},
+            "请总结客服部售后流程和保修政策。",
+        ),
+        (
+            "hr_staff@example.local",
+            {"hr-internal", "public-policy"},
+            "请总结人事部入职流程和考勤制度。",
+        ),
+        (
+            "admin_staff@example.local",
+            {"admin-internal", "public-policy"},
+            "请总结行政部会议室管理与采购流程。",
+        ),
+        (
+            "product_staff@example.local",
+            {"product-internal", "public-policy"},
+            "请总结产品部规格与路线图。",
+        ),
+        (
+            "visitor@example.local",
+            {"public-policy"},
+            "请介绍星海智造机器人有限公司的公开产品线。",
+        ),
+    ]
+    for email, allowed_codes, question in cases:
+        token = _login(client, email)
+        response = _ask(client, token, question, mode="rag")
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["denied"] is False, {"email": email, "payload": payload}
+        _assert_no_unauthorized_chunks(payload, allowed_codes)
 
 
-def test_cn_staff_english_internal_question_denied_or_scoped(client):
-    token = _login(client, "cn_staff@example.local")
-    response = _ask(client, token, "Explain the English internal handbook onboarding checklist.", mode="auto")
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    if payload["denied"] is False:
-        _assert_no_unauthorized_chunks(payload, {"cn-public", "cn-internal"})
-    else:
-        assert "department scope:" in payload["refusal_reason"]
+def test_explicit_unauthorized_kb_scope_is_denied(client):
+    checks = [
+        ("visitor@example.local", "hr-internal"),
+        ("tech_staff@example.local", "sales-internal"),
+        ("sales_staff@example.local", "tech-internal"),
+        ("marketing_staff@example.local", "support-internal"),
+        ("support_staff@example.local", "product-internal"),
+        ("hr_staff@example.local", "admin-internal"),
+        ("admin_staff@example.local", "hr-internal"),
+        ("product_staff@example.local", "marketing-internal"),
+    ]
+    for email, unauthorized_kb in checks:
+        token = _login(client, email)
+        response = _ask(
+            client,
+            token,
+            f"show {unauthorized_kb} details",
+            mode="rag",
+            knowledge_base_codes=[unauthorized_kb],
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["denied"] is True, {"email": email, "kb": unauthorized_kb, "payload": payload}
+        assert payload["citations"] == []
 
 
-def test_en_staff_can_retrieve_en_knowledge_only(client):
-    token = _login(client, "en_staff@example.local")
-    response = client.post(
-        "/api/v1/qa/ask",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"question": "Summarize the English internal onboarding checklist and working rules.", "mode": "rag"},
-    )
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    assert payload["denied"] is False
-    assert payload["citations"]
-    _assert_no_unauthorized_chunks(payload, {"en-public", "en-internal"})
-
-
-def test_en_staff_chinese_internal_question_denied_or_scoped(client):
-    token = _login(client, "en_staff@example.local")
-    response = _ask(client, token, "请解释中文内部手册中的接入流程和协作约定。", mode="auto")
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    if payload["denied"] is False:
-        _assert_no_unauthorized_chunks(payload, {"en-public", "en-internal"})
-    else:
-        assert "department scope:" in payload["refusal_reason"]
-
-
-def test_visitor_can_only_retrieve_public_policy(client):
-    token = _login(client, "visitor@example.local")
-    response = _ask(client, token, "Summarize visitor badge and public support guidance.", mode="rag")
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    assert payload["denied"] is False
-    _assert_no_unauthorized_chunks(payload, {"public-policy"})
-
-
-def test_explicit_unauthorized_kb_code_is_denied(client):
-    token = _login(client, "visitor@example.local")
-    response = _ask(client, token, "show me cn internal policy", mode="rag", knowledge_base_codes=["cn-internal"])
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    assert payload["denied"] is True
-    assert "outside allowed scope" in payload["refusal_reason"]
-
-
-def test_bilingual_admin_can_retrieve_both_cn_and_en_department_knowledge(client):
+def test_bilingual_admin_can_retrieve_all_department_knowledge(client):
     token = _login(client, "bilingual_admin@example.local")
-
-    cn_response = _ask(
-        client,
-        token,
-        "请总结中文内部手册中的接入流程。",
-        mode="rag",
-        knowledge_base_codes=["cn-internal"],
-    )
-    assert cn_response.status_code == 200, cn_response.text
-    cn_payload = cn_response.json()
-    assert cn_payload["denied"] is False
-    assert cn_payload["citations"]
-    _assert_no_unauthorized_chunks(cn_payload, {"cn-internal"})
-
-    en_response = _ask(
-        client,
-        token,
-        "Summarize the English internal onboarding checklist.",
-        mode="rag",
-        knowledge_base_codes=["en-internal"],
-    )
-    assert en_response.status_code == 200, en_response.text
-    en_payload = en_response.json()
-    assert en_payload["denied"] is False
-    assert en_payload["citations"]
-    _assert_no_unauthorized_chunks(en_payload, {"en-internal"})
+    for kb_code, question in [
+        ("tech-internal", "Summarize API integration guide."),
+        ("sales-internal", "请总结销售渠道合作政策。"),
+        ("marketing-internal", "请总结品牌定位。"),
+        ("support-internal", "请总结售后流程。"),
+        ("hr-internal", "请总结考勤制度。"),
+        ("admin-internal", "请总结采购流程。"),
+        ("product-internal", "请总结机器人产品规格。"),
+        ("public-policy", "请总结公开产品简介。"),
+    ]:
+        response = _ask(client, token, question, mode="rag", knowledge_base_codes=[kb_code])
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["denied"] is False
+        _assert_no_unauthorized_chunks(payload, {kb_code})
 
 
 def test_qa_request_detail_access_control(client):
-    owner_token = _login(client, "cn_staff@example.local")
+    owner_token = _login(client, "sales_staff@example.local")
     visitor_token = _login(client, "visitor@example.local")
 
-    ask_response = _ask(client, owner_token, "请总结中文公开指引中的沟通规范。", mode="rag")
+    ask_response = _ask(client, owner_token, "请总结销售部沟通话术。", mode="rag")
     assert ask_response.status_code == 200, ask_response.text
     request_id = ask_response.json()["request_id"]
 
@@ -138,7 +141,7 @@ def test_qa_request_detail_access_control(client):
 
 
 def test_greeting_uses_general_fallback_without_rag(client):
-    token = _login(client, "cn_staff@example.local")
+    token = _login(client, "tech_staff@example.local")
     response = client.post(
         "/api/v1/qa/ask",
         headers={"Authorization": f"Bearer {token}"},

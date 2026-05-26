@@ -105,9 +105,10 @@ def _as_unique_strings(items: Iterable[str]) -> list[str]:
 
 
 def _deny_response(request_id: str, reason: str, route_mode: str, route: RouteDecision) -> AskResponse:
+    denied_answer = reason
     return AskResponse(
         request_id=request_id,
-        answer="Access denied: you are not allowed to access the requested knowledge scope.",
+        answer=denied_answer,
         denied=True,
         refusal_reason=reason,
         cache_hit=False,
@@ -121,6 +122,15 @@ def _deny_response(request_id: str, reason: str, route_mode: str, route: RouteDe
         citations=[],
         graph_paths=[],
     )
+
+
+def _permission_denied_message(language: str) -> str:
+    if language == "en":
+        return (
+            "This account is not allowed to access the requested department knowledge base.\n"
+            "Please contact an administrator to request access."
+        )
+    return "当前账号没有访问该部门知识库的权限。\n可联系管理员申请访问。"
 
 
 def _model_profile(retrieval_token: str) -> str:
@@ -386,7 +396,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
             )
             response = _deny_response(
                 request_id=request_id,
-                reason=f"Requested knowledge base is outside allowed scope: {', '.join(unauthorized)}",
+                reason=_permission_denied_message(route.language),
                 route_mode=route.mode,
                 route=route,
             )
@@ -406,7 +416,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         matches_target = [
             kb for kb in allowed_kbs if kb.department and kb.department.code == route.target_department
         ]
-        if not matches_target and user.role and user.role.name != "admin":
+        if not matches_target and user.role and user.role.name not in {"admin", "bilingual_admin"}:
             trace_recorder.set_step(
                 tool_name="check_cache",
                 status="skipped",
@@ -437,7 +447,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
             )
             response = _deny_response(
                 request_id=request_id,
-                reason=f"User cannot access department scope: {route.target_department}",
+                reason=_permission_denied_message(route.language),
                 route_mode=route.mode,
                 route=route,
             )

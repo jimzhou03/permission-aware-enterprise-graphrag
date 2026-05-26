@@ -18,37 +18,94 @@ class AccountCase:
     email: str
     expected_kb_codes: set[str]
     allowed_question: str
+    overreach_kb_code: str | None = None
+    overreach_question: str | None = None
 
 
 ACCOUNTS: list[AccountCase] = [
     AccountCase(
-        role="bilingual_admin",
-        email="bilingual_admin@example.local",
-        expected_kb_codes={"cn-public", "cn-internal", "en-public", "en-internal", "public-policy"},
-        allowed_question="Summarize visitor guidance and internal onboarding checklist.",
-    ),
-    AccountCase(
-        role="cn_staff",
-        email="cn_staff@example.local",
-        expected_kb_codes={"cn-public", "cn-internal"},
-        allowed_question="请总结中文内部手册中的接入流程。",
-    ),
-    AccountCase(
-        role="en_staff",
-        email="en_staff@example.local",
-        expected_kb_codes={"en-public", "en-internal"},
-        allowed_question="Summarize the English internal onboarding flow.",
-    ),
-    AccountCase(
         role="visitor",
         email="visitor@example.local",
         expected_kb_codes={"public-policy"},
-        allowed_question="Summarize visitor badge and public support guidance.",
+        allowed_question="请介绍星海智造机器人有限公司公开产品线。",
+        overreach_kb_code="hr-internal",
+        overreach_question="请提供人事部考勤制度。",
+    ),
+    AccountCase(
+        role="tech_staff",
+        email="tech_staff@example.local",
+        expected_kb_codes={"tech-internal", "public-policy"},
+        allowed_question="Summarize the Robot SDK deployment troubleshooting checklist.",
+        overreach_kb_code="sales-internal",
+        overreach_question="Summarize sales pricing policy.",
+    ),
+    AccountCase(
+        role="sales_staff",
+        email="sales_staff@example.local",
+        expected_kb_codes={"sales-internal", "public-policy"},
+        allowed_question="请总结销售部机器人产品报价策略。",
+        overreach_kb_code="tech-internal",
+        overreach_question="请总结技术部 SDK 部署排障流程。",
+    ),
+    AccountCase(
+        role="marketing_staff",
+        email="marketing_staff@example.local",
+        expected_kb_codes={"marketing-internal", "public-policy"},
+        allowed_question="请总结市场部品牌定位与展会方案。",
+        overreach_kb_code="support-internal",
+        overreach_question="请总结客服部售后流程。",
+    ),
+    AccountCase(
+        role="support_staff",
+        email="support_staff@example.local",
+        expected_kb_codes={"support-internal", "public-policy"},
+        allowed_question="请总结客服部保修政策和常见故障处理。",
+        overreach_kb_code="product-internal",
+        overreach_question="请总结产品部功能路线图。",
+    ),
+    AccountCase(
+        role="hr_staff",
+        email="hr_staff@example.local",
+        expected_kb_codes={"hr-internal", "public-policy"},
+        allowed_question="请总结人事部入职流程和绩效制度。",
+        overreach_kb_code="admin-internal",
+        overreach_question="请总结行政部采购流程。",
+    ),
+    AccountCase(
+        role="admin_staff",
+        email="admin_staff@example.local",
+        expected_kb_codes={"admin-internal", "public-policy"},
+        allowed_question="请总结行政部会议室管理和办公资产管理。",
+        overreach_kb_code="hr-internal",
+        overreach_question="请总结人事部考勤制度。",
+    ),
+    AccountCase(
+        role="product_staff",
+        email="product_staff@example.local",
+        expected_kb_codes={"product-internal", "public-policy"},
+        allowed_question="请总结产品部机器人规格和竞品分析。",
+        overreach_kb_code="marketing-internal",
+        overreach_question="请总结市场部宣传内容规范。",
+    ),
+    AccountCase(
+        role="bilingual_admin",
+        email="bilingual_admin@example.local",
+        expected_kb_codes={
+            "public-policy",
+            "tech-internal",
+            "sales-internal",
+            "marketing-internal",
+            "support-internal",
+            "hr-internal",
+            "admin-internal",
+            "product-internal",
+        },
+        allowed_question="Summarize authorized support and product policies.",
     ),
 ]
 
 
-class TestFailure(Exception):
+class PermissionMatrixFailure(Exception):
     pass
 
 
@@ -80,30 +137,39 @@ def _request_json(
 
 def _assert_equal(name: str, actual, expected, context: dict) -> None:
     if actual != expected:
-        raise TestFailure(
+        raise PermissionMatrixFailure(
             f"[FAIL] {name}: expected={expected!r}, actual={actual!r}, context={json.dumps(context, ensure_ascii=False)}"
         )
 
 
 def _assert_true(name: str, condition: bool, context: dict) -> None:
     if not condition:
-        raise TestFailure(f"[FAIL] {name}: context={json.dumps(context, ensure_ascii=False)}")
+        raise PermissionMatrixFailure(f"[FAIL] {name}: context={json.dumps(context, ensure_ascii=False)}")
 
 
 def _assert_citations_in_scope(name: str, ask_data: dict, allowed_codes: set[str], context: dict) -> None:
     citations = ask_data.get("citations", [])
     if not isinstance(citations, list):
-        raise TestFailure(f"[FAIL] {name}: citations is not list, context={json.dumps(context, ensure_ascii=False)}")
+        raise PermissionMatrixFailure(
+            f"[FAIL] {name}: citations is not list, context={json.dumps(context, ensure_ascii=False)}"
+        )
     kb_codes = {
         item.get("kb_code")
         for item in citations
         if isinstance(item, dict) and isinstance(item.get("kb_code"), str)
     }
     if not kb_codes.issubset(allowed_codes):
-        raise TestFailure(
+        raise PermissionMatrixFailure(
             f"[FAIL] {name}: unauthorized kb codes={sorted(kb_codes - allowed_codes)!r}, "
             f"context={json.dumps(context, ensure_ascii=False)}"
         )
+
+
+def _function_status(trace_payload: dict, tool_name: str) -> str:
+    for step in trace_payload.get("function_trace", []):
+        if isinstance(step, dict) and step.get("tool_name") == tool_name:
+            return str(step.get("status"))
+    return "missing"
 
 
 def run(base_url: str) -> int:
@@ -111,6 +177,7 @@ def run(base_url: str) -> int:
     failures: list[str] = []
     passes = 0
     tokens: dict[str, str] = {}
+    denied_request_ids: list[str] = []
 
     print(f"Running permission matrix test against: {api}")
 
@@ -122,55 +189,22 @@ def run(base_url: str) -> int:
                 f"{api}/auth/login",
                 payload={"email": account.email, "password": DEFAULT_PASSWORD},
             )
-            _assert_equal(
-                f"{case_prefix} login status",
-                status,
-                200,
-                {"endpoint": "/auth/login", "response": login_data},
-            )
+            _assert_equal(f"{case_prefix} login status", status, 200, {"endpoint": "/auth/login", "response": login_data})
             token = login_data.get("access_token", "")
-            _assert_true(
-                f"{case_prefix} token exists",
-                isinstance(token, str) and len(token) > 20,
-                {"endpoint": "/auth/login", "response": login_data},
-            )
+            _assert_true(f"{case_prefix} token exists", isinstance(token, str) and len(token) > 20, {"response": login_data})
 
-            status, me_data = _request_json(
-                "GET",
-                f"{api}/auth/me",
-                token=token,
-            )
-            _assert_equal(
-                f"{case_prefix} me status",
-                status,
-                200,
-                {"endpoint": "/auth/me", "response": me_data},
-            )
-            me_role = me_data.get("user", {}).get("role")
-            _assert_equal(
-                f"{case_prefix} role match",
-                me_role,
-                account.role,
-                {"endpoint": "/auth/me", "response": me_data},
-            )
+            status, me_data = _request_json("GET", f"{api}/auth/me", token=token)
+            _assert_equal(f"{case_prefix} me status", status, 200, {"response": me_data})
+            _assert_equal(f"{case_prefix} role match", me_data.get("user", {}).get("role"), account.role, {"response": me_data})
 
-            status, kb_data = _request_json(
-                "GET",
-                f"{api}/knowledge-bases",
-                token=token,
-            )
-            _assert_equal(
-                f"{case_prefix} knowledge-bases status",
-                status,
-                200,
-                {"endpoint": "/knowledge-bases", "response": kb_data},
-            )
+            status, kb_data = _request_json("GET", f"{api}/knowledge-bases", token=token)
+            _assert_equal(f"{case_prefix} knowledge-bases status", status, 200, {"response": kb_data})
             kb_codes = {item["code"] for item in kb_data}
             _assert_equal(
                 f"{case_prefix} kb scope",
                 kb_codes,
                 account.expected_kb_codes,
-                {"endpoint": "/knowledge-bases", "kb_codes": sorted(kb_codes), "response": kb_data},
+                {"actual": sorted(kb_codes), "expected": sorted(account.expected_kb_codes)},
             )
 
             status, ask_data = _request_json(
@@ -179,186 +213,126 @@ def run(base_url: str) -> int:
                 token=token,
                 payload={"question": account.allowed_question, "mode": "auto", "knowledge_base_codes": []},
             )
-            _assert_equal(
-                f"{case_prefix} ask status",
-                status,
-                200,
-                {"endpoint": "/qa/ask", "response": ask_data},
-            )
+            _assert_equal(f"{case_prefix} allowed ask status", status, 200, {"response": ask_data})
             _assert_true(
-                f"{case_prefix} allowed question should not be denied",
+                f"{case_prefix} allowed ask not denied",
                 ask_data.get("denied") is False,
-                {
-                    "endpoint": "/qa/ask",
-                    "question": account.allowed_question,
-                    "response": ask_data,
-                },
+                {"question": account.allowed_question, "response": ask_data},
             )
             _assert_citations_in_scope(
-                f"{case_prefix} allowed question citation scope",
+                f"{case_prefix} allowed ask citation scope",
                 ask_data,
                 account.expected_kb_codes,
-                {
-                    "endpoint": "/qa/ask",
-                    "question": account.allowed_question,
-                    "response": ask_data,
-                },
+                {"question": account.allowed_question, "response": ask_data},
             )
+
+            if account.overreach_kb_code and account.overreach_question:
+                status, denied_ask = _request_json(
+                    "POST",
+                    f"{api}/qa/ask",
+                    token=token,
+                    payload={
+                        "question": account.overreach_question,
+                        "mode": "rag",
+                        "knowledge_base_codes": [account.overreach_kb_code],
+                    },
+                )
+                _assert_equal(f"{case_prefix} overreach ask status", status, 200, {"response": denied_ask})
+                _assert_true(
+                    f"{case_prefix} overreach denied",
+                    denied_ask.get("denied") is True,
+                    {"response": denied_ask},
+                )
+                _assert_equal(
+                    f"{case_prefix} overreach citations empty",
+                    denied_ask.get("citations"),
+                    [],
+                    {"response": denied_ask},
+                )
+                denied_request_id = str(denied_ask.get("request_id", ""))
+                _assert_true(
+                    f"{case_prefix} overreach request_id exists",
+                    len(denied_request_id) > 0,
+                    {"response": denied_ask},
+                )
+                denied_request_ids.append(denied_request_id)
+
+                status, trace_data = _request_json("GET", f"{api}/qa/{denied_request_id}/trace", token=token)
+                _assert_equal(f"{case_prefix} denied trace status", status, 200, {"response": trace_data})
+                _assert_equal(
+                    f"{case_prefix} denied trace retrieved_chunks empty",
+                    trace_data.get("retrieved_chunks"),
+                    [],
+                    {"response": trace_data},
+                )
+                _assert_equal(
+                    f"{case_prefix} denied trace hit_chunk_ids empty",
+                    trace_data.get("hit_chunk_ids"),
+                    [],
+                    {"response": trace_data},
+                )
+                _assert_equal(
+                    f"{case_prefix} denied trace search status",
+                    _function_status(trace_data, "search_allowed_chunks"),
+                    "denied",
+                    {"response": trace_data},
+                )
+                _assert_equal(
+                    f"{case_prefix} denied trace generate status",
+                    _function_status(trace_data, "generate_answer"),
+                    "skipped",
+                    {"response": trace_data},
+                )
+
+                status, detail_data = _request_json("GET", f"{api}/qa/{denied_request_id}", token=token)
+                _assert_equal(f"{case_prefix} denied detail status", status, 200, {"response": detail_data})
+                _assert_equal(
+                    f"{case_prefix} denied detail hit_chunk_ids empty",
+                    detail_data.get("hit_chunk_ids"),
+                    [],
+                    {"response": detail_data},
+                )
+
+                status, graph_data = _request_json("GET", f"{api}/qa/{denied_request_id}/graph", token=token)
+                _assert_equal(f"{case_prefix} denied graph status", status, 200, {"response": graph_data})
+                _assert_equal(
+                    f"{case_prefix} denied graph paths empty",
+                    graph_data.get("graph_paths"),
+                    [],
+                    {"response": graph_data},
+                )
 
             tokens[account.role] = token
             passes += 1
             print(f"[PASS] {case_prefix} login/me/kb/ask")
-        except TestFailure as exc:
+        except PermissionMatrixFailure as exc:
             failures.append(str(exc))
             print(str(exc))
 
-    # Required overreach check: visitor asks finance salary policy must be denied.
-    try:
-        visitor_token = tokens.get("visitor")
-        _assert_true("visitor token exists for overreach", bool(visitor_token), {"tokens": list(tokens.keys())})
-
-        status, ask_data = _request_json(
-            "POST",
-            f"{api}/qa/ask",
-            token=visitor_token,
-            payload={
-                "question": "finance compensation salary policy",
-                "mode": "auto",
-                "knowledge_base_codes": [],
-            },
-        )
-        _assert_equal(
-            "visitor finance overreach ask status",
-            status,
-            200,
-            {"endpoint": "/qa/ask", "response": ask_data},
-        )
-        _assert_true(
-            "visitor finance overreach denied",
-            ask_data.get("denied") is True,
-            {"endpoint": "/qa/ask", "question": "finance compensation salary policy", "response": ask_data},
-        )
-        _assert_true(
-            "visitor finance overreach no citations",
-            ask_data.get("citations", []) == [],
-            {"endpoint": "/qa/ask", "question": "finance compensation salary policy", "response": ask_data},
-        )
-        passes += 1
-        print("[PASS] visitor finance overreach denied")
-    except TestFailure as exc:
-        failures.append(str(exc))
-        print(str(exc))
-
-    # cn_staff cross-language isolation: asking English internal should be denied
-    # OR return only authorized CN chunks.
-    try:
-        cn_token = tokens.get("cn_staff")
-        _assert_true("cn_staff token exists", bool(cn_token), {"tokens": list(tokens.keys())})
-        question = "Explain the English internal handbook onboarding checklist."
-        status, ask_data = _request_json(
-            "POST",
-            f"{api}/qa/ask",
-            token=cn_token,
-            payload={"question": question, "mode": "auto", "knowledge_base_codes": []},
-        )
-        _assert_equal("cn_staff cross-language ask status", status, 200, {"endpoint": "/qa/ask", "response": ask_data})
-        if ask_data.get("denied") is not True:
-            _assert_citations_in_scope(
-                "cn_staff cross-language scoped citations",
-                ask_data,
-                {"cn-public", "cn-internal"},
-                {"endpoint": "/qa/ask", "question": question, "response": ask_data},
-            )
-        passes += 1
-        print("[PASS] cn_staff English-internal isolation")
-    except TestFailure as exc:
-        failures.append(str(exc))
-        print(str(exc))
-
-    # en_staff cross-language isolation: asking Chinese internal should be denied
-    # OR return only authorized EN chunks.
-    try:
-        en_token = tokens.get("en_staff")
-        _assert_true("en_staff token exists", bool(en_token), {"tokens": list(tokens.keys())})
-        question = "请解释中文内部手册中的接入流程和协作约定。"
-        status, ask_data = _request_json(
-            "POST",
-            f"{api}/qa/ask",
-            token=en_token,
-            payload={"question": question, "mode": "auto", "knowledge_base_codes": []},
-        )
-        _assert_equal("en_staff cross-language ask status", status, 200, {"endpoint": "/qa/ask", "response": ask_data})
-        if ask_data.get("denied") is not True:
-            _assert_citations_in_scope(
-                "en_staff cross-language scoped citations",
-                ask_data,
-                {"en-public", "en-internal"},
-                {"endpoint": "/qa/ask", "question": question, "response": ask_data},
-            )
-        passes += 1
-        print("[PASS] en_staff Chinese-internal isolation")
-    except TestFailure as exc:
-        failures.append(str(exc))
-        print(str(exc))
-
-    # bilingual_admin bilingual retrieval with explicit kb scope
     try:
         admin_token = tokens.get("bilingual_admin")
         _assert_true("bilingual_admin token exists", bool(admin_token), {"tokens": list(tokens.keys())})
+        status, logs = _request_json("GET", f"{api}/admin/audit-logs", token=admin_token)
+        _assert_equal("admin audit log status", status, 200, {"response": logs})
+        _assert_true("admin audit logs payload is list", isinstance(logs, list), {"response": logs})
 
-        cn_status, cn_data = _request_json(
-            "POST",
-            f"{api}/qa/ask",
-            token=admin_token,
-            payload={
-                "question": "请总结中文内部手册中的接入流程。",
-                "mode": "rag",
-                "knowledge_base_codes": ["cn-internal"],
-            },
-        )
-        _assert_equal("bilingual_admin cn ask status", cn_status, 200, {"endpoint": "/qa/ask", "response": cn_data})
-        _assert_true(
-            "bilingual_admin cn ask not denied",
-            cn_data.get("denied") is False,
-            {"endpoint": "/qa/ask", "response": cn_data},
-        )
-        _assert_citations_in_scope(
-            "bilingual_admin cn citations",
-            cn_data,
-            {"cn-internal"},
-            {"endpoint": "/qa/ask", "response": cn_data},
-        )
-
-        en_status, en_data = _request_json(
-            "POST",
-            f"{api}/qa/ask",
-            token=admin_token,
-            payload={
-                "question": "Summarize the English internal onboarding checklist.",
-                "mode": "rag",
-                "knowledge_base_codes": ["en-internal"],
-            },
-        )
-        _assert_equal("bilingual_admin en ask status", en_status, 200, {"endpoint": "/qa/ask", "response": en_data})
-        _assert_true(
-            "bilingual_admin en ask not denied",
-            en_data.get("denied") is False,
-            {"endpoint": "/qa/ask", "response": en_data},
-        )
-        _assert_citations_in_scope(
-            "bilingual_admin en citations",
-            en_data,
-            {"en-internal"},
-            {"endpoint": "/qa/ask", "response": en_data},
-        )
-
+        if denied_request_ids:
+            denied_rows = [row for row in logs if isinstance(row, dict) and row.get("request_id") in denied_request_ids]
+            _assert_true("denied requests present in admin logs", len(denied_rows) > 0, {"denied_request_ids": denied_request_ids})
+            for row in denied_rows:
+                _assert_equal(
+                    "denied audit row hit_chunk_ids empty",
+                    row.get("hit_chunk_ids"),
+                    [],
+                    {"row": row},
+                )
         passes += 1
-        print("[PASS] bilingual_admin bilingual retrieval")
-    except TestFailure as exc:
+        print("[PASS] admin audit logs safe for denied requests")
+    except PermissionMatrixFailure as exc:
         failures.append(str(exc))
         print(str(exc))
 
-    total = len(ACCOUNTS) + 4
+    total = len(ACCOUNTS) + 1
     print("")
     print(f"Result: {passes}/{total} PASS")
     if failures:
