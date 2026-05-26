@@ -16,6 +16,22 @@ def _ask(client, token: str, question: str, mode: str = "auto", knowledge_base_c
     )
 
 
+def _trace(client, token: str, request_id: str) -> dict:
+    response = client.get(
+        f"/api/v1/qa/{request_id}/trace",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _trace_step_status(trace_payload: dict, step_name: str) -> str:
+    for step in trace_payload.get("function_trace", []):
+        if isinstance(step, dict) and step.get("tool_name") == step_name:
+            return str(step.get("status"))
+    return "missing"
+
+
 def _assert_no_unauthorized_chunks(payload: dict, allowed_codes: set[str]) -> None:
     kb_codes = {item["kb_code"] for item in payload.get("citations", [])}
     assert kb_codes.issubset(allowed_codes)
@@ -264,6 +280,96 @@ def test_bilingual_admin_can_hit_multiple_department_targets(client):
         payload = response.json()
         assert payload["denied"] is False
         assert {item["kb_code"] for item in payload["citations"]}.issubset(expected_scope)
+
+
+def test_demo_routing_cases_for_v0721(client):
+    cases = [
+        {
+            "email": "visitor@example.local",
+            "question": "公司公开售后政策是什么？",
+            "expected_kb_code": "public-policy",
+            "denied": False,
+            "expected_scope": "public",
+            "expect_trace_denied": False,
+        },
+        {
+            "email": "visitor@example.local",
+            "question": "销售部本季度客户策略是什么？",
+            "expected_kb_code": "sales-internal",
+            "denied": True,
+            "expected_scope": "department",
+            "expect_trace_denied": True,
+        },
+        {
+            "email": "tech_staff@example.local",
+            "question": "技术部机器人故障诊断流程是什么？",
+            "expected_kb_code": "tech-internal",
+            "denied": False,
+            "expected_scope": "department",
+            "expect_trace_denied": False,
+        },
+        {
+            "email": "tech_staff@example.local",
+            "question": "公司内部员工如何申请知识库权限？",
+            "expected_kb_code": "company-internal",
+            "denied": False,
+            "expected_scope": "company",
+            "expect_trace_denied": False,
+        },
+        {
+            "email": "product_staff@example.local",
+            "question": "产品生产流程",
+            "expected_kb_code": "product-internal",
+            "denied": False,
+            "expected_scope": "department",
+            "expect_trace_denied": False,
+        },
+        {
+            "email": "product_staff@example.local",
+            "question": "产品部门内部知识库写的什么？",
+            "expected_kb_code": "product-internal",
+            "denied": False,
+            "expected_scope": "department",
+            "expect_trace_denied": False,
+        },
+        {
+            "email": "sales_staff@example.local",
+            "question": "技术部机器人故障诊断流程是什么？",
+            "expected_kb_code": "tech-internal",
+            "denied": True,
+            "expected_scope": "department",
+            "expect_trace_denied": True,
+        },
+        {
+            "email": "bilingual_admin@example.local",
+            "question": "hr招人流程",
+            "expected_kb_code": "hr-internal",
+            "denied": False,
+            "expected_scope": "department",
+            "expect_trace_denied": False,
+        },
+    ]
+
+    for case in cases:
+        token = _login(client, case["email"])
+        response = _ask(client, token, case["question"], mode="auto")
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["denied"] is case["denied"], {"case": case, "payload": payload}
+        assert payload["route"]["target_scope"] == case["expected_scope"], {"case": case, "payload": payload}
+        assert payload["route"]["target_kb_codes"] == [case["expected_kb_code"]], {"case": case, "payload": payload}
+
+        if case["denied"]:
+            assert payload["citations"] == [], {"case": case, "payload": payload}
+            trace_payload = _trace(client, token, payload["request_id"])
+            assert _trace_step_status(trace_payload, "search_allowed_chunks") == "denied", {
+                "case": case,
+                "trace": trace_payload,
+            }
+        else:
+            hit_codes = {item["kb_code"] for item in payload.get("citations", [])}
+            assert hit_codes.issubset({case["expected_kb_code"]}), {"case": case, "payload": payload}
+            assert payload["answer"], {"case": case, "payload": payload}
 
 
 def test_unsupported_query_returns_unsupported_mode_without_retrieval(client):

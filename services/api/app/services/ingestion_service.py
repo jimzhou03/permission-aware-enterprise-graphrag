@@ -56,6 +56,12 @@ SAMPLE_DOCUMENT_MANIFEST: list[dict[str, Any]] = [
         "source_label": "fictional-enterprise-doc",
     },
     {
+        "kb_code": "tech-internal",
+        "title": "Robot Fault Diagnosis SOP",
+        "path": ROOT_DIR / "sample_data" / "tech" / "robot-fault-diagnosis-sop.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
         "kb_code": "sales-internal",
         "title": "销售策略与话术手册",
         "path": ROOT_DIR / "sample_data" / "sales" / "sales-internal.md",
@@ -89,6 +95,12 @@ SAMPLE_DOCUMENT_MANIFEST: list[dict[str, Any]] = [
         "kb_code": "product-internal",
         "title": "产品规划与规格手册",
         "path": ROOT_DIR / "sample_data" / "product" / "product-internal.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "product-internal",
+        "title": "Product Production Workflow",
+        "path": ROOT_DIR / "sample_data" / "product" / "product-production-workflow.md",
         "source_label": "fictional-enterprise-doc",
     },
 ]

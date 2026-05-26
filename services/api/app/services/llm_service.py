@@ -89,7 +89,7 @@ def _extract_query_terms(question: str) -> set[str]:
     return en_terms | zh_terms
 
 
-def _is_retrieval_relevant(question: str, citations: list[Citation]) -> bool:
+def has_sufficient_retrieval_signal(question: str, citations: list[Citation]) -> bool:
     if not citations:
         return False
     terms = _extract_query_terms(question)
@@ -114,7 +114,7 @@ def _first_sentence(text: str, is_zh: bool) -> str:
 
 def _render_mock_answer(question: str, citations: list[Citation], graph_paths: list[GraphPath]) -> str:
     is_zh = _is_zh_text(question)
-    if not citations or not _is_retrieval_relevant(question, citations):
+    if not citations or not has_sufficient_retrieval_signal(question, citations):
         if is_zh:
             return "当前授权知识库中没有足够信息回答该问题。"
         return "There is not enough information in the currently authorized knowledge bases to answer this question."

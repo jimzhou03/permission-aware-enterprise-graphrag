@@ -1859,17 +1859,7 @@ export default function App() {
                                     <div className="space-y-2">
                                       {chatMessage.response.citations.map((item) => (
                                         <div key={item.chunk_id} className="rounded-sm border border-[#5c5448] bg-[#f2e7d7] px-3 py-2">
-                                          <div className={`${canViewTechnicalFields ? "font-mono" : ""} text-[11px] text-[#302c26]`}>
-                                            {canViewTechnicalFields
-                                              ? `${item.kb_code} / ${item.document_title} / ${t.score}=${item.score}`
-                                              : `${item.kb_name} / ${item.document_title}`}
-                                          </div>
-                                          {canViewTechnicalFields ? (
-                                            <div className="mt-1 font-mono text-[11px] text-[#5d554b]">
-                                              chunk_id: {item.chunk_id}
-                                            </div>
-                                          ) : null}
-                                          <p className="mt-1 text-xs leading-5 text-[#4e483f]">{item.excerpt}</p>
+                                          <div className="text-[11px] text-[#302c26]">{`${item.kb_name} / ${item.document_title}`}</div>
                                         </div>
                                       ))}
                                     </div>
@@ -1897,32 +1887,6 @@ export default function App() {
                                           </button>
                                         ) : null}
                                       </div>
-                                    ) : null}
-                                    {canViewTechnicalFields ? (
-                                      <details className="rounded-sm border border-[#474035] bg-[#efe5d6] px-3 py-2 font-mono text-xs text-[#2f2b25]">
-                                        <summary className="cursor-pointer font-medium text-[#26231f]">
-                                          {t.technicalDetails}
-                                        </summary>
-                                        <div className="mt-2 space-y-1 font-mono text-[11px]">
-                                          <div>request_id: {chatMessage.response.request_id}</div>
-                                          <div>cache_hit: {String(chatMessage.response.cache_hit)}</div>
-                                          <div>mode: {chatMessage.response.mode}</div>
-                                          <div>
-                                            router: {chatMessage.response.router_mode}/{chatMessage.response.router_model}
-                                          </div>
-                                          <div>router_fallback_used: {String(chatMessage.response.router_fallback_used)}</div>
-                                          {chatMessage.response.router_error ? (
-                                            <div>router_error: {chatMessage.response.router_error}</div>
-                                          ) : null}
-                                          <div>
-                                            function_trace_summary:{" "}
-                                            {(chatMessage.response.function_trace_summary ?? []).join(" | ") || "-"}
-                                          </div>
-                                          <div>
-                                            allowed_kb_ids(frontend): {knowledgeBases.map((kb) => kb.id).join(", ") || "-"}
-                                          </div>
-                                        </div>
-                                      </details>
                                     ) : null}
                                   </div>
                                 ) : null}

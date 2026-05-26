@@ -14,7 +14,7 @@ from app.schemas.qa import AskRequest, AskResponse, Citation, FunctionTraceStep,
 from app.services.audit_service import create_qa_audit_log
 from app.services.cache_service import build_cache_key_parts, cache_service
 from app.services.graph_service import build_graph_paths_for_citations
-from app.services.llm_service import generate_answer
+from app.services.llm_service import generate_answer, has_sufficient_retrieval_signal
 from app.services.local_router_service import get_router_status, route_question
 from app.services.permission_service import list_allowed_knowledge_bases
 from app.services.qa_runtime_store import RouterTraceSnapshot, qa_runtime_store
@@ -692,7 +692,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         raise
     search_duration_ms = int((time.perf_counter() - search_start) * 1000)
 
-    citations: list[Citation] = [
+    raw_citations: list[Citation] = [
         Citation(
             kb_id=item.kb_id,
             kb_code=item.kb_code,
@@ -705,12 +705,19 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         )
         for item in retrieved
     ]
+    retrieval_relevant = has_sufficient_retrieval_signal(payload.question, raw_citations)
+    citations = raw_citations if retrieval_relevant else []
     hit_codes = {item.kb_code for item in citations}
+    retrieval_output = (
+        f"hit_chunks={len(raw_citations)} kept_chunks={len(citations)} hit_kb_count={len(hit_codes)}"
+    )
+    if raw_citations and not retrieval_relevant:
+        retrieval_output = f"{retrieval_output} relevance_filter=applied"
     trace_recorder.set_step(
         tool_name="search_allowed_chunks",
         status="success",
         input_summary=search_input,
-        output_summary=f"hit_chunks={len(citations)} hit_kb_count={len(hit_codes)}",
+        output_summary=retrieval_output,
         duration_ms=search_duration_ms,
     )
 

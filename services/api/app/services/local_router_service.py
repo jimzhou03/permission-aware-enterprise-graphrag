@@ -36,6 +36,11 @@ DEPARTMENT_KEYWORDS: dict[str, tuple[str, ...]] = {
         "任务调度",
         "导航",
         "故障排查",
+        "故障诊断",
+        "机器人故障诊断",
+        "日志与遥测",
+        "技术工单",
+        "现场派单",
     ),
     "sales": (
         "sales",
@@ -86,6 +91,9 @@ DEPARTMENT_KEYWORDS: dict[str, tuple[str, ...]] = {
     ),
     "hr": (
         "hr",
+        "hiring",
+        "recruit",
+        "recruitment",
         "onboarding",
         "attendance",
         "performance",
@@ -101,6 +109,9 @@ DEPARTMENT_KEYWORDS: dict[str, tuple[str, ...]] = {
         "培训",
         "试用期",
         "薪酬",
+        "招聘",
+        "招人",
+        "招聘流程",
     ),
     "admin": (
         "admin",
@@ -119,11 +130,22 @@ DEPARTMENT_KEYWORDS: dict[str, tuple[str, ...]] = {
     ),
     "product": (
         "product",
+        "prd",
+        "prototype review",
+        "release planning",
+        "canary release",
+        "production workflow",
         "spec",
         "roadmap",
         "version planning",
         "competitor",
         "feature priority",
+        "产品部",
+        "产品部门",
+        "产品生产流程",
+        "prd 编写",
+        "原型评审",
+        "灰度发布",
         "产品规格",
         "路线图",
         "版本规划",
@@ -179,13 +201,52 @@ BUSINESS_COOPERATION_KEYWORDS = (
 PUBLIC_POLICY_KEYWORDS = (
     "公开资料",
     "公开介绍",
+    "公开售后政策",
+    "对外售后政策",
+    "官网售后政策",
+    "公开服务政策",
+    "对外服务政策",
+    "公开服务范围",
+    "公开售后",
+    "对外售后",
     "公开产品",
     "参观须知",
     "联系方式",
+    "公开联系方式",
+    "官网联系方式",
     "对外合作",
     "visitor guide",
     "public policy",
     "public contact",
+    "public service policy",
+    "after-sales policy",
+)
+PUBLIC_POLICY_CONTEXT_KEYWORDS = (
+    "公开",
+    "对外",
+    "官网",
+    "official website",
+    "public",
+)
+PUBLIC_SERVICE_POLICY_KEYWORDS = (
+    "售后政策",
+    "服务政策",
+    "服务范围",
+    "联系方式",
+    "after-sales policy",
+    "service policy",
+    "service scope",
+    "public contact",
+)
+SUPPORT_INTERNAL_STRICT_KEYWORDS = (
+    "客服内部工单",
+    "内部工单",
+    "客户投诉明细",
+    "售后内部处理流程",
+    "support 部门内部知识",
+    "support部门内部知识",
+    "客服部内部知识",
+    "support internal",
 )
 COMPANY_INTERNAL_KEYWORDS = (
     "公司组织架构",
@@ -198,6 +259,11 @@ COMPANY_INTERNAL_KEYWORDS = (
     "权限申请流程",
     "怎么申请权限",
     "申请权限",
+    "公司内部员工",
+    "内部权限申请",
+    "知识库权限申请",
+    "部门权限申请",
+    "公司内部员工如何申请知识库权限",
     "内部问题找哪个部门",
     "内部协作",
     "company organization",
@@ -370,9 +436,19 @@ def _is_company_internal_question(question: str) -> bool:
     return _contains_any(lowered, COMPANY_INTERNAL_KEYWORDS)
 
 
+def _is_explicit_public_policy_question(question: str) -> bool:
+    lowered = _normalize_for_greeting(question)
+    has_public_context = _contains_any(lowered, PUBLIC_POLICY_CONTEXT_KEYWORDS)
+    has_public_policy_topic = _contains_any(lowered, PUBLIC_SERVICE_POLICY_KEYWORDS)
+    has_internal_support_marker = _contains_any(lowered, SUPPORT_INTERNAL_STRICT_KEYWORDS)
+    return has_public_policy_topic and has_public_context and not has_internal_support_marker
+
+
 def _is_public_question(question: str) -> bool:
     lowered = _normalize_for_greeting(question)
     return (
+        _is_explicit_public_policy_question(question)
+        or
         _contains_any(lowered, COMPANY_INFO_KEYWORDS)
         or _contains_any(lowered, BUSINESS_COOPERATION_KEYWORDS)
         or _contains_any(lowered, PUBLIC_POLICY_KEYWORDS)
@@ -389,6 +465,8 @@ def detect_intent(question: str) -> RouterIntent:
         return "assistant_capability"
     if any(token in lowered for token in SECURITY_TEST_KEYWORDS):
         return "security_test"
+    if _is_explicit_public_policy_question(question):
+        return "company_intro"
     if _is_company_internal_question(question):
         return "policy_question"
     if _contains_any(lowered, COMPANY_INFO_KEYWORDS):
@@ -472,6 +550,9 @@ def _build_target_selection(
         return "unsupported", None, [], False
     if route_mode == "general":
         return "general", None, [], False
+
+    if _is_explicit_public_policy_question(question):
+        return "public", None, [PUBLIC_KB_CODE], False
 
     if _is_company_internal_question(question):
         return "company", None, [COMPANY_KB_CODE], True
