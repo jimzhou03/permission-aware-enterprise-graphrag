@@ -148,6 +148,8 @@ const DEMO_ACCOUNTS: Record<
   }
 };
 
+const STAFF_ADMIN_ACCOUNT_KEYS: DemoAccountKey[] = ["cn_staff", "en_staff", "bilingual_admin"];
+
 const OVERREACH_SCENARIOS: Array<{
   id: string;
   account: DemoAccountKey;
@@ -491,8 +493,6 @@ function layoutGraphNodes(nodes: GraphNode[]): PositionedGraphNode[] {
 export default function App() {
   const [language, setLanguage] = useState<Language>(getInitialLanguage);
   const [selectedDemoAccount, setSelectedDemoAccount] = useState<DemoAccountKey>("cn_staff");
-  const [email, setEmail] = useState(DEMO_ACCOUNTS.cn_staff.email);
-  const [password, setPassword] = useState(DEMO_ACCOUNTS.cn_staff.password);
   const [token, setToken] = useState<string>("");
   const [user, setUser] = useState<UserPublic | null>(null);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
@@ -816,8 +816,6 @@ export default function App() {
 
   function applyDemoAccount(account: DemoAccountKey) {
     setSelectedDemoAccount(account);
-    setEmail(DEMO_ACCOUNTS[account].email);
-    setPassword(DEMO_ACCOUNTS[account].password);
   }
 
   function applyAuthenticatedSession(accessToken: string, nextUser: UserPublic, kbs: KnowledgeBase[]) {
@@ -863,12 +861,13 @@ export default function App() {
     resetAskState();
   }
 
-  async function onLogin(event: React.FormEvent) {
-    event.preventDefault();
+  async function loginWithDemoAccount(accountKey: DemoAccountKey) {
+    const account = DEMO_ACCOUNTS[accountKey];
     setPending(true);
     setMessage("");
+    setSelectedDemoAccount(accountKey);
     try {
-      await loginByCredentials(email, password);
+      await loginByCredentials(account.email, account.password);
       resetAskState();
       setMessage(t.loginSuccess);
     } catch (error) {
@@ -1283,81 +1282,88 @@ export default function App() {
                   <li>{t.capabilityC}</li>
                 </ul>
               </div>
+              <div className="mt-4 rounded-sm border border-[#4a4338] bg-[#f4ebdd] p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#3b342d]">
+                  {t.loginBoundaryTitle}
+                </p>
+                <ul className="mt-3 space-y-2 text-sm text-[#363029]">
+                  <li>{t.loginBoundaryLine1}</li>
+                  <li>{t.loginBoundaryLine2}</li>
+                  <li>{t.loginBoundaryLine3}</li>
+                </ul>
+              </div>
             </section>
 
             <section className="glass-panel p-8">
               <h2 className="panel-title">{t.signInPanelTitle}</h2>
-              <form className="space-y-3" onSubmit={onLogin}>
-                <fieldset className="space-y-2">
-                  <legend className="sr-only">{t.demoAccount}</legend>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs font-medium text-slate-600">{t.chooseDemoAccount}</span>
-                    <span className="text-[11px] text-slate-500">{t.demoAccountHint}</span>
+              <div className="space-y-4">
+                <section className="rounded-sm border border-[#474035] bg-[#f2e8d8] p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <span className="text-xs font-semibold text-[#2f2a23]">{t.employeeAdminDemoTitle}</span>
+                    <span className="text-[11px] text-[#5a5247]">{t.employeeAdminDemoHint}</span>
                   </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {(Object.keys(DEMO_ACCOUNTS) as DemoAccountKey[]).map((key) => {
+                  <div className="space-y-2">
+                    {STAFF_ADMIN_ACCOUNT_KEYS.map((key) => {
                       const account = DEMO_ACCOUNTS[key];
                       const isSelected = selectedDemoAccount === key;
+                      const enterLabel =
+                        key === "cn_staff"
+                          ? t.enterCnStaffDemo
+                          : key === "en_staff"
+                            ? t.enterEnStaffDemo
+                            : t.enterAdminDemo;
                       return (
-                        <button
+                        <div
                           key={key}
-                          aria-pressed={isSelected}
-                          className={`min-h-[64px] rounded-sm border px-3 py-2 text-left transition focus:outline-none focus:ring-2 focus:ring-accent-200 ${
+                          className={`rounded-sm border px-3 py-3 ${
                             isSelected
-                              ? "border-[#bf6925] bg-[#f3dec4] ring-1 ring-[#d7a069]"
-                              : "border-[#4a4338] bg-[#f4ece0] hover:border-[#bf6925] hover:bg-[#f2e0c9]"
+                              ? "border-[#bf6925] bg-[#f3dec4]"
+                              : "border-[#4a4338] bg-[#f6eee1]"
                           }`}
-                          onClick={() => applyDemoAccount(key)}
-                          type="button"
                         >
-                          <span className="flex items-center justify-between gap-2">
-                            <span
-                              className={`font-mono text-sm font-semibold ${
-                                isSelected ? "text-accent-800" : "text-slate-800"
-                              }`}
+                          <div className="flex items-start justify-between gap-3">
+                            <button
+                              className="flex-1 text-left"
+                              type="button"
+                              onClick={() => applyDemoAccount(key)}
                             >
-                              {account.label}
-                            </span>
-                            <span
-                              className={`h-2 w-2 shrink-0 rounded-full ${
-                                isSelected ? "bg-[#c56925]" : "bg-[#8d8375]"
-                              }`}
-                            />
-                          </span>
-                          <span className="mt-1 block truncate text-[11px] text-slate-500">{account.email}</span>
-                        </button>
+                              <div className="font-mono text-sm font-semibold text-[#1f1c18]">{account.label}</div>
+                              <div className="mt-1 text-[11px] text-[#595249]">{account.email}</div>
+                            </button>
+                            <button
+                              className="btn-primary whitespace-nowrap px-2.5 py-1.5 text-xs"
+                              type="button"
+                              disabled={pending}
+                              onClick={() => loginWithDemoAccount(key)}
+                            >
+                              {pending && selectedDemoAccount === key ? t.working : enterLabel}
+                            </button>
+                          </div>
+                        </div>
                       );
                     })}
                   </div>
-                </fieldset>
+                </section>
 
-                <label className="block space-y-1">
-                  <span className="text-xs font-medium text-slate-600">{t.email}</span>
-                  <input
-                    className="field"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    placeholder="cn_staff@example.local"
-                    autoComplete="username"
-                  />
-                </label>
-
-                <label className="block space-y-1">
-                  <span className="text-xs font-medium text-slate-600">{t.password}</span>
-                  <input
-                    className="field"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    type="password"
-                    placeholder="Passw0rd!123"
-                    autoComplete="current-password"
-                  />
-                </label>
-
-                <button className="btn-primary w-full" disabled={pending}>
-                  {pending ? t.working : t.signIn}
-                </button>
-              </form>
+                <section className="rounded-sm border border-[#474035] bg-[#efe4d3] p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.1em] text-[#3b352e]">
+                    {t.guestModeTitle}
+                  </div>
+                  <div className="mt-2 rounded-sm border border-[#61584d] bg-[#f7efe1] px-3 py-2 text-sm text-[#312c25]">
+                    {t.guestModeBadge}
+                  </div>
+                  <p className="mt-2 text-xs text-[#4f483e]">{t.guestModeDescriptionLine1}</p>
+                  <p className="mt-1 text-xs text-[#4f483e]">{t.guestModeDescriptionLine2}</p>
+                  <button
+                    className="btn-primary mt-3 w-full"
+                    type="button"
+                    disabled={pending}
+                    onClick={() => loginWithDemoAccount("visitor")}
+                  >
+                    {pending && selectedDemoAccount === "visitor" ? t.working : t.enterGuestMode}
+                  </button>
+                </section>
+              </div>
 
               {message ? <div className="mt-3 notification-line">{message}</div> : null}
             </section>
