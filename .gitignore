@@ -23,3 +23,7 @@ models/
 # Keep application ORM/domain models tracked.
 !services/api/app/models/
 !services/api/app/models/**
+
+# Python cache files
+__pycache__/
+*.pyc

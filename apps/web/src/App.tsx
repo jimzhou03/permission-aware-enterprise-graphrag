@@ -108,6 +108,16 @@ type NavItem = {
   icon: (props: IconProps) => ReactElement;
 };
 
+type RoleDisplayProfile = {
+  key: "visitor" | "cn_staff" | "en_staff" | "bilingual_admin";
+  displayRole: string;
+  displayDepartment: string;
+  hint: string;
+  badgeClass: string;
+  sessionPanelClass: string;
+  scopePanelClass: string;
+};
+
 const AUTH_SESSION_STORAGE_KEY = "paegr.auth.session";
 const CHAT_HISTORY_STORAGE_PREFIX = "chat_history_";
 const MAX_STORED_SESSIONS = 12;
@@ -370,6 +380,59 @@ function collectLocalAuditRecords(sessions: ChatSession[], untitledFallback: str
   return records.sort(
     (first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime()
   );
+}
+
+function resolveRoleDisplayProfile(user: UserPublic | null, language: Language): RoleDisplayProfile {
+  const role = (user?.role ?? "").toLowerCase();
+  const department = (user?.department ?? "").toLowerCase();
+  const emailAlias = (user?.email ?? "").split("@")[0]?.toLowerCase() ?? "";
+  const isZh = language === "zh";
+
+  if (emailAlias === "bilingual_admin" || role.includes("admin")) {
+    return {
+      key: "bilingual_admin",
+      displayRole: isZh ? "双语管理员" : "Bilingual Admin",
+      displayDepartment: "all",
+      hint: isZh ? "可访问双语授权知识库并查看完整追踪信息" : "Access bilingual KB scope with full trace visibility.",
+      badgeClass: "border-[#7d4a14] bg-[#ffd59f] text-[#5f3410]",
+      sessionPanelClass: "border-[#c78b43] bg-[#f6e4bf]",
+      scopePanelClass: "border-[#b97a2f] bg-[#f4dfb7]"
+    };
+  }
+
+  if (emailAlias === "cn_staff" || department === "cn") {
+    return {
+      key: "cn_staff",
+      displayRole: isZh ? "中文部门员工" : "CN Staff",
+      displayDepartment: "cn",
+      hint: isZh ? "可访问中文公开与中文内部知识库" : "Can access cn-public and cn-internal knowledge bases.",
+      badgeClass: "border-[#8b4b15] bg-[#f8d8b2] text-[#6b360e]",
+      sessionPanelClass: "border-[#b36a2c] bg-[#f3e2ca]",
+      scopePanelClass: "border-[#aa6328] bg-[#f7e8d4]"
+    };
+  }
+
+  if (emailAlias === "en_staff" || department === "en") {
+    return {
+      key: "en_staff",
+      displayRole: isZh ? "英文部门员工" : "EN Staff",
+      displayDepartment: "en",
+      hint: isZh ? "可访问英文公开与英文内部知识库" : "Can access en-public and en-internal knowledge bases.",
+      badgeClass: "border-[#4d5a68] bg-[#dce3ea] text-[#243140]",
+      sessionPanelClass: "border-[#5a6774] bg-[#e4e8ee]",
+      scopePanelClass: "border-[#586474] bg-[#ebeff4]"
+    };
+  }
+
+  return {
+    key: "visitor",
+    displayRole: isZh ? "访客" : "Visitor",
+    displayDepartment: "public",
+    hint: isZh ? "只能访问公共政策知识库" : "Can only access the public policy knowledge base.",
+    badgeClass: "border-[#6b665d] bg-[#ede8df] text-[#35322d]",
+    sessionPanelClass: "border-[#696157] bg-[#eee8de]",
+    scopePanelClass: "border-[#6f685f] bg-[#f2ece2]"
+  };
 }
 
 const GRAPH_CANVAS_WIDTH = 960;
@@ -697,12 +760,8 @@ export default function App() {
     }
   }, [graphNodeById, selectedGraphNodeId]);
 
-  const roleBadgeClass = useMemo(() => {
-    const role = user?.role ?? "";
-    if (role.includes("admin")) return "border-accent-200 bg-accent-100 text-accent-800";
-    if (role === "visitor") return "border-orange-200 bg-orange-100 text-orange-700";
-    return "border-slate-200 bg-slate-100 text-slate-700";
-  }, [user?.role]);
+  const roleProfile = useMemo(() => resolveRoleDisplayProfile(user, language), [language, user]);
+  const roleBadgeClass = useMemo(() => roleProfile.badgeClass, [roleProfile.badgeClass]);
 
   const navItems: NavItem[] = [
     { key: "knowledge_chat", label: t.navKnowledgeChat, icon: ChatIcon },
@@ -1165,9 +1224,16 @@ export default function App() {
 
   if (!sessionReady) {
     return (
-      <div className="min-h-screen bg-slate-100">
+      <div className="console-root min-h-screen bg-[#0f141b]">
         <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center px-6">
-          <div className="glass-panel px-6 py-5 text-sm text-slate-600">{message || t.restoringSession}</div>
+          <div className="console-shell w-full max-w-2xl p-3">
+            <div className="console-statusbar mb-3">
+              <div className="console-statusbar-left">GRAPHRAG OS v0.6.0</div>
+              <div className="console-statusbar-mid">///////////////</div>
+              <div className="console-statusbar-right">SYSTEM ONLINE</div>
+            </div>
+            <div className="glass-panel px-6 py-5 text-sm text-[#3b352d]">{message || t.restoringSession}</div>
+          </div>
         </div>
       </div>
     );
@@ -1175,15 +1241,21 @@ export default function App() {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-slate-100">
+      <div className="console-root min-h-screen bg-[#0f141b]">
         <div className="mx-auto w-full max-w-6xl px-4 py-8 md:px-8">
+          <div className="console-shell p-3 md:p-4">
+            <div className="console-statusbar mb-3">
+              <div className="console-statusbar-left">GRAPHRAG OS v0.6.0</div>
+              <div className="console-statusbar-mid">/////////////////////////</div>
+              <div className="console-statusbar-right">SYSTEM ONLINE</div>
+            </div>
           <div className="mb-6 flex items-center justify-end gap-2">
             <label className="text-xs text-slate-600" htmlFor="login-language-select">
               {t.language}
             </label>
             <select
               id="login-language-select"
-              className="h-9 rounded-xl border border-slate-300 bg-white px-2 text-xs text-slate-700"
+              className="h-9 rounded-sm border border-[#3e382f] bg-[#f7f0e4] px-2 text-xs text-[#25211c]"
               value={language}
               onChange={(event) => setLanguage(event.target.value as Language)}
             >
@@ -1230,10 +1302,10 @@ export default function App() {
                         <button
                           key={key}
                           aria-pressed={isSelected}
-                          className={`min-h-[64px] rounded-xl border px-3 py-2 text-left transition focus:outline-none focus:ring-2 focus:ring-accent-200 ${
+                          className={`min-h-[64px] rounded-sm border px-3 py-2 text-left transition focus:outline-none focus:ring-2 focus:ring-accent-200 ${
                             isSelected
-                              ? "border-accent-500 bg-accent-50 ring-1 ring-accent-200"
-                              : "border-slate-200 bg-slate-50 hover:border-accent-200 hover:bg-white"
+                              ? "border-[#bf6925] bg-[#f3dec4] ring-1 ring-[#d7a069]"
+                              : "border-[#4a4338] bg-[#f4ece0] hover:border-[#bf6925] hover:bg-[#f2e0c9]"
                           }`}
                           onClick={() => applyDemoAccount(key)}
                           type="button"
@@ -1248,7 +1320,7 @@ export default function App() {
                             </span>
                             <span
                               className={`h-2 w-2 shrink-0 rounded-full ${
-                                isSelected ? "bg-accent-600" : "bg-slate-300"
+                                isSelected ? "bg-[#c56925]" : "bg-[#8d8375]"
                               }`}
                             />
                           </span>
@@ -1290,38 +1362,50 @@ export default function App() {
               {message ? <div className="mt-3 notification-line">{message}</div> : null}
             </section>
           </div>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen text-slate-900">
-      <div className="mx-auto w-full max-w-[1700px] px-4 py-5 md:px-7">
-        <header className="glass-panel mb-5 px-5 py-4 md:px-7">
+    <div className="console-root min-h-screen text-slate-900">
+      <div className="console-shell mx-auto w-full max-w-[1880px] p-3 md:p-4">
+        <div className="console-statusbar mb-2">
+          <div className="console-statusbar-left">GRAPHRAG OS v0.6.0</div>
+          <div className="console-statusbar-mid" aria-hidden="true">
+            /////////////////////////
+          </div>
+          <div className="console-statusbar-right">SYSTEM ONLINE</div>
+        </div>
+
+        <header className="glass-panel mb-3 px-5 py-4 md:px-7">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-accent-200 bg-accent-50 text-accent-600">
+              <div className="flex h-11 w-11 items-center justify-center rounded-md border border-[#4d4438] bg-[#efe4d2] text-[#a35218]">
                 <BrandGraphIcon className="h-6 w-6" />
               </div>
               <div>
-                <h1 className="text-xl font-semibold tracking-tight text-slate-900 md:text-[2rem]">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#6a6358]">
+                  {t.consoleLabel}
+                </div>
+                <h1 className="text-xl font-semibold tracking-[0.02em] text-[#171614] md:text-[2.05rem]">
                   {t.productName}
                 </h1>
-                <p className="mt-1 text-sm text-slate-600">{t.subtitle}</p>
+                <p className="mt-1 text-sm text-[#3e3a34]">{t.subtitle}</p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-2">
               <label
-                className="inline-flex items-center gap-2 rounded-2xl border border-[#dbe3ef] bg-white px-3 py-2 text-xs font-medium text-slate-700"
+                className="inline-flex items-center gap-2 rounded-md border border-[#3d3831] bg-[#f4ede0] px-3 py-2 text-xs font-semibold text-[#1f1d1a]"
                 htmlFor="ui-language-select"
               >
-                <GlobeIcon className="h-4 w-4 text-slate-500" />
+                <GlobeIcon className="h-4 w-4 text-[#2e2b26]" />
                 {t.language}
                 <select
                   id="ui-language-select"
-                  className="bg-transparent text-xs text-slate-700 outline-none"
+                  className="bg-transparent text-xs text-[#1f1d1a] outline-none"
                   value={language}
                   onChange={(event) => setLanguage(event.target.value as Language)}
                 >
@@ -1332,7 +1416,9 @@ export default function App() {
 
               <div className={`status-pill inline-flex max-w-[340px] items-center gap-1.5 truncate ${roleBadgeClass}`}>
                 <UserIcon className="h-4 w-4" />
-                <span className="truncate">{user ? `${user.email} · ${user.role}` : t.accountState}</span>
+                <span className="truncate">
+                  {user ? `${user.email} · ${roleProfile.displayRole} · ${roleProfile.displayDepartment}` : t.accountState}
+                </span>
               </div>
 
               <button className="btn-secondary gap-1.5" onClick={logout} type="button">
@@ -1343,7 +1429,7 @@ export default function App() {
           </div>
         </header>
 
-        <div className="grid gap-4 xl:grid-cols-[290px_minmax(0,1fr)]">
+        <div className="grid gap-3 xl:grid-cols-[290px_minmax(0,1fr)]">
           <aside className="space-y-4">
             <section className="glass-panel p-6">
               <h2 className="panel-title">{t.navTitle}</h2>
@@ -1353,10 +1439,10 @@ export default function App() {
                   return (
                     <button
                       key={item.key}
-                      className={`group flex w-full items-center gap-2.5 rounded-2xl border px-3 py-2.5 text-left text-[15px] font-medium transition ${
+                      className={`group flex w-full items-center gap-2.5 rounded-sm border px-3 py-2.5 text-left text-[15px] font-semibold transition ${
                         activeView === item.key
-                          ? "border-accent-200 bg-accent-50 text-accent-700 shadow-[0_8px_20px_rgba(247,123,45,0.12)]"
-                          : "border-[#e2e8f2] bg-white text-slate-700 hover:border-accent-200 hover:bg-accent-50/50"
+                          ? "border-[#c56f24] bg-[#f3dcbf] text-[#7c3f0f]"
+                          : "border-[#4a4338] bg-[#f4ede0] text-[#2a2722] hover:border-[#c56f24] hover:bg-[#f0dfca]"
                       }`}
                       onClick={() => setActiveView(item.key)}
                       type="button"
@@ -1373,7 +1459,7 @@ export default function App() {
               </div>
             </section>
 
-            <section className="glass-panel p-6">
+            <section className={`glass-panel p-6 ${roleProfile.sessionPanelClass}`}>
               <h2 className="panel-title">{t.currentSession}</h2>
               <div className="space-y-3 text-sm text-slate-700">
                 <div className="flex items-start gap-2.5">
@@ -1387,16 +1473,19 @@ export default function App() {
                   <ShieldIcon className="mt-0.5 h-[17px] w-[17px] shrink-0 text-slate-500" />
                   <div>
                     <div className="text-xs text-slate-500">{t.currentRole}</div>
-                    <div className="font-medium text-slate-800">{user?.role ?? t.noValue}</div>
+                    <div className="font-medium text-slate-800">{roleProfile.displayRole}</div>
                   </div>
                 </div>
                 <div className="flex items-start gap-2.5">
                   <BuildingIcon className="mt-0.5 h-[17px] w-[17px] shrink-0 text-slate-500" />
                   <div>
                     <div className="text-xs text-slate-500">{t.currentDepartment}</div>
-                    <div className="font-medium text-slate-800">{user?.department ?? t.noValue}</div>
+                    <div className="font-medium text-slate-800">{roleProfile.displayDepartment}</div>
                   </div>
                 </div>
+              </div>
+              <div className="mt-3 rounded-sm border border-[#4a4338] bg-[#f9f4eb] px-2.5 py-2 text-xs text-[#44403a]">
+                {roleProfile.hint}
               </div>
             </section>
           </aside>
@@ -1405,7 +1494,7 @@ export default function App() {
             {activeView === "knowledge_chat" ? (
               <section className="glass-panel overflow-hidden">
                 <div className="grid gap-0 xl:grid-cols-[340px_minmax(0,1fr)]">
-                  <div className="border-b border-[#e6ebf3] bg-[#fafbff] p-4 xl:border-b-0 xl:border-r">
+                  <div className="border-b border-[#34312c] bg-[#f2ece2] p-4 xl:border-b-0 xl:border-r">
                     <div className="mb-3 flex items-center justify-between gap-2">
                       <h2 className="panel-title mb-0">{t.recentSessions}</h2>
                       <button className="btn-secondary px-2.5 py-1.5 text-xs" onClick={startNewSession} type="button">
@@ -1416,7 +1505,7 @@ export default function App() {
 
                     <div className="scroll-area max-h-[420px] space-y-2 overflow-y-auto pr-1">
                       {visibleChatSessions.length === 0 ? (
-                        <p className="rounded-2xl border border-dashed border-[#d8e0ec] bg-white px-3 py-4 text-sm text-slate-500">
+                        <p className="rounded-sm border border-dashed border-[#5f584f] bg-[#f7f1e5] px-3 py-4 text-sm text-[#4a443c]">
                           {t.noRecentSessions}
                         </p>
                       ) : (
@@ -1425,10 +1514,10 @@ export default function App() {
                           return (
                             <button
                               key={session.id}
-                              className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
+                              className={`w-full rounded-sm border px-3 py-3 text-left transition ${
                                 isActive
-                                  ? "border-accent-300 bg-accent-50 shadow-[0_8px_20px_rgba(247,123,45,0.15)]"
-                                  : "border-[#dde5f0] bg-white hover:border-accent-200 hover:bg-accent-50/40"
+                                  ? "border-[#c56f24] bg-[#f4dcc0]"
+                                  : "border-[#4b4439] bg-[#f8f3e8] hover:border-[#c56f24] hover:bg-[#f2e7d6]"
                               }`}
                               onClick={() => selectChatSession(session.id)}
                               type="button"
@@ -1454,10 +1543,10 @@ export default function App() {
                       <TrashIcon className="h-4 w-4" />
                       {t.clearCurrentSession}
                     </button>
-                    <p className="mt-2 text-[11px] text-slate-500">{t.historyStoredLocally}</p>
+                    <p className="mt-2 text-[11px] text-[#5e5850]">{t.historyStoredLocally}</p>
 
-                    <div className="mt-4 rounded-2xl border border-[#dde4f0] bg-white p-3">
-                      <p className="mb-2 text-sm font-semibold text-slate-800">{t.kbScopeOptional}</p>
+                    <div className={`mt-4 rounded-sm border p-3 ${roleProfile.scopePanelClass}`}>
+                      <p className="mb-2 text-sm font-semibold text-[#211f1b]">{t.kbScopeOptional}</p>
                       <div className="flex flex-wrap gap-2">
                         {knowledgeBases.map((kb) => (
                           <label key={kb.id} className="tag-check">
@@ -1470,20 +1559,23 @@ export default function App() {
                           </label>
                         ))}
                       </div>
-                      <p className="mt-2 text-[11px] text-slate-500">{t.allowedKbHint}</p>
+                      <div className="mt-2 rounded-sm border border-[#5a5348] bg-[#f9f4ea] px-2 py-1.5 text-[11px] text-[#4a463f]">
+                        {roleProfile.hint}
+                      </div>
+                      <p className="mt-2 text-[11px] text-[#5c554c]">{t.allowedKbHint}</p>
                     </div>
                   </div>
 
-                  <div className="flex h-[72vh] min-h-[580px] max-h-[860px] flex-col md:h-[calc(100vh-220px)]">
-                    <div className="border-b border-[#e6ebf3] px-5 py-4">
+                  <div className="flex h-[72vh] min-h-[580px] max-h-[860px] flex-col bg-[#f6f0e5] md:h-[calc(100vh-220px)]">
+                    <div className="border-b border-[#34312c] px-5 py-4">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-start gap-2.5">
-                          <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-xl bg-accent-50 text-accent-600">
+                          <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-sm border border-[#5a5146] bg-[#efd8b8] text-[#8a4a16]">
                             <ChatIcon className="h-[17px] w-[17px]" />
                           </div>
                           <div>
-                            <h2 className="text-base font-semibold text-slate-900">{t.askQuestionSection}</h2>
-                            <p className="mt-1 text-xs text-slate-500">{t.chatPageDescription}</p>
+                            <h2 className="text-base font-semibold text-[#1b1916]">{t.askQuestionSection}</h2>
+                            <p className="mt-1 text-xs text-[#5b544a]">{t.chatPageDescription}</p>
                           </div>
                         </div>
                         <div className={`risk-badge ${deniedThisRequest ? "is-risk" : "is-normal"}`}>
@@ -1492,15 +1584,15 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="scroll-area min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 md:px-6">
+                    <div className="scroll-area console-chat-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 md:px-6">
                       {!activeChatSession || activeChatSession.messages.length === 0 ? (
                         <div className="flex min-h-[350px] flex-col items-center justify-center gap-3 text-center">
-                          <div className="flex h-16 w-16 items-center justify-center rounded-full border border-accent-200 bg-accent-50 text-accent-500">
+                          <div className="flex h-16 w-16 items-center justify-center rounded-sm border border-[#5a5146] bg-[#efdcc1] text-[#8a4a16]">
                             <ChatIcon className="h-8 w-8" />
                           </div>
                           <div>
-                            <p className="text-xl font-semibold text-slate-800">开始向企业知识库提问吧</p>
-                            <p className="mt-1 text-sm text-slate-500">{t.emptyConversation}</p>
+                            <p className="text-xl font-semibold text-[#1c1915]">开始向企业知识库提问吧</p>
+                            <p className="mt-1 text-sm text-[#595249]">{t.emptyConversation}</p>
                           </div>
                         </div>
                       ) : (
@@ -1509,17 +1601,17 @@ export default function App() {
                           return (
                             <div key={chatMessage.id} className={`flex ${isUserMessage ? "justify-end" : "justify-start"}`}>
                               <article
-                                className={`max-w-[90%] rounded-2xl border px-4 py-3 shadow-sm md:max-w-[80%] ${
+                                className={`max-w-[90%] rounded-sm border px-4 py-3 md:max-w-[80%] ${
                                   isUserMessage
-                                    ? "border-accent-200 bg-gradient-to-br from-accent-500 to-accent-600 text-white"
+                                    ? "border-[#8a4a16] bg-[#e8aa5d] text-[#24150a]"
                                     : chatMessage.error
-                                      ? "border-red-200 bg-red-50 text-red-800"
-                                      : "border-[#dce4ef] bg-white text-slate-800"
+                                      ? "border-[#b33b2e] bg-[#f8d8d4] text-[#7e2018]"
+                                      : "border-[#413b32] bg-[#f7f0e3] text-[#221f19]"
                                 }`}
                               >
                                 <div
                                   className={`mb-2 flex flex-wrap items-center gap-2 text-[11px] ${
-                                    isUserMessage ? "text-accent-50" : "text-slate-500"
+                                    isUserMessage ? "text-[#47260a]" : "text-[#575047]"
                                   }`}
                                 >
                                   <span className="font-semibold">
@@ -1537,27 +1629,27 @@ export default function App() {
                                 ) : null}
 
                                 {chatMessage.response?.denied ? (
-                                  <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                  <div className="mt-3 rounded-sm border border-[#ba3f2f] bg-[#f7dbd8] px-3 py-2 text-sm text-[#7d271f]">
                                     <div className="text-[11px] font-semibold uppercase tracking-wide">{t.riskAlert}</div>
                                     <div className="mt-1">{chatMessage.response.refusal_reason ?? t.requestDeniedPrefix}</div>
                                   </div>
                                 ) : null}
 
                                 {chatMessage.response && chatMessage.response.citations.length > 0 ? (
-                                  <div className="mt-3 border-t border-slate-200 pt-3">
-                                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                  <div className="mt-3 border-t border-[#494238] pt-3">
+                                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[#5b5448]">
                                       {t.citations}
                                     </p>
                                     <div className="space-y-2">
                                       {chatMessage.response.citations.map((item) => (
-                                        <div key={item.chunk_id} className="rounded-xl border border-[#e3e9f3] bg-[#f9fbff] px-3 py-2">
-                                          <div className="font-mono text-[11px] text-slate-700">
+                                        <div key={item.chunk_id} className="rounded-sm border border-[#5c5448] bg-[#f2e7d7] px-3 py-2">
+                                          <div className="font-mono text-[11px] text-[#302c26]">
                                             {item.kb_code} / {item.document_title} / {t.score}={item.score}
                                           </div>
-                                          <div className="mt-1 font-mono text-[11px] text-slate-500">
+                                          <div className="mt-1 font-mono text-[11px] text-[#5d554b]">
                                             chunk_id: {item.chunk_id}
                                           </div>
-                                          <p className="mt-1 text-xs leading-5 text-slate-600">{item.excerpt}</p>
+                                          <p className="mt-1 text-xs leading-5 text-[#4e483f]">{item.excerpt}</p>
                                         </div>
                                       ))}
                                     </div>
@@ -1568,7 +1660,7 @@ export default function App() {
                                   <div className="mt-3 space-y-2">
                                     <div className="flex flex-wrap gap-2">
                                       <button
-                                        className="btn-secondary px-2 py-1 text-xs"
+                                        className="btn-secondary px-2 py-1 text-xs font-semibold"
                                         type="button"
                                         onClick={() => openTraceView(chatMessage.response!.request_id)}
                                       >
@@ -1576,7 +1668,7 @@ export default function App() {
                                       </button>
                                       {chatMessage.response.graph_paths.length > 0 ? (
                                         <button
-                                          className="btn-secondary px-2 py-1 text-xs"
+                                          className="btn-secondary px-2 py-1 text-xs font-semibold"
                                           type="button"
                                           onClick={() => openGraphView(chatMessage.response!.request_id)}
                                         >
@@ -1584,8 +1676,8 @@ export default function App() {
                                         </button>
                                       ) : null}
                                     </div>
-                                    <details className="rounded-xl border border-[#dbe3ef] bg-[#fafcff] px-3 py-2 text-xs text-slate-700">
-                                      <summary className="cursor-pointer font-medium text-slate-700">
+                                    <details className="rounded-sm border border-[#474035] bg-[#efe5d6] px-3 py-2 font-mono text-xs text-[#2f2b25]">
+                                      <summary className="cursor-pointer font-medium text-[#26231f]">
                                         {t.technicalDetails}
                                       </summary>
                                       <div className="mt-2 space-y-1 font-mono text-[11px]">
@@ -1617,7 +1709,7 @@ export default function App() {
                       )}
                     </div>
 
-                    <form className="border-t border-[#e6ebf3] bg-[#fafbff] p-4" onSubmit={onAsk}>
+                    <form className="border-t border-[#34312c] bg-[#efe8db] p-4" onSubmit={onAsk}>
                       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_228px]">
                         <div className="relative">
                           <textarea
@@ -1628,7 +1720,7 @@ export default function App() {
                           />
                           <button
                             type="button"
-                            className="absolute bottom-3 right-3 rounded-xl p-1.5 text-slate-500 transition hover:bg-accent-50 hover:text-accent-600"
+                            className="absolute bottom-3 right-3 rounded-sm border border-transparent p-1.5 text-[#4f493f] transition hover:border-[#6a6256] hover:bg-[#f6edde] hover:text-[#2f2a23]"
                             aria-label="voice placeholder"
                           >
                             <MicIcon className="h-5 w-5" />
@@ -1636,7 +1728,7 @@ export default function App() {
                         </div>
                         <div className="space-y-2">
                           <label className="block space-y-1">
-                            <span className="text-xs font-medium text-slate-600">{t.mode}</span>
+                            <span className="text-xs font-semibold text-[#3f3a33]">{t.mode}</span>
                             <select
                               className="field"
                               value={mode}
@@ -1655,7 +1747,7 @@ export default function App() {
                       </div>
                     </form>
 
-                    {message ? <div className="border-t border-[#e6ebf3] px-4 py-3 notification-line">{message}</div> : null}
+                    {message ? <div className="border-t border-[#34312c] px-4 py-3 notification-line">{message}</div> : null}
                   </div>
                 </div>
               </section>

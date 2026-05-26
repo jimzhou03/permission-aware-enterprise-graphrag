@@ -5,7 +5,7 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Noto Sans SC", "Manrope", "Segoe UI", "sans-serif"],
+        sans: ["Noto Sans SC", "Chakra Petch", "Segoe UI", "sans-serif"],
         mono: ["IBM Plex Mono", "Consolas", "monospace"]
       },
       colors: {
