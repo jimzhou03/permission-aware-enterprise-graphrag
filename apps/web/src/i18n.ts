@@ -19,8 +19,8 @@ export const OVERREACH_LABELS = {
 
 export const UI_TEXT = {
   zh: {
-    productName: "权限感知企业 GraphRAG 知识助手",
-    subtitle: "面向企业内部知识库的权限感知 RAG 问答工具",
+    productName: "权限获取企业 GraphRAG 知识助手",
+    subtitle: "面向企业内部知识库的权限 RAG 问答工具",
     consoleLabel: "企业知识访问控制台",
     language: "语言",
     chinese: "中文",

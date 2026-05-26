@@ -5,21 +5,21 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["IBM Plex Sans", "Segoe UI", "sans-serif"],
+        sans: ["Noto Sans SC", "Manrope", "Segoe UI", "sans-serif"],
         mono: ["IBM Plex Mono", "Consolas", "monospace"]
       },
       colors: {
         accent: {
-          50: "#eef8f4",
-          100: "#d6efe4",
-          200: "#abdeca",
-          300: "#7ac9ae",
-          400: "#4dae91",
-          500: "#349377",
-          600: "#2d7863",
-          700: "#285f50",
-          800: "#244d42",
-          900: "#203f36"
+          50: "#fff6ee",
+          100: "#ffe8d5",
+          200: "#ffd2ac",
+          300: "#ffb680",
+          400: "#ff9654",
+          500: "#f77b2d",
+          600: "#de651d",
+          700: "#b74f16",
+          800: "#923f17",
+          900: "#773618"
         }
       }
     }
@@ -28,4 +28,3 @@ const config: Config = {
 };
 
 export default config;
-

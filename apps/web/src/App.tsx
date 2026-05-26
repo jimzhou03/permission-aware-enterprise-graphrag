@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactElement } from "react";
 
 import {
   askQuestion,
@@ -18,6 +18,26 @@ import {
   syncGraph,
   uploadKnowledgeBaseDocument
 } from "./api";
+import {
+  AuditIcon,
+  BrandGraphIcon,
+  BuildingIcon,
+  ChatIcon,
+  DatabaseIcon,
+  GlobeIcon,
+  GraphIcon,
+  LogoutIcon,
+  MailIcon,
+  MicIcon,
+  PlusIcon,
+  SendIcon,
+  ShieldIcon,
+  SystemIcon,
+  TraceIcon,
+  TrashIcon,
+  UserIcon,
+  type IconProps
+} from "./components/ui-icons";
 import { LANGUAGE_STORAGE_KEY, OVERREACH_LABELS, UI_TEXT, type Language } from "./i18n";
 import type {
   AskMode,
@@ -80,6 +100,12 @@ type LocalAuditRecord = {
 type PositionedGraphNode = GraphNode & {
   x: number;
   y: number;
+};
+
+type NavItem = {
+  key: AppView;
+  label: string;
+  icon: (props: IconProps) => ReactElement;
 };
 
 const AUTH_SESSION_STORAGE_KEY = "paegr.auth.session";
@@ -673,18 +699,18 @@ export default function App() {
 
   const roleBadgeClass = useMemo(() => {
     const role = user?.role ?? "";
-    if (role.includes("admin")) return "bg-accent-100 text-accent-800 border-accent-200";
-    if (role === "visitor") return "bg-amber-100 text-amber-800 border-amber-200";
-    return "bg-slate-100 text-slate-800 border-slate-200";
+    if (role.includes("admin")) return "border-accent-200 bg-accent-100 text-accent-800";
+    if (role === "visitor") return "border-orange-200 bg-orange-100 text-orange-700";
+    return "border-slate-200 bg-slate-100 text-slate-700";
   }, [user?.role]);
 
-  const navItems: Array<{ key: AppView; label: string }> = [
-    { key: "knowledge_chat", label: t.navKnowledgeChat },
-    { key: "knowledge_bases", label: t.navKnowledgeBases },
-    { key: "audit_logs", label: t.navAuditLogs },
-    { key: "system_status", label: t.navSystemStatus },
-    { key: "developer_trace", label: t.navDeveloperTrace },
-    { key: "graph_rag", label: t.navGraphRag }
+  const navItems: NavItem[] = [
+    { key: "knowledge_chat", label: t.navKnowledgeChat, icon: ChatIcon },
+    { key: "knowledge_bases", label: t.navKnowledgeBases, icon: DatabaseIcon },
+    { key: "audit_logs", label: t.navAuditLogs, icon: AuditIcon },
+    { key: "system_status", label: t.navSystemStatus, icon: SystemIcon },
+    { key: "developer_trace", label: t.navDeveloperTrace, icon: TraceIcon },
+    { key: "graph_rag", label: t.navGraphRag, icon: GraphIcon }
   ];
 
   function formatBoolean(value: boolean | null | undefined): string {
@@ -1270,107 +1296,144 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
-      <div className="mx-auto w-full max-w-[1540px] px-4 py-5 md:px-8">
-        <header className="glass-panel mb-5 flex flex-wrap items-center justify-between gap-4 px-5 py-4">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-              {t.consoleLabel}
+    <div className="min-h-screen text-slate-900">
+      <div className="mx-auto w-full max-w-[1700px] px-4 py-5 md:px-7">
+        <header className="glass-panel mb-5 px-5 py-4 md:px-7">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-accent-200 bg-accent-50 text-accent-600">
+                <BrandGraphIcon className="h-6 w-6" />
+              </div>
+              <div>
+                <h1 className="text-xl font-semibold tracking-tight text-slate-900 md:text-[2rem]">
+                  {t.productName}
+                </h1>
+                <p className="mt-1 text-sm text-slate-600">{t.subtitle}</p>
+              </div>
             </div>
-            <h1 className="text-lg font-semibold tracking-tight text-slate-900 md:text-2xl">
-              {t.productName}
-            </h1>
-            <p className="mt-1 text-sm text-slate-600">{t.subtitle}</p>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <label className="text-xs text-slate-600" htmlFor="ui-language-select">
-              {t.language}
-            </label>
-            <select
-              id="ui-language-select"
-              className="h-9 rounded-xl border border-slate-300 bg-white px-2 text-xs text-slate-700"
-              value={language}
-              onChange={(event) => setLanguage(event.target.value as Language)}
-            >
-              <option value="zh">{t.chinese}</option>
-              <option value="en">{t.english}</option>
-            </select>
-            <div className={`status-pill ${roleBadgeClass}`}>
-              {user ? `${t.signedInAs} · ${user.role}` : t.accountState}
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <label
+                className="inline-flex items-center gap-2 rounded-2xl border border-[#dbe3ef] bg-white px-3 py-2 text-xs font-medium text-slate-700"
+                htmlFor="ui-language-select"
+              >
+                <GlobeIcon className="h-4 w-4 text-slate-500" />
+                {t.language}
+                <select
+                  id="ui-language-select"
+                  className="bg-transparent text-xs text-slate-700 outline-none"
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value as Language)}
+                >
+                  <option value="zh">{t.chinese}</option>
+                  <option value="en">{t.english}</option>
+                </select>
+              </label>
+
+              <div className={`status-pill inline-flex max-w-[340px] items-center gap-1.5 truncate ${roleBadgeClass}`}>
+                <UserIcon className="h-4 w-4" />
+                <span className="truncate">{user ? `${user.email} · ${user.role}` : t.accountState}</span>
+              </div>
+
+              <button className="btn-secondary gap-1.5" onClick={logout} type="button">
+                <LogoutIcon className="h-4 w-4" />
+                {t.logout}
+              </button>
             </div>
-            <button className="btn-secondary" onClick={logout} type="button">
-              {t.logout}
-            </button>
           </div>
         </header>
 
-        <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
+        <div className="grid gap-4 xl:grid-cols-[290px_minmax(0,1fr)]">
           <aside className="space-y-4">
-            <section className="glass-panel p-4">
+            <section className="glass-panel p-6">
               <h2 className="panel-title">{t.navTitle}</h2>
               <div className="space-y-2">
-                {navItems.map((item) => (
-                  <button
-                    key={item.key}
-                    className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition ${
-                      activeView === item.key
-                        ? "border-accent-300 bg-accent-50 text-accent-800"
-                        : "border-slate-200 bg-slate-50 text-slate-700 hover:border-accent-200 hover:bg-white"
-                    }`}
-                    onClick={() => setActiveView(item.key)}
-                    type="button"
-                  >
-                    {item.label}
-                  </button>
-                ))}
+                {navItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.key}
+                      className={`group flex w-full items-center gap-2.5 rounded-2xl border px-3 py-2.5 text-left text-[15px] font-medium transition ${
+                        activeView === item.key
+                          ? "border-accent-200 bg-accent-50 text-accent-700 shadow-[0_8px_20px_rgba(247,123,45,0.12)]"
+                          : "border-[#e2e8f2] bg-white text-slate-700 hover:border-accent-200 hover:bg-accent-50/50"
+                      }`}
+                      onClick={() => setActiveView(item.key)}
+                      type="button"
+                    >
+                      <Icon
+                        className={`h-[18px] w-[18px] shrink-0 ${
+                          activeView === item.key ? "text-accent-600" : "text-slate-500"
+                        }`}
+                      />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </section>
 
-            <section className="glass-panel p-4">
+            <section className="glass-panel p-6">
               <h2 className="panel-title">{t.currentSession}</h2>
-              <div className="space-y-1 text-xs text-slate-700">
-                <div>
-                  {t.currentUser}: <span className="font-mono">{user?.email ?? t.noValue}</span>
+              <div className="space-y-3 text-sm text-slate-700">
+                <div className="flex items-start gap-2.5">
+                  <MailIcon className="mt-0.5 h-[17px] w-[17px] shrink-0 text-slate-500" />
+                  <div>
+                    <div className="text-xs text-slate-500">{t.currentUser}</div>
+                    <div className="font-mono text-xs text-slate-800">{user?.email ?? t.noValue}</div>
+                  </div>
                 </div>
-                <div>
-                  {t.currentRole}: <span className="font-mono">{user?.role ?? t.noValue}</span>
+                <div className="flex items-start gap-2.5">
+                  <ShieldIcon className="mt-0.5 h-[17px] w-[17px] shrink-0 text-slate-500" />
+                  <div>
+                    <div className="text-xs text-slate-500">{t.currentRole}</div>
+                    <div className="font-medium text-slate-800">{user?.role ?? t.noValue}</div>
+                  </div>
                 </div>
-                <div>
-                  {t.currentDepartment}: <span className="font-mono">{user?.department ?? t.noValue}</span>
+                <div className="flex items-start gap-2.5">
+                  <BuildingIcon className="mt-0.5 h-[17px] w-[17px] shrink-0 text-slate-500" />
+                  <div>
+                    <div className="text-xs text-slate-500">{t.currentDepartment}</div>
+                    <div className="font-medium text-slate-800">{user?.department ?? t.noValue}</div>
+                  </div>
                 </div>
               </div>
             </section>
           </aside>
 
-          <main className="space-y-4">
+          <main className="min-w-0 space-y-4">
             {activeView === "knowledge_chat" ? (
               <section className="glass-panel overflow-hidden">
-                <div className="grid gap-0 xl:grid-cols-[280px_minmax(0,1fr)]">
-                  <div className="border-b border-slate-200 bg-slate-50 p-4 xl:border-b-0 xl:border-r">
+                <div className="grid gap-0 xl:grid-cols-[340px_minmax(0,1fr)]">
+                  <div className="border-b border-[#e6ebf3] bg-[#fafbff] p-4 xl:border-b-0 xl:border-r">
                     <div className="mb-3 flex items-center justify-between gap-2">
                       <h2 className="panel-title mb-0">{t.recentSessions}</h2>
-                      <button className="btn-secondary px-2 py-1 text-xs" onClick={startNewSession} type="button">
+                      <button className="btn-secondary px-2.5 py-1.5 text-xs" onClick={startNewSession} type="button">
+                        <PlusIcon className="h-3.5 w-3.5" />
                         {t.newSession}
                       </button>
                     </div>
-                    <div className="space-y-2">
+
+                    <div className="scroll-area max-h-[420px] space-y-2 overflow-y-auto pr-1">
                       {visibleChatSessions.length === 0 ? (
-                        <p className="text-sm text-slate-500">{t.noRecentSessions}</p>
+                        <p className="rounded-2xl border border-dashed border-[#d8e0ec] bg-white px-3 py-4 text-sm text-slate-500">
+                          {t.noRecentSessions}
+                        </p>
                       ) : (
                         visibleChatSessions.map((session) => {
                           const isActive = activeChatSession?.id === session.id;
                           return (
                             <button
                               key={session.id}
-                              className={`w-full rounded-xl border px-3 py-2 text-left transition ${
+                              className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
                                 isActive
-                                  ? "border-accent-300 bg-accent-50"
-                                  : "border-slate-200 bg-white hover:border-accent-200"
+                                  ? "border-accent-300 bg-accent-50 shadow-[0_8px_20px_rgba(247,123,45,0.15)]"
+                                  : "border-[#dde5f0] bg-white hover:border-accent-200 hover:bg-accent-50/40"
                               }`}
                               onClick={() => selectChatSession(session.id)}
                               type="button"
                             >
-                              <div className="truncate text-sm font-medium text-slate-800">
+                              <div className="truncate text-sm font-semibold text-slate-800">
                                 {getSessionTitle(session, t.untitledSession)}
                               </div>
                               <div className="mt-1 text-[11px] text-slate-500">
@@ -1381,23 +1444,47 @@ export default function App() {
                         })
                       )}
                     </div>
+
                     <button
                       className="btn-secondary mt-3 w-full"
                       disabled={!activeChatSession || activeChatSession.messages.length === 0}
                       onClick={clearCurrentSession}
                       type="button"
                     >
+                      <TrashIcon className="h-4 w-4" />
                       {t.clearCurrentSession}
                     </button>
                     <p className="mt-2 text-[11px] text-slate-500">{t.historyStoredLocally}</p>
+
+                    <div className="mt-4 rounded-2xl border border-[#dde4f0] bg-white p-3">
+                      <p className="mb-2 text-sm font-semibold text-slate-800">{t.kbScopeOptional}</p>
+                      <div className="flex flex-wrap gap-2">
+                        {knowledgeBases.map((kb) => (
+                          <label key={kb.id} className="tag-check">
+                            <input
+                              type="checkbox"
+                              checked={selectedKbCodes.includes(kb.code)}
+                              onChange={() => toggleKb(kb.code)}
+                            />
+                            <span className="font-mono text-xs">{kb.code}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-[11px] text-slate-500">{t.allowedKbHint}</p>
+                    </div>
                   </div>
 
-                  <div className="flex h-[72vh] min-h-[560px] max-h-[820px] flex-col md:h-[calc(100vh-220px)]">
-                    <div className="border-b border-slate-200 px-5 py-4">
+                  <div className="flex h-[72vh] min-h-[580px] max-h-[860px] flex-col md:h-[calc(100vh-220px)]">
+                    <div className="border-b border-[#e6ebf3] px-5 py-4">
                       <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <h2 className="text-base font-semibold text-slate-900">{t.askQuestionSection}</h2>
-                          <p className="mt-1 text-xs text-slate-500">{t.chatPageDescription}</p>
+                        <div className="flex items-start gap-2.5">
+                          <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-xl bg-accent-50 text-accent-600">
+                            <ChatIcon className="h-[17px] w-[17px]" />
+                          </div>
+                          <div>
+                            <h2 className="text-base font-semibold text-slate-900">{t.askQuestionSection}</h2>
+                            <p className="mt-1 text-xs text-slate-500">{t.chatPageDescription}</p>
+                          </div>
                         </div>
                         <div className={`risk-badge ${deniedThisRequest ? "is-risk" : "is-normal"}`}>
                           {deniedThisRequest ? t.riskAlert : t.normalState}
@@ -1405,10 +1492,16 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 md:px-6">
+                    <div className="scroll-area min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 md:px-6">
                       {!activeChatSession || activeChatSession.messages.length === 0 ? (
-                        <div className="flex min-h-[320px] items-center justify-center text-center">
-                          <p className="text-sm text-slate-500">{t.emptyConversation}</p>
+                        <div className="flex min-h-[350px] flex-col items-center justify-center gap-3 text-center">
+                          <div className="flex h-16 w-16 items-center justify-center rounded-full border border-accent-200 bg-accent-50 text-accent-500">
+                            <ChatIcon className="h-8 w-8" />
+                          </div>
+                          <div>
+                            <p className="text-xl font-semibold text-slate-800">开始向企业知识库提问吧</p>
+                            <p className="mt-1 text-sm text-slate-500">{t.emptyConversation}</p>
+                          </div>
                         </div>
                       ) : (
                         activeChatSession.messages.map((chatMessage) => {
@@ -1418,10 +1511,10 @@ export default function App() {
                               <article
                                 className={`max-w-[90%] rounded-2xl border px-4 py-3 shadow-sm md:max-w-[80%] ${
                                   isUserMessage
-                                    ? "border-accent-200 bg-accent-600 text-white"
+                                    ? "border-accent-200 bg-gradient-to-br from-accent-500 to-accent-600 text-white"
                                     : chatMessage.error
                                       ? "border-red-200 bg-red-50 text-red-800"
-                                      : "border-slate-200 bg-white text-slate-800"
+                                      : "border-[#dce4ef] bg-white text-slate-800"
                                 }`}
                               >
                                 <div
@@ -1457,7 +1550,7 @@ export default function App() {
                                     </p>
                                     <div className="space-y-2">
                                       {chatMessage.response.citations.map((item) => (
-                                        <div key={item.chunk_id} className="rounded-xl bg-slate-50 px-3 py-2">
+                                        <div key={item.chunk_id} className="rounded-xl border border-[#e3e9f3] bg-[#f9fbff] px-3 py-2">
                                           <div className="font-mono text-[11px] text-slate-700">
                                             {item.kb_code} / {item.document_title} / {t.score}={item.score}
                                           </div>
@@ -1491,7 +1584,7 @@ export default function App() {
                                         </button>
                                       ) : null}
                                     </div>
-                                    <details className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                                    <details className="rounded-xl border border-[#dbe3ef] bg-[#fafcff] px-3 py-2 text-xs text-slate-700">
                                       <summary className="cursor-pointer font-medium text-slate-700">
                                         {t.technicalDetails}
                                       </summary>
@@ -1510,7 +1603,9 @@ export default function App() {
                                           function_trace_summary:{" "}
                                           {(chatMessage.response.function_trace_summary ?? []).join(" | ") || "-"}
                                         </div>
-                                        <div>allowed_kb_ids(frontend): {knowledgeBases.map((kb) => kb.id).join(", ") || "-"}</div>
+                                        <div>
+                                          allowed_kb_ids(frontend): {knowledgeBases.map((kb) => kb.id).join(", ") || "-"}
+                                        </div>
                                       </div>
                                     </details>
                                   </div>
@@ -1522,14 +1617,23 @@ export default function App() {
                       )}
                     </div>
 
-                    <form className="border-t border-slate-200 bg-slate-50 p-4" onSubmit={onAsk}>
-                      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
-                        <textarea
-                          className="soft-textarea min-h-24 bg-white"
-                          value={question}
-                          onChange={(event) => setQuestion(event.target.value)}
-                          placeholder={t.askQuestionPlaceholder}
-                        />
+                    <form className="border-t border-[#e6ebf3] bg-[#fafbff] p-4" onSubmit={onAsk}>
+                      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_228px]">
+                        <div className="relative">
+                          <textarea
+                            className="soft-textarea min-h-24 bg-white pr-12"
+                            value={question}
+                            onChange={(event) => setQuestion(event.target.value)}
+                            placeholder={t.askQuestionPlaceholder}
+                          />
+                          <button
+                            type="button"
+                            className="absolute bottom-3 right-3 rounded-xl p-1.5 text-slate-500 transition hover:bg-accent-50 hover:text-accent-600"
+                            aria-label="voice placeholder"
+                          >
+                            <MicIcon className="h-5 w-5" />
+                          </button>
+                        </div>
                         <div className="space-y-2">
                           <label className="block space-y-1">
                             <span className="text-xs font-medium text-slate-600">{t.mode}</span>
@@ -1544,36 +1648,21 @@ export default function App() {
                             </select>
                           </label>
                           <button className="btn-primary w-full" disabled={!token || pending || !question.trim()}>
+                            <SendIcon className="h-4 w-4" />
                             {pending ? t.working : t.sendQuestion}
                           </button>
                         </div>
                       </div>
-
-                      <div className="mt-3">
-                        <p className="mb-2 text-xs font-medium text-slate-600">{t.kbScopeOptional}</p>
-                        <div className="flex flex-wrap gap-2">
-                          {knowledgeBases.map((kb) => (
-                            <label key={kb.id} className="tag-check bg-white">
-                              <input
-                                type="checkbox"
-                                checked={selectedKbCodes.includes(kb.code)}
-                                onChange={() => toggleKb(kb.code)}
-                              />
-                              <span className="font-mono text-xs">{kb.code}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
                     </form>
 
-                    {message ? <div className="border-t border-slate-200 px-4 py-3 notification-line">{message}</div> : null}
+                    {message ? <div className="border-t border-[#e6ebf3] px-4 py-3 notification-line">{message}</div> : null}
                   </div>
                 </div>
               </section>
             ) : null}
 
             {activeView === "knowledge_bases" ? (
-              <section className="glass-panel p-5">
+              <section className="glass-panel p-6">
                 <h2 className="panel-title">{t.knowledgeBasesPageTitle}</h2>
                 <p className="mb-4 text-sm text-slate-600">{t.knowledgeBasesPageHint}</p>
                 <p className="mb-4 text-xs text-slate-500">{t.allowedScopeHint}</p>
@@ -1794,7 +1883,7 @@ export default function App() {
             ) : null}
 
             {activeView === "audit_logs" ? (
-              <section className="glass-panel p-5">
+              <section className="glass-panel p-6">
                 <h2 className="panel-title">{t.auditLogsPageTitle}</h2>
                 <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
                   <p className="text-sm font-medium text-slate-700">{t.localAuditRecords}</p>
@@ -1873,7 +1962,7 @@ export default function App() {
             ) : null}
 
             {activeView === "system_status" ? (
-              <section className="glass-panel p-5">
+              <section className="glass-panel p-6">
                 <h2 className="panel-title">{t.systemStatusPageTitle}</h2>
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <div className="soft-card">
@@ -2065,7 +2154,7 @@ export default function App() {
 
             {activeView === "graph_rag" ? (
               <section className="space-y-4">
-                <div className="glass-panel p-5">
+                <div className="glass-panel p-6">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <h2 className="panel-title mb-0">{t.graphStatusPanelTitle}</h2>
                     {canUploadDocuments ? (
@@ -2131,7 +2220,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="glass-panel p-5">
+                <div className="glass-panel p-6">
                   <h2 className="panel-title">{t.graphOverviewPanelTitle}</h2>
                   {graphPending ? (
                     <p className="text-sm text-slate-500">{t.working}</p>
@@ -2219,7 +2308,7 @@ export default function App() {
                   ) : null}
                 </div>
 
-                <div className="glass-panel p-5">
+                <div className="glass-panel p-6">
                   <h2 className="panel-title">{t.graphPathPanelTitle}</h2>
                   {requestGraphTrace ? (
                     <div className="space-y-3">
@@ -2277,7 +2366,7 @@ export default function App() {
 
             {activeView === "developer_trace" ? (
               <section className="space-y-4">
-                <div className="glass-panel p-5">
+                <div className="glass-panel p-6">
                   <h2 className="panel-title">{t.latestRetrievalTrace}</h2>
                   {requestTrace ? (
                     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -2325,7 +2414,7 @@ export default function App() {
                   )}
                 </div>
 
-                <div className="glass-panel p-5">
+                <div className="glass-panel p-6">
                   <h2 className="panel-title">{t.tracePathTitle}</h2>
                   {requestTrace ? (
                     <div className="space-y-3">
@@ -2417,7 +2506,7 @@ export default function App() {
                   )}
                 </div>
 
-                <div className="glass-panel p-5">
+                <div className="glass-panel p-6">
                   <h2 className="panel-title">{t.functionTraceTitle}</h2>
                   {requestTrace ? (
                     requestTrace.function_trace.length > 0 ? (
@@ -2470,7 +2559,7 @@ export default function App() {
                   )}
                 </div>
 
-                <div className="glass-panel p-5">
+                <div className="glass-panel p-6">
                   <h2 className="panel-title">{t.graphTraceTitle}</h2>
                   {requestGraphTrace ? (
                     <div className="space-y-3">
@@ -2530,7 +2619,7 @@ export default function App() {
                   )}
                 </div>
 
-                <div className="glass-panel p-5">
+                <div className="glass-panel p-6">
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="panel-title mb-0">{t.securityTestScenarios}</h2>
                     <button className="btn-secondary" type="button" onClick={() => setSecurityOpen((prev) => !prev)}>

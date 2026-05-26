@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -9,55 +9,66 @@
 }
 
 body {
-  @apply m-0 bg-slate-100 font-sans text-slate-900;
+  @apply m-0 min-h-screen bg-[#f5f7fb] font-sans text-slate-900 antialiased;
+  background-image:
+    radial-gradient(circle at 10% -10%, rgba(247, 123, 45, 0.18), transparent 36%),
+    radial-gradient(circle at 98% 0%, rgba(255, 215, 173, 0.26), transparent 28%);
+}
+
+#root {
+  @apply min-h-screen;
 }
 
 .panel {
-  @apply rounded-lg border border-slate-200 bg-white;
+  @apply rounded-2xl border border-[#e9edf5] bg-white;
 }
 
 .glass-panel {
-  @apply rounded-2xl border border-slate-200/90 bg-white/95 shadow-[0_8px_28px_rgba(15,23,42,0.05)];
+  @apply rounded-[24px] border border-[#e8edf5] bg-white shadow-[0_10px_32px_rgba(15,23,42,0.05)];
 }
 
 .panel-title {
-  @apply mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600;
+  @apply mb-3 text-[12px] font-semibold tracking-[0.08em] text-slate-500;
 }
 
 .field {
-  @apply h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-200;
+  @apply h-11 w-full rounded-2xl border border-[#d9e0ec] bg-white px-3.5 text-sm text-slate-900 outline-none transition;
+  @apply focus:border-accent-400 focus:ring-2 focus:ring-accent-100;
 }
 
 .btn {
-  @apply inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium transition;
+  @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium transition;
 }
 
 .btn-primary {
-  @apply btn bg-accent-600 text-white hover:bg-accent-700 disabled:cursor-not-allowed disabled:bg-slate-400;
+  @apply btn bg-accent-500 text-white shadow-[0_8px_20px_rgba(247,123,45,0.22)] hover:bg-accent-600;
+  @apply disabled:cursor-not-allowed disabled:bg-slate-400 disabled:shadow-none;
 }
 
 .btn-secondary {
-  @apply btn rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50;
+  @apply btn border border-[#d9e0ec] bg-white text-slate-700 hover:border-accent-200 hover:bg-accent-50/50;
 }
 
 .status-pill {
-  @apply rounded-xl border px-3 py-1 text-xs font-medium;
+  @apply rounded-xl border px-3 py-1.5 text-xs font-semibold;
 }
 
 .scenario-card {
-  @apply w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:border-accent-200 hover:bg-accent-50 disabled:cursor-not-allowed disabled:opacity-60;
+  @apply w-full rounded-2xl border border-[#dde4f0] bg-white px-3 py-3 text-left transition;
+  @apply hover:border-accent-200 hover:bg-accent-50 disabled:cursor-not-allowed disabled:opacity-60;
 }
 
 .soft-card {
-  @apply rounded-2xl border border-slate-200 bg-slate-50 p-3;
+  @apply rounded-2xl border border-[#e6ebf3] bg-[#fafbff] p-3.5;
 }
 
 .soft-textarea {
-  @apply min-h-28 w-full rounded-2xl border border-slate-300 bg-white p-3 text-sm text-slate-900 outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-200;
+  @apply min-h-28 w-full rounded-2xl border border-[#d9e0ec] bg-white p-3.5 text-sm text-slate-900 outline-none transition;
+  @apply focus:border-accent-400 focus:ring-2 focus:ring-accent-100;
 }
 
 .tag-pill {
-  @apply rounded-full border border-slate-300 bg-white px-2.5 py-1 font-mono text-[11px] text-slate-700;
+  @apply rounded-full border border-[#d6deeb] bg-white px-2.5 py-1 font-mono text-[11px] text-slate-700;
 }
 
 .tag-pill.hit {
@@ -65,15 +76,15 @@ body {
 }
 
 .tag-check {
-  @apply inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-2.5 py-2;
+  @apply inline-flex items-center gap-2 rounded-xl border border-[#d8e0ec] bg-white px-2.5 py-2;
 }
 
 .notification-line {
-  @apply rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700;
+  @apply rounded-xl border border-[#e2e8f2] bg-[#f9fbff] px-3 py-2 text-sm text-slate-700;
 }
 
 .risk-badge {
-  @apply rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide;
+  @apply rounded-full border px-3 py-1 text-[11px] font-semibold;
 }
 
 .risk-badge.is-risk {
@@ -89,5 +100,13 @@ body {
 }
 
 .answer-block {
-  @apply overflow-x-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 font-mono text-xs whitespace-pre-wrap;
+  @apply overflow-x-auto rounded-2xl border border-[#dde4f0] bg-white p-3 font-mono text-xs whitespace-pre-wrap;
+}
+
+.scroll-area::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scroll-area::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-slate-300;
 }
