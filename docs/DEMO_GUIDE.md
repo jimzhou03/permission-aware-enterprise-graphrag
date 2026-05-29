@@ -40,6 +40,7 @@ bash scripts/demo-up.sh
 - visitor：
   - 公司公开售后政策是什么？
   - 销售部本季度客户策略是什么？（预期拒绝）
+  - 内部流程怎么走？（预期：`clarification_required`，HTTP 200，不检索、不生成）
 - tech_staff：
   - 技术部机器人故障诊断流程是什么？
   - 公司内部员工如何申请知识库权限？
@@ -57,4 +58,4 @@ bash scripts/demo-up.sh
 - 公开问题：命中 `public-policy`
 - 同部门问题：命中对应 `<department>-internal`
 - 越权问题：检索前拒绝（`denied=true`, `citations=[]`）
-- 不确定问题：返回 `clarification_required`，不检索、不生成
+- 不确定问题：返回 `clarification_required`（HTTP 200），不检索、不生成

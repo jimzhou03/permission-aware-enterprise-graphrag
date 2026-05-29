@@ -25,29 +25,7 @@
 
 然后仅在 `selected_kb_ids` 内执行 retrieval，不允许先全库召回再过滤。
 
-## 4. Architecture
-
-```mermaid
-flowchart LR
-    U["User"] --> FE["React + Vite"]
-    FE --> API["FastAPI"]
-    API --> AUTH["JWT + RBAC + ACL"]
-    API --> ROUTER["Local Router (rules / optional Ollama)"]
-    API --> RETR["PostgreSQL + pgvector retrieval"]
-    API --> CACHE["Redis permission-scoped cache"]
-    API --> GRAPH["Neo4j graph projection"]
-    API --> TRACE["Audit + Trace APIs"]
-```
-
-## 5. Permission Flow
-
-`用户请求 -> JWT -> allowed_kb_ids -> router target_kb_codes -> selected_kb_ids -> retrieval -> answer`
-
-- 权限 authority 永远在后端 RBAC/ACL。
-- router 只做分类/范围建议，不决定授权。
-- 前端 scope 只能收窄，不能扩权。
-
-## 6. Quick Start
+## 4. Quick Start
 
 ### Windows
 
@@ -84,7 +62,55 @@ python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 - 健康检查：`scripts/demo-check.ps1` / `scripts/demo-check.sh`
 - 停止：`scripts/demo-down.ps1` / `scripts/demo-down.sh`
 
-## 7. Demo Accounts
+## 5. Screenshots
+
+### 1. Login and role-based access
+
+![Login and role-based access](docs/assets/login.png)
+
+登录后会显示当前用户身份与可访问范围；真正授权由后端 RBAC/ACL 决定，前端仅展示 scope，不可扩权。
+
+### 2. Authorized answer within the user's knowledge scope
+
+![Authorized answer within user scope](docs/assets/allowed-answer.png)
+
+授权问题会在 Pre-filtering 路径下仅检索 `selected_kb_ids = allowed ∩ target`，回答只基于授权范围内来源。
+
+### 3. Pre-retrieval denial for unauthorized department knowledge
+
+![Pre-retrieval denial for unauthorized scope](docs/assets/denied-answer.png)
+
+越权问题在检索前拒绝；unauthorized chunks 不会进入 retrieval / answer / trace / cache / audit / graph projection。
+
+### 4. Developer trace and GraphRAG projection
+
+![Developer trace and GraphRAG projection](docs/assets/developer-trace.png)
+
+Developer Trace 是管理员调试与审计视图，用于复盘权限链路与函数步骤；GraphRAG 展示为轻量图投影，不默认启用真实 LLM。
+
+## 6. Architecture
+
+```mermaid
+flowchart LR
+    U["User"] --> FE["React + Vite"]
+    FE --> API["FastAPI"]
+    API --> AUTH["JWT + RBAC + ACL"]
+    API --> ROUTER["Local Router (rules / optional Ollama)"]
+    API --> RETR["PostgreSQL + pgvector retrieval"]
+    API --> CACHE["Redis permission-scoped cache"]
+    API --> GRAPH["Neo4j graph projection"]
+    API --> TRACE["Audit + Trace APIs"]
+```
+
+## 7. Permission Flow
+
+`用户请求 -> JWT -> allowed_kb_ids -> router target_kb_codes -> selected_kb_ids -> retrieval -> answer`
+
+- 权限 authority 永远在后端 RBAC/ACL。
+- router 只做分类/范围建议，不决定授权。
+- 前端 scope 只能收窄，不能扩权。
+
+## 8. Demo Accounts
 
 默认密码（除 visitor 一键登录按钮外）：`Passw0rd!123`
 
@@ -100,12 +126,13 @@ python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 | `product_staff@example.local` | `public-policy`, `company-internal`, `product-internal` |
 | `bilingual_admin@example.local` | 全部 9 个 KB |
 
-## 8. Demo Questions
+## 9. Demo Questions
 
 ### visitor
 
 - 公司公开售后政策是什么？
 - 销售部本季度客户策略是什么？（预期：检索前拒绝）
+- 内部流程怎么走？（预期：`mode=clarification_required`，HTTP 200，不检索、不生成）
 
 ### tech_staff
 
@@ -124,7 +151,7 @@ python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 - 销售部本季度客户策略是什么？
 - 技术部机器人故障诊断流程是什么？
 
-## 9. Security Guarantees
+## 10. Security Guarantees
 
 - 本项目不是先全库检索再过滤。
 - 本项目在检索前执行权限范围收窄。
@@ -133,7 +160,7 @@ python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 - 未授权 chunk 不会进入 retrieval、prompt、answer、trace、cache、audit、graph view。
 - 默认 `LLM_MODE=mock`、`EMBEDDING_MODE=mock`，CI 不依赖外部 API/模型下载。
 
-## 10. What is Implemented
+## 11. What is Implemented
 
 - JWT 登录与后端 RBAC/ACL。
 - 三层知识库结构：`public-policy` + `company-internal` + `department-internal`。
@@ -145,7 +172,7 @@ python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 - Neo4j 图投影（KB/Document/Chunk/Trace + light entity projection）。
 - 文档上传与 reindex（Markdown/TXT）。
 
-## 11. What is Demo-level / Not Implemented Yet
+## 12. What is Demo-level / Not Implemented Yet
 
 - GraphRAG 当前是权限范围内的 KB / Document / Chunk / Trace 图谱投影，不是生产级实体知识图谱。
 - 未实现生产级实体消歧。
@@ -155,7 +182,7 @@ python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 - 未实现完整生产级权限后台。
 - 默认路径不依赖真实 LLM / 真实 embedding（为本地可复现与 CI 稳定）。
 
-## 12. Tech Stack
+## 13. Tech Stack
 
 - Frontend: React + TypeScript + Vite
 - Backend: FastAPI + Pydantic + SQLAlchemy
@@ -163,7 +190,7 @@ python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 - Test: pytest + `scripts/test_permission_matrix.py`
 - Runtime: Docker Compose
 
-## 13. Testing
+## 14. Testing
 
 ```bash
 cd apps/web
@@ -180,14 +207,14 @@ cd ..
 python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 ```
 
-## 14. Roadmap
+## 15. Roadmap
 
 - v0.7.x: demo hardening（安全链路与展示收口）
 - v0.8.x: optional local embedding / optional local LLM
 - v0.9.x: light semantic GraphRAG
 - v1.0: 生产化硬化候选（权限后台、数据治理、可靠性）
 
-## 15. Troubleshooting
+## 16. Troubleshooting
 
 - Docker daemon is not running  
   `docker info`
@@ -205,13 +232,6 @@ python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
   `cd apps/web && npm install && npm run build`
 - API container unhealthy  
   `docker compose -f infra/docker-compose.yml --env-file .env logs api`
-
-## Screenshots
-
-- TODO: `docs/assets/login.png`
-- TODO: `docs/assets/allowed-answer.png`
-- TODO: `docs/assets/denied-answer.png`
-- TODO: `docs/assets/developer-trace.png`
 
 ## Docs
 
