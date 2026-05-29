@@ -372,6 +372,54 @@ def test_demo_routing_cases_for_v0721(client):
             assert payload["answer"], {"case": case, "payload": payload}
 
 
+def test_clarification_required_skips_retrieval_and_generation(client):
+    checks = [
+        ("visitor@example.local", "内部流程怎么走？"),
+        ("tech_staff@example.local", "那个流程是什么？"),
+    ]
+    for email, question in checks:
+        token = _login(client, email)
+        response = _ask(client, token, question, mode="auto")
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["denied"] is False, {"email": email, "payload": payload}
+        assert payload["mode"] == "clarification_required", {"email": email, "payload": payload}
+        assert payload["route"]["target_scope"] == "clarification_required", {"email": email, "payload": payload}
+        assert payload["route"]["target_kb_codes"] == [], {"email": email, "payload": payload}
+        assert payload["citations"] == [], {"email": email, "payload": payload}
+        assert payload["retrieved_chunks"] == [], {"email": email, "payload": payload}
+        assert payload["sources"] == [], {"email": email, "payload": payload}
+
+        trace_payload = _trace(client, token, payload["request_id"])
+        assert _trace_step_status(trace_payload, "search_allowed_chunks") == "skipped", {
+            "email": email,
+            "trace": trace_payload,
+        }
+        assert _trace_step_status(trace_payload, "generate_answer") == "skipped", {
+            "email": email,
+            "trace": trace_payload,
+        }
+
+
+def test_normal_answer_payload_exposes_only_sanitized_sources_for_chat_render(client):
+    token = _login(client, "tech_staff@example.local")
+    response = _ask(client, token, "Summarize the Robot SDK Manual deployment checklist.", mode="auto")
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["denied"] is False, payload
+    assert isinstance(payload.get("sources"), list), payload
+    assert len(payload["sources"]) > 0, payload
+    for source in payload["sources"]:
+        assert set(source.keys()) == {"kb_code", "kb_name", "document_title"}, {"source": source}
+        assert "chunk_id" not in source
+        assert "score" not in source
+        assert "excerpt" not in source
+
+    trace_payload = _trace(client, token, payload["request_id"])
+    assert _trace_step_status(trace_payload, "search_allowed_chunks") == "success", trace_payload
+    assert len(trace_payload.get("retrieved_chunks", [])) >= 0
+
+
 def test_unsupported_query_returns_unsupported_mode_without_retrieval(client):
     token = _login(client, "sales_staff@example.local")
     response = _ask(client, token, "?!", mode="auto")

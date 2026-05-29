@@ -385,6 +385,48 @@ def run(base_url: str) -> int:
         _assert_equal("visitor company internal denied", company_internal_data.get("denied"), True, {"response": company_internal_data})
         _assert_equal("visitor company internal citations empty", company_internal_data.get("citations"), [], {"response": company_internal_data})
 
+        status, clarification_data = _request_json(
+            "POST",
+            f"{api}/qa/ask",
+            token=visitor_token,
+            payload={"question": "内部流程怎么走？", "mode": "auto", "knowledge_base_codes": []},
+        )
+        _assert_equal("visitor clarification ask status", status, 200, {"response": clarification_data})
+        _assert_equal("visitor clarification denied", clarification_data.get("denied"), False, {"response": clarification_data})
+        _assert_equal(
+            "visitor clarification mode",
+            clarification_data.get("mode"),
+            "clarification_required",
+            {"response": clarification_data},
+        )
+        _assert_equal("visitor clarification citations empty", clarification_data.get("citations"), [], {"response": clarification_data})
+        _assert_equal("visitor clarification sources empty", clarification_data.get("sources"), [], {"response": clarification_data})
+
+        visitor_clarification_request_id = str(clarification_data.get("request_id", ""))
+        _assert_true(
+            "visitor clarification request_id exists",
+            len(visitor_clarification_request_id) > 0,
+            {"response": clarification_data},
+        )
+        status, clarification_trace = _request_json(
+            "GET",
+            f"{api}/qa/{visitor_clarification_request_id}/trace",
+            token=visitor_token,
+        )
+        _assert_equal("visitor clarification trace status", status, 200, {"response": clarification_trace})
+        _assert_equal(
+            "visitor clarification trace search status",
+            _function_status(clarification_trace, "search_allowed_chunks"),
+            "skipped",
+            {"response": clarification_trace},
+        )
+        _assert_equal(
+            "visitor clarification trace generate status",
+            _function_status(clarification_trace, "generate_answer"),
+            "skipped",
+            {"response": clarification_trace},
+        )
+
         for role in [
             "tech_staff",
             "sales_staff",
@@ -411,6 +453,15 @@ def run(base_url: str) -> int:
                     for item in staff_company_data.get("citations", [])
                     if isinstance(item, dict) and isinstance(item.get("kb_code"), str)
                 }.issubset({"company-internal"}),
+                {"response": staff_company_data},
+            )
+            _assert_true(
+                f"{role} company ask sources sanitized",
+                all(
+                    isinstance(item, dict)
+                    and set(item.keys()) == {"kb_code", "kb_name", "document_title"}
+                    for item in staff_company_data.get("sources", [])
+                ),
                 {"response": staff_company_data},
             )
 

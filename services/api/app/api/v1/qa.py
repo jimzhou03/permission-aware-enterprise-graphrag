@@ -58,7 +58,7 @@ def _default_router_decision(record_mode: str) -> RouteDecision:
     need_rag = record_mode in {"rag", "graphrag"}
     return RouteDecision(
         target_department=None,
-        mode=record_mode if record_mode in {"general", "unsupported", "rag", "graphrag"} else "rag",  # type: ignore[arg-type]
+        mode=record_mode if record_mode in {"general", "unsupported", "clarification_required", "rag", "graphrag"} else "rag",  # type: ignore[arg-type]
         requires_rag=need_rag,
         need_rag=need_rag,
         confidence=0.0,
@@ -116,7 +116,7 @@ def _default_function_trace(record_mode: str, denied: bool, cache_hit: bool) -> 
                 ("generate_answer", "skipped", "permission_denied", "permission_denied", None),
             ]
         )
-    elif record_mode in {"general", "unsupported"}:
+    elif record_mode in {"general", "unsupported", "clarification_required"}:
         steps.extend(
             [
                 ("check_cache", "success", "historical_reconstruction", "cache_hit=false_or_not_persisted", None),
@@ -124,15 +124,35 @@ def _default_function_trace(record_mode: str, denied: bool, cache_hit: bool) -> 
                     "search_allowed_chunks",
                     "skipped",
                     f"mode={record_mode}",
-                    "router_need_rag=false" if record_mode == "general" else "unsupported_mode_no_retrieval",
+                    (
+                        "router_need_rag=false"
+                        if record_mode == "general"
+                        else "clarification_required_no_retrieval"
+                        if record_mode == "clarification_required"
+                        else "unsupported_mode_no_retrieval"
+                    ),
                     None,
                 ),
-                ("get_graph_paths", "skipped", f"mode={record_mode}", "general_mode_no_graph_projection", None),
+                (
+                    "get_graph_paths",
+                    "skipped",
+                    f"mode={record_mode}",
+                    "clarification_required_no_graph_projection"
+                    if record_mode == "clarification_required"
+                    else "general_mode_no_graph_projection",
+                    None,
+                ),
                 (
                     "generate_answer",
-                    "success",
+                    "skipped" if record_mode == "clarification_required" else "success",
                     f"{record_mode}_fallback",
-                    "general_fallback_response" if record_mode == "general" else "unsupported_fallback_response",
+                    (
+                        "general_fallback_response"
+                        if record_mode == "general"
+                        else "clarification_required"
+                        if record_mode == "clarification_required"
+                        else "unsupported_fallback_response"
+                    ),
                     None,
                 ),
             ]

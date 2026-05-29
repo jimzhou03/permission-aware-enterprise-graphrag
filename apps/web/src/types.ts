@@ -20,6 +20,11 @@ export interface AuthMeResponse {
   permission_scope: {
     role: string;
     department: string | null;
+    allowed_kb_codes: string[];
+    allowed_knowledge_bases: Array<{
+      code: string;
+      name: string;
+    }>;
   };
 }
 
@@ -89,6 +94,12 @@ export interface Citation {
   excerpt: string;
 }
 
+export interface AnswerSource {
+  kb_code: string;
+  kb_name: string;
+  document_title: string;
+}
+
 export interface GraphPath {
   chunk_id: string;
   path: string[];
@@ -109,7 +120,11 @@ export type GraphEdgeType =
   | "MENTIONS"
   | "BELONGS_TO"
   | "RELATED_TO"
-  | "DERIVED_FROM";
+  | "DERIVED_FROM"
+  | "DOCUMENT_MENTIONS_ENTITY"
+  | "DEPARTMENT_OWNS_DOCUMENT"
+  | "ROLE_CAN_ACCESS_KB"
+  | "REQUEST_RETRIEVED_CHUNK";
 
 export interface GraphNode {
   id: string;
@@ -119,6 +134,11 @@ export interface GraphNode {
   kb_code: string | null;
   title: string | null;
   metadata_summary: string | null;
+  entity_type?: string | null;
+  canonical_name?: string | null;
+  source_document_id?: string | null;
+  confidence?: number | null;
+  evidence_text?: string | null;
 }
 
 export interface GraphEdge {
@@ -127,6 +147,7 @@ export interface GraphEdge {
   target: string;
   type: GraphEdgeType;
   label: string;
+  relation_type?: string | null;
 }
 
 export interface GraphStatus {
@@ -172,10 +193,18 @@ export interface AskResponse {
   denied: boolean;
   refusal_reason: string | null;
   cache_hit: boolean;
-  mode: "direct" | "rag" | "graphrag" | "general" | "unsupported";
+  mode: "direct" | "rag" | "graphrag" | "general" | "unsupported" | "clarification_required";
   route: {
+    target_scope:
+      | "general"
+      | "public"
+      | "company"
+      | "department"
+      | "unsupported"
+      | "uncertain"
+      | "clarification_required";
     target_department: string | null;
-    mode: "direct" | "rag" | "graphrag" | "general" | "unsupported";
+    mode: "direct" | "rag" | "graphrag" | "general" | "unsupported" | "clarification_required";
     requires_rag: boolean;
     need_rag: boolean;
     confidence: number;
@@ -203,6 +232,7 @@ export interface AskResponse {
   router_model: string;
   router_fallback_used: boolean;
   router_error: string | null;
+  sources: AnswerSource[];
   retrieved_chunks: Citation[];
   citations: Citation[];
   graph_paths: GraphPath[];

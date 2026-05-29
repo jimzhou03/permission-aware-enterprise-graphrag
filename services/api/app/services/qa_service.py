@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import User
-from app.schemas.qa import AskRequest, AskResponse, Citation, FunctionTraceStep, GraphPath, RouteDecision
+from app.schemas.qa import AnswerSource, AskRequest, AskResponse, Citation, FunctionTraceStep, GraphPath, RouteDecision
 from app.services.audit_service import create_qa_audit_log
 from app.services.cache_service import build_cache_key_parts, cache_service
 from app.services.graph_service import build_graph_paths_for_citations
@@ -118,6 +118,7 @@ def _deny_response(request_id: str, reason: str, route_mode: str, route: RouteDe
         router_model=route.router_model,
         router_fallback_used=route.router_fallback_used,
         router_error=route.router_error,
+        sources=[],
         retrieved_chunks=[],
         citations=[],
         graph_paths=[],
@@ -131,6 +132,39 @@ def _permission_denied_message(language: str) -> str:
             "Please contact an administrator to request access."
         )
     return "当前账号没有访问该部门知识库的权限。\n可联系管理员申请访问。"
+
+
+def _clarification_required_message(language: str) -> str:
+    if language == "en":
+        return (
+            "I could not determine whether you are asking for public materials, company-internal policy, "
+            "or a department knowledge base. Please clarify the scope, for example: public-policy, "
+            "company-internal, or a specific department."
+        )
+    return (
+        "无法确定你要查询公开资料、公司内部制度，还是某个部门知识库。"
+        "请补充查询范围，例如 public-policy、company-internal 或具体部门。"
+    )
+
+
+def _build_answer_sources(citations: list[Citation]) -> list[AnswerSource]:
+    sources: list[AnswerSource] = []
+    seen: set[tuple[str, str]] = set()
+    for item in citations:
+        key = (item.kb_code, item.document_title)
+        if key in seen:
+            continue
+        seen.add(key)
+        sources.append(
+            AnswerSource(
+                kb_code=item.kb_code,
+                kb_name=item.kb_name,
+                document_title=item.document_title,
+            )
+        )
+        if len(sources) >= 8:
+            break
+    return sources
 
 
 def _model_profile(retrieval_token: str) -> str:
@@ -155,6 +189,7 @@ def _cache_payload_from_response(response: AskResponse, model: str) -> dict:
         "router_model": response.router_model,
         "router_fallback_used": response.router_fallback_used,
         "router_error": response.router_error,
+        "sources": [item.model_dump(mode="json") for item in response.sources],
         "retrieved_chunks": [item.model_dump(mode="json") for item in response.retrieved_chunks],
         "citations": [item.model_dump(mode="json") for item in response.citations],
         "graph_paths": [item.model_dump(mode="json") for item in response.graph_paths],
@@ -163,11 +198,14 @@ def _cache_payload_from_response(response: AskResponse, model: str) -> dict:
 
 def _response_from_cache_payload(request_id: str, payload: dict) -> AskResponse:
     route = RouteDecision(**payload.get("route", {}))
+    sources = [AnswerSource(**item) for item in payload.get("sources", [])]
     retrieved_chunks = [Citation(**item) for item in payload.get("retrieved_chunks", [])]
     citations = [Citation(**item) for item in payload.get("citations", [])]
     graph_paths = [GraphPath(**item) for item in payload.get("graph_paths", [])]
     if not retrieved_chunks and citations:
         retrieved_chunks = citations
+    if not sources and citations:
+        sources = _build_answer_sources(citations)
     return AskResponse(
         request_id=request_id,
         answer=payload.get("answer", ""),
@@ -180,6 +218,7 @@ def _response_from_cache_payload(request_id: str, payload: dict) -> AskResponse:
         router_model=str(payload.get("router_model", route.router_model)),
         router_fallback_used=bool(payload.get("router_fallback_used", route.router_fallback_used)),
         router_error=payload.get("router_error", route.router_error),
+        sources=sources,
         retrieved_chunks=retrieved_chunks,
         citations=citations,
         graph_paths=graph_paths,
@@ -264,6 +303,18 @@ def _record_router_trace(
     )
 
 
+def _audit_mode_for_storage(response_mode: str) -> str:
+    if response_mode == "clarification_required":
+        return "clarify"
+    return response_mode
+
+
+def _audit_model_for_storage(response_mode: str, model: str) -> str:
+    if response_mode == "clarification_required":
+        return "clarify|none"
+    return model
+
+
 def _finalize_with_audit(
     *,
     db: Session,
@@ -277,6 +328,8 @@ def _finalize_with_audit(
     trace_recorder: _FunctionTraceRecorder,
 ) -> QAResult:
     latency_ms = int((time.perf_counter() - start) * 1000)
+    audit_mode = _audit_mode_for_storage(response.mode)
+    audit_model = _audit_model_for_storage(response.mode, model)
 
     save_input = f"request_id={request_id} denied={response.denied} cache_hit={response.cache_hit}"
     save_start = time.perf_counter()
@@ -292,8 +345,8 @@ def _finalize_with_audit(
             hit_kb_ids=_as_unique_strings(str(item.kb_id) for item in response.citations),
             hit_document_ids=_as_unique_strings(str(item.document_id) for item in response.citations),
             hit_chunk_ids=_as_unique_strings(str(item.chunk_id) for item in response.citations),
-            mode=response.mode,
-            model=model,
+            mode=audit_mode,
+            model=audit_model,
             latency_ms=latency_ms,
             cache_hit=response.cache_hit,
         )
@@ -452,6 +505,11 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
 
     route_target_codes = _as_unique_strings(code for code in route.target_kb_codes if code)
     requested_scope_codes = _as_unique_strings(code for code in payload.knowledge_base_codes if code)
+    if route.mode == "clarification_required" and requested_scope_codes:
+        route.mode = "rag"
+        route.need_rag = True
+        route.requires_rag = True
+        route.reason = "Router clarification bypassed because user provided explicit scope narrowing."
     if route_target_codes:
         selected_scope_codes = [code for code in route_target_codes if code in allowed_kb_codes]
         selected_scope_source = "router_target_scope"
@@ -464,6 +522,64 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
 
     selected_kbs = [allowed_kb_by_code[code] for code in selected_scope_codes if code in allowed_kb_by_code]
     selected_kb_ids = [kb.id for kb in selected_kbs]
+
+    if route.mode == "clarification_required" and not requested_scope_codes:
+        trace_recorder.set_step(
+            tool_name="check_cache",
+            status="skipped",
+            input_summary="cache_lookup_not_started",
+            output_summary="clarification_required_before_cache",
+            duration_ms=0,
+        )
+        trace_recorder.set_step(
+            tool_name="search_allowed_chunks",
+            status="skipped",
+            input_summary=f"mode={route.mode}",
+            output_summary="clarification_required_no_retrieval",
+            duration_ms=0,
+        )
+        trace_recorder.set_step(
+            tool_name="get_graph_paths",
+            status="skipped",
+            input_summary=f"mode={route.mode}",
+            output_summary="clarification_required_no_graph_projection",
+            duration_ms=0,
+        )
+        trace_recorder.set_step(
+            tool_name="generate_answer",
+            status="skipped",
+            input_summary="clarification_required",
+            output_summary="clarification_required",
+            duration_ms=0,
+        )
+        response = AskResponse(
+            request_id=request_id,
+            answer=_clarification_required_message(route.language),
+            denied=False,
+            refusal_reason=None,
+            cache_hit=False,
+            mode="clarification_required",
+            route=route,
+            router_mode=route.router_mode,
+            router_model=route.router_model,
+            router_fallback_used=route.router_fallback_used,
+            router_error=route.router_error,
+            sources=[],
+            retrieved_chunks=[],
+            citations=[],
+            graph_paths=[],
+        )
+        return _finalize_with_audit(
+            db=db,
+            start=start,
+            request_id=request_id,
+            user=user,
+            question=payload.question,
+            response=response,
+            model="clarify|none",
+            router_availability=router_availability,
+            trace_recorder=trace_recorder,
+        )
 
     if route_target_codes and not selected_kb_ids:
         trace_recorder.set_step(
@@ -640,6 +756,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
             router_model=route.router_model,
             router_fallback_used=route.router_fallback_used,
             router_error=route.router_error,
+            sources=[],
             retrieved_chunks=[],
             citations=[],
             graph_paths=[],
@@ -805,6 +922,7 @@ def ask_question(db: Session, user: User, payload: AskRequest) -> QAResult:
         router_model=route.router_model,
         router_fallback_used=route.router_fallback_used,
         router_error=route.router_error,
+        sources=_build_answer_sources(citations),
         retrieved_chunks=citations,
         citations=citations,
         graph_paths=graph_paths,

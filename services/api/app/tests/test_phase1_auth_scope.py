@@ -15,6 +15,9 @@ def test_login_and_me(client):
     assert payload["user"]["email"] == "tech_staff@example.local"
     assert payload["user"]["role"] == "tech_staff"
     assert payload["permission_scope"]["department"] == "tech"
+    assert set(payload["permission_scope"]["allowed_kb_codes"]) == {"public-policy", "company-internal", "tech-internal"}
+    allowed_kb_codes_from_objects = {item["code"] for item in payload["permission_scope"]["allowed_knowledge_bases"]}
+    assert allowed_kb_codes_from_objects == {"public-policy", "company-internal", "tech-internal"}
 
 
 def test_invalid_login_rejected(client):

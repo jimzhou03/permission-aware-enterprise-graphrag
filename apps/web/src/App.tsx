@@ -423,7 +423,13 @@ function collectLocalAuditRecords(sessions: ChatSession[], untitledFallback: str
         cacheHit: current.response.cache_hit,
         createdAt: current.createdAt,
         question,
-        hitKbCodes: [...new Set(current.response.citations.map((item) => item.kb_code))]
+        hitKbCodes: [
+          ...new Set(
+            (current.response.sources?.length ? current.response.sources : current.response.citations).map(
+              (item) => item.kb_code
+            )
+          ),
+        ]
       });
     }
   }
@@ -534,6 +540,7 @@ export default function App() {
   const [loginPassword, setLoginPassword] = useState<string>(DEMO_ACCOUNTS.tech_staff.password);
   const [token, setToken] = useState<string>("");
   const [user, setUser] = useState<UserPublic | null>(null);
+  const [allowedKbCodesFromMe, setAllowedKbCodesFromMe] = useState<string[]>([]);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [kbDocumentCountByKbId, setKbDocumentCountByKbId] = useState<Record<string, number>>({});
   const [kbDocumentsByKbId, setKbDocumentsByKbId] = useState<Record<string, KnowledgeBaseDocument[]>>({});
@@ -610,8 +617,12 @@ export default function App() {
   const canUploadDocuments = Boolean(user?.permissions?.includes("admin:kb:write"));
   const latestHitKbCodes = useMemo(() => {
     if (!activeResponse) return [];
-    return [...new Set(activeResponse.citations.map((item) => item.kb_code))];
+    return [...new Set((activeResponse.sources?.length ? activeResponse.sources : activeResponse.citations).map((item) => item.kb_code))];
   }, [activeResponse]);
+  const effectiveAllowedKbCodes = useMemo(
+    () => (allowedKbCodesFromMe.length > 0 ? allowedKbCodesFromMe : knowledgeBases.map((kb) => kb.code)),
+    [allowedKbCodesFromMe, knowledgeBases]
+  );
   const localAuditRecords = useMemo(
     () => collectLocalAuditRecords(visibleChatSessions, t.untitledSession),
     [t.untitledSession, visibleChatSessions]
@@ -656,6 +667,7 @@ export default function App() {
         if (cancelled) return;
         setToken(stored.access_token);
         setUser(me.user);
+        setAllowedKbCodesFromMe(me.permission_scope.allowed_kb_codes ?? []);
         setKnowledgeBases(kbs);
         setMessage("");
       } catch {
@@ -663,6 +675,7 @@ export default function App() {
         if (cancelled) return;
         setToken("");
         setUser(null);
+        setAllowedKbCodesFromMe([]);
         setKnowledgeBases([]);
         setMessage(UI_TEXT[getInitialLanguage()].sessionRestoreFailed);
       } finally {
@@ -691,6 +704,7 @@ export default function App() {
       setTraceRequestId("");
       setRequestTrace(null);
       setRequestGraphTrace(null);
+      setAllowedKbCodesFromMe([]);
       setRetrievalConfig(null);
       setGraphStatus(null);
       setGraphOverview(null);
@@ -946,24 +960,33 @@ export default function App() {
     setLoginPassword(DEMO_ACCOUNTS[account].password);
   }
 
-  function applyAuthenticatedSession(accessToken: string, nextUser: UserPublic, kbs: KnowledgeBase[]) {
+  function applyAuthenticatedSession(
+    accessToken: string,
+    nextUser: UserPublic,
+    kbs: KnowledgeBase[],
+    allowedKbCodes: string[]
+  ) {
     setToken(accessToken);
     setUser(nextUser);
+    setAllowedKbCodesFromMe(allowedKbCodes);
     setKnowledgeBases(kbs);
     saveAuthSession(accessToken, nextUser);
   }
 
   async function loginByCredentials(loginEmail: string, loginPassword: string) {
     const response = await login(loginEmail, loginPassword);
+    const me = await fetchAuthMe(response.access_token);
     const kbs = await listKnowledgeBases(response.access_token);
-    applyAuthenticatedSession(response.access_token, response.user, kbs);
-    return { token: response.access_token, user: response.user, kbs };
+    const allowedKbCodes = me.permission_scope.allowed_kb_codes ?? [];
+    applyAuthenticatedSession(response.access_token, me.user, kbs, allowedKbCodes);
+    return { token: response.access_token, user: me.user, kbs, allowedKbCodes };
   }
 
   function logout() {
     clearAuthSession();
     setToken("");
     setUser(null);
+    setAllowedKbCodesFromMe([]);
     setKnowledgeBases([]);
     setKbDocumentsByKbId({});
     setChunksByDocumentId({});
@@ -1011,6 +1034,7 @@ export default function App() {
       clearAuthSession();
       setToken("");
       setUser(null);
+      setAllowedKbCodesFromMe([]);
       setKnowledgeBases([]);
     } finally {
       setPending(false);
@@ -1035,6 +1059,7 @@ export default function App() {
       clearAuthSession();
       setToken("");
       setUser(null);
+      setAllowedKbCodesFromMe([]);
       setKnowledgeBases([]);
     } finally {
       setPending(false);
@@ -1582,7 +1607,7 @@ export default function App() {
     <div className="console-root min-h-screen text-slate-900">
       <div className="console-shell mx-auto w-full max-w-[1880px] p-3 md:p-4">
         <div className="console-statusbar mb-2">
-          <div className="console-statusbar-left">GRAPHRAG OS v0.7.1</div>
+          <div className="console-statusbar-left">GRAPHRAG OS v0.9.0</div>
           <div className="console-statusbar-mid" aria-hidden="true">
             /////////////////////////
           </div>
@@ -1691,6 +1716,15 @@ export default function App() {
                   <div>
                     <div className="text-xs text-slate-500">{t.currentDepartment}</div>
                     <div className="font-medium text-slate-800">{roleProfile.displayDepartment}</div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <DatabaseIcon className="mt-0.5 h-[17px] w-[17px] shrink-0 text-slate-500" />
+                  <div>
+                    <div className="text-xs text-slate-500">{t.allowedScopeHint}</div>
+                    <div className="font-mono text-xs text-slate-800">
+                      {effectiveAllowedKbCodes.join(", ") || t.noValue}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1851,14 +1885,21 @@ export default function App() {
                                   </div>
                                 ) : null}
 
-                                {chatMessage.response && chatMessage.response.citations.length > 0 ? (
+                                {chatMessage.response &&
+                                (chatMessage.response.sources?.length > 0 || chatMessage.response.citations.length > 0) ? (
                                   <div className="mt-3 border-t border-[#494238] pt-3">
                                     <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[#5b5448]">
                                       {t.citations}
                                     </p>
                                     <div className="space-y-2">
-                                      {chatMessage.response.citations.map((item) => (
-                                        <div key={item.chunk_id} className="rounded-sm border border-[#5c5448] bg-[#f2e7d7] px-3 py-2">
+                                      {(chatMessage.response.sources?.length
+                                        ? chatMessage.response.sources
+                                        : chatMessage.response.citations
+                                      ).map((item) => (
+                                        <div
+                                          key={`${item.kb_code}::${item.document_title}`}
+                                          className="rounded-sm border border-[#5c5448] bg-[#f2e7d7] px-3 py-2"
+                                        >
                                           <div className="text-[11px] text-[#302c26]">{`${item.kb_name} / ${item.document_title}`}</div>
                                         </div>
                                       ))}

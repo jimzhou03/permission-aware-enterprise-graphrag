@@ -228,6 +228,15 @@ PUBLIC_POLICY_CONTEXT_KEYWORDS = (
     "official website",
     "public",
 )
+PUBLIC_SCOPE_EXPLICIT_KEYWORDS = (
+    "公司介绍",
+    "服务范围",
+    "商务合作入口",
+    "公开服务政策",
+    "公开售后政策",
+    "公开资料",
+    "公开联系方式",
+)
 PUBLIC_SERVICE_POLICY_KEYWORDS = (
     "售后政策",
     "服务政策",
@@ -237,6 +246,30 @@ PUBLIC_SERVICE_POLICY_KEYWORDS = (
     "service policy",
     "service scope",
     "public contact",
+)
+CLARIFICATION_REQUIRED_KEYWORDS = (
+    "那个流程",
+    "这个流程",
+    "那个政策",
+    "这个政策",
+    "内部流程怎么走",
+    "that process",
+    "this process",
+    "that policy",
+    "this policy",
+    "which process",
+    "which policy",
+)
+INTERNAL_RISK_KEYWORDS = (
+    "内部",
+    "internal",
+    "权限",
+    "access",
+    "申请",
+    "流程",
+    "policy",
+    "procedure",
+    "制度",
 )
 SUPPORT_INTERNAL_STRICT_KEYWORDS = (
     "客服内部工单",
@@ -439,9 +472,16 @@ def _is_company_internal_question(question: str) -> bool:
 def _is_explicit_public_policy_question(question: str) -> bool:
     lowered = _normalize_for_greeting(question)
     has_public_context = _contains_any(lowered, PUBLIC_POLICY_CONTEXT_KEYWORDS)
-    has_public_policy_topic = _contains_any(lowered, PUBLIC_SERVICE_POLICY_KEYWORDS)
+    has_public_policy_topic = _contains_any(lowered, PUBLIC_SERVICE_POLICY_KEYWORDS) or _contains_any(
+        lowered, PUBLIC_SCOPE_EXPLICIT_KEYWORDS
+    )
+    has_public_generic_policy_topic = _contains_any(lowered, POLICY_KEYWORDS)
     has_internal_support_marker = _contains_any(lowered, SUPPORT_INTERNAL_STRICT_KEYWORDS)
-    return has_public_policy_topic and has_public_context and not has_internal_support_marker
+    return (
+        has_public_context
+        and (has_public_policy_topic or has_public_generic_policy_topic)
+        and not has_internal_support_marker
+    )
 
 
 def _is_public_question(question: str) -> bool:
@@ -453,6 +493,28 @@ def _is_public_question(question: str) -> bool:
         or _contains_any(lowered, BUSINESS_COOPERATION_KEYWORDS)
         or _contains_any(lowered, PUBLIC_POLICY_KEYWORDS)
     )
+
+
+def _is_clarification_required_question(question: str, target_department: str | None) -> bool:
+    normalized = _normalize_for_greeting(question)
+    if target_department in DEPARTMENT_TO_KB_CODE:
+        return False
+    if _is_public_question(question):
+        return False
+    if _is_company_internal_question(question):
+        return False
+    if _contains_any(normalized, CLARIFICATION_REQUIRED_KEYWORDS):
+        return True
+    if any(token in normalized for token in ("那个", "这个", "that", "this")) and _contains_any(normalized, POLICY_KEYWORDS):
+        return True
+    if _contains_any(normalized, ("流程", "政策", "制度", "process", "policy", "procedure")) and len(normalized) <= 14:
+        return True
+    if _contains_any(normalized, INTERNAL_RISK_KEYWORDS) and not _contains_any(
+        normalized, PUBLIC_POLICY_CONTEXT_KEYWORDS
+    ):
+        if not any(token in normalized for token in ("公司", "company")):
+            return True
+    return False
 
 
 def detect_intent(question: str) -> RouterIntent:
@@ -564,6 +626,8 @@ def _build_target_selection(
         kb_code = DEPARTMENT_TO_KB_CODE[target_department]
         return "department", target_department, [kb_code], True
 
+    clarification_required = _is_clarification_required_question(question, target_department)
+
     if classification.intent == "security_test":
         if raw_target_department and raw_target_department not in {"unknown", "public", "company"}:
             return "department", None, [f"{raw_target_department}-internal"], True
@@ -574,14 +638,22 @@ def _build_target_selection(
     if classification.intent == "policy_question":
         if raw_target_department and raw_target_department not in {"unknown", "public", "company"}:
             return "department", None, [f"{raw_target_department}-internal"], True
+        if _is_explicit_public_policy_question(question):
+            return "public", None, [PUBLIC_KB_CODE], False
+        if clarification_required:
+            return "clarification_required", None, [], False
         if _contains_any(normalized, POLICY_KEYWORDS):
             return "company", None, [COMPANY_KB_CODE], True
 
     if classification.requires_internal_access:
         if raw_target_department and raw_target_department not in {"unknown", "public", "company"}:
             return "department", None, [f"{raw_target_department}-internal"], True
+        if clarification_required:
+            return "clarification_required", None, [], False
         return "company", None, [COMPANY_KB_CODE], True
 
+    if clarification_required:
+        return "clarification_required", None, [], False
     return "public", None, [PUBLIC_KB_CODE], False
 
 
@@ -619,6 +691,11 @@ def _build_route_decision(
         target_department=target_department,
         route_mode=route_mode,
     )
+    reason = classification.reason[:240]
+    if target_scope == "clarification_required":
+        route_mode = "clarification_required"
+        need_rag = False
+        reason = "Router could not confidently map the query to public, company, or department scope."
     return RouteDecision(
         target_scope=target_scope,  # type: ignore[arg-type]
         target_department=scoped_department,
@@ -627,7 +704,7 @@ def _build_route_decision(
         requires_rag=need_rag,
         need_rag=need_rag,
         confidence=classification.confidence,
-        reason=classification.reason[:240],
+        reason=reason,
         language=classification.query_language,
         query_language=classification.query_language,
         requires_internal_access=requires_internal_access,

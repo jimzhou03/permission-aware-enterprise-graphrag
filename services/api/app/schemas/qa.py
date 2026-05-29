@@ -5,11 +5,19 @@ from pydantic import BaseModel, Field
 
 
 AskMode = Literal["auto", "rag", "graphrag"]
-ResponseMode = Literal["direct", "rag", "graphrag", "general", "unsupported"]
+ResponseMode = Literal["direct", "rag", "graphrag", "general", "unsupported", "clarification_required"]
 RouterMode = Literal["rules", "ollama"]
 FunctionTraceStatus = Literal["success", "skipped", "denied", "error"]
 RouterLanguage = Literal["zh", "en", "unknown"]
-RouterTargetScope = Literal["general", "public", "company", "department", "unsupported"]
+RouterTargetScope = Literal[
+    "general",
+    "public",
+    "company",
+    "department",
+    "unsupported",
+    "uncertain",
+    "clarification_required",
+]
 RouterIntent = Literal[
     "greeting",
     "assistant_identity",
@@ -74,6 +82,12 @@ class Citation(BaseModel):
     excerpt: str
 
 
+class AnswerSource(BaseModel):
+    kb_code: str
+    kb_name: str
+    document_title: str
+
+
 class GraphPath(BaseModel):
     chunk_id: UUID
     path: list[str]
@@ -103,6 +117,7 @@ class AskResponse(BaseModel):
     router_model: str = "rules"
     router_fallback_used: bool = False
     router_error: str | None = None
+    sources: list[AnswerSource] = Field(default_factory=list)
     retrieved_chunks: list[Citation] = Field(default_factory=list)
     citations: list[Citation] = Field(default_factory=list)
     graph_paths: list[GraphPath] = Field(default_factory=list)
