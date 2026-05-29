@@ -4,15 +4,15 @@ services:
     container_name: paegr-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: graphrag
-      POSTGRES_USER: graphrag
-      POSTGRES_PASSWORD: graphrag
+      POSTGRES_DB: ${POSTGRES_DB:-graphrag}
+      POSTGRES_USER: ${POSTGRES_USER:-graphrag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-graphrag}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U graphrag -d graphrag"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-graphrag} -d ${POSTGRES_DB:-graphrag}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -22,7 +22,7 @@ services:
     container_name: paegr-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -48,10 +48,10 @@ services:
     container_name: paegr-neo4j
     restart: unless-stopped
     environment:
-      NEO4J_AUTH: neo4j/password12345
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-password123}
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "${NEO4J_HTTP_PORT:-7474}:7474"
+      - "${NEO4J_BOLT_PORT:-7687}:7687"
     volumes:
       - neo4j_data:/data
     healthcheck:
@@ -77,17 +77,30 @@ services:
     container_name: paegr-api
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+psycopg://graphrag:graphrag@postgres:5432/graphrag
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-graphrag}:${POSTGRES_PASSWORD:-graphrag}@postgres:5432/${POSTGRES_DB:-graphrag}
       REDIS_URL: redis://redis:6379/0
       NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: password12345
-      JWT_SECRET_KEY: change-me-in-docker-compose
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-password123}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-docker-compose}
+      EMBEDDING_MODE: ${EMBEDDING_MODE:-mock}
+      LLM_MODE: ${LLM_MODE:-mock}
+      LOCAL_ROUTER_MODE: ${LOCAL_ROUTER_MODE:-rules}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_ROUTER_MODEL: ${OLLAMA_ROUTER_MODEL:-qwen2.5:0.5b-instruct}
+      OLLAMA_ROUTER_TIMEOUT_SECONDS: ${OLLAMA_ROUTER_TIMEOUT_SECONDS:-8}
+      LLM_OLLAMA_BASE_URL: ${LLM_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      LLM_OLLAMA_MODEL: ${LLM_OLLAMA_MODEL:-qwen2.5:7b-instruct}
+      LLM_OLLAMA_TIMEOUT_SECONDS: ${LLM_OLLAMA_TIMEOUT_SECONDS:-30}
+      LOCAL_EMBEDDING_BACKEND: ${LOCAL_EMBEDDING_BACKEND:-sentence-transformers}
+      LOCAL_EMBEDDING_MODEL: ${LOCAL_EMBEDDING_MODEL:-BAAI/bge-small-zh-v1.5}
+      LOCAL_EMBEDDING_BASE_URL: ${LOCAL_EMBEDDING_BASE_URL:-http://host.docker.internal:11434}
+      LOCAL_EMBEDDING_TIMEOUT_SECONDS: ${LOCAL_EMBEDDING_TIMEOUT_SECONDS:-8}
       SEED_ON_STARTUP: "true"
       SYNC_NEO4J_ON_STARTUP: "true"
       UVICORN_RELOAD: "false"
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -101,11 +114,11 @@ services:
       context: ..
       dockerfile: apps/web/Dockerfile
       args:
-        VITE_API_BASE: http://127.0.0.1:8000/api/v1
+        VITE_API_BASE: http://127.0.0.1:${API_PORT:-8000}/api/v1
     container_name: paegr-web
     restart: unless-stopped
     ports:
-      - "5173:80"
+      - "${WEB_PORT:-5173}:80"
     depends_on:
       api:
         condition: service_started
