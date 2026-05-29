@@ -1,219 +1,169 @@
-# Permission-Aware Enterprise GraphRAG Assistant
+# Permission-Aware Enterprise GraphRAG
 
 [![CI](https://github.com/jimzhou03/permission-aware-enterprise-graphrag/actions/workflows/ci.yml/badge.svg)](https://github.com/jimzhou03/permission-aware-enterprise-graphrag/actions/workflows/ci.yml)
 
-Permission-Aware Enterprise GraphRAG Assistant is a local runnable enterprise knowledge assistant demo that combines JWT/RBAC, permission-scoped RAG retrieval, PostgreSQL + pgvector, Redis caching, Neo4j GraphRAG visualization, document upload/re-indexing, optional Ollama local routing, and auditable retrieval traces.
+## 1. Project Overview
 
-Current demo scenario (v0.7.2) uses a fictional company: **星海智造机器人有限公司 (StarSea Robotics Co., Ltd.)**.  
-The company provides service robots, inspection robots, receptionist robots, and delivery robots for enterprises, schools, campuses, exhibition halls, and mixed-use business spaces.
+这是一个本地可复现的企业权限感知 GraphRAG 演示项目，核心目标是展示：
 
-## Why This Project
+- 后端 RBAC/ACL 驱动的检索前权限收窄（Pre-filtering）。
+- 可审计的 QA / Trace / Graph 可观测链路。
+- 默认 `LLM_MODE=mock`、`EMBEDDING_MODE=mock` 的稳定离线演示路径。
+- 可选本地增强（Ollama / local embedding），但非默认依赖。
 
-Enterprise knowledge systems are permission-sensitive by default:
+## 2. Why ordinary RAG is risky in enterprise permission scenarios
 
-- Internal knowledge bases usually contain role-restricted and department-restricted content.
-- Naive RAG pipelines may retrieve unauthorized chunks before applying access control.
-- Organizations need auditable retrieval behavior, role-based access, and safe model routing.
-- LLMs should not decide permissions.
-- Retrieval scope must be constrained before vector search.
+普通 RAG 常见风险是：先全库检索，再在应用层过滤结果。这样会让未授权 chunk 在中间链路暴露风险变高（检索候选、prompt、trace、cache、审计等环节）。
 
-This project focuses on deterministic backend authorization, then retrieval, then generation.
+本项目不采用该路径。
 
-## Core Capabilities
+## 3. Core Idea: Pre-filtering Permission-Aware RAG
 
-- JWT authentication.
-- RBAC and knowledge base ACL.
-- Multi-department knowledge isolation with visitor/staff/admin scope boundaries.
-- v0.7.2 three-layer knowledge base structure: `public-policy` + `company-internal` + `department-internal`.
-- v0.7.2 router target scope narrowing before retrieval (`target_kb_codes` intersection with backend allowed scope).
-- Permission-scoped pgvector SQL retrieval.
-- Redis permission-aware cache and KB-version invalidation.
-- Markdown/TXT document upload and re-indexing.
-- Knowledge Base / Document / Chunk Viewer.
-- Optional Ollama local router for lightweight intent classification (never permission authority).
-- Backend-controlled function calling trace.
-- Neo4j GraphRAG visualization.
-- Audit logs and retrieval trace.
-- Automated pytest and permission matrix validation script.
+本项目采用后端强制的权限前置收敛：
 
-## Architecture
+`selected_kb_ids = allowed_kb_ids ∩ target_kb_ids`
+
+然后仅在 `selected_kb_ids` 内执行 retrieval，不允许先全库召回再过滤。
+
+## 4. Architecture
 
 ```mermaid
 flowchart LR
-    U[User] --> FE[React + TypeScript + Vite Frontend]
-    FE --> API[FastAPI API]
-
-    API --> AUTH[JWT / RBAC / ACL]
-    API --> ROUTER[Ollama Local Router\nclassification metadata only]
-    API --> CACHE[Redis Permission-Aware Cache]
-    API --> RETRIEVAL[PostgreSQL + pgvector Retrieval]
-    RETRIEVAL --> GRAPH[Neo4j GraphRAG]
-
-    API --> GEN[Mock Generator default\nFuture LLM Generator optional]
-
-    API --> TRACE[Audit Log / Retrieval Trace / Developer Trace]
-
-    AUTH --> API
-    ROUTER --> API
-    CACHE --> API
-    RETRIEVAL --> API
-    GRAPH --> API
-    GEN --> API
+    U["User"] --> FE["React + Vite"]
+    FE --> API["FastAPI"]
+    API --> AUTH["JWT + RBAC + ACL"]
+    API --> ROUTER["Local Router (rules / optional Ollama)"]
+    API --> RETR["PostgreSQL + pgvector retrieval"]
+    API --> CACHE["Redis permission-scoped cache"]
+    API --> GRAPH["Neo4j graph projection"]
+    API --> TRACE["Audit + Trace APIs"]
 ```
 
-## Security Model
+## 5. Permission Flow
 
-- Permissions are computed by deterministic backend code.
-- `allowed_kb_ids` are resolved and enforced before retrieval.
-- Router output can narrow retrieval to `target_kb_codes`, but permission authority remains backend RBAC/ACL.
-- Frontend selection can only narrow scope; it cannot expand permissions.
-- Ollama (when enabled) is only optional intent-routing assistance and safe fallback metadata.
-- The final generator does not decide access control.
-- Unauthorized chunks are excluded from answer payloads, trace payloads, cache usage paths, graph views, and audit payload outputs.
-- Graph visualization endpoints are also permission-scoped.
+`用户请求 -> JWT -> allowed_kb_ids -> router target_kb_codes -> selected_kb_ids -> retrieval -> answer`
 
-## RAG Pipeline
+- 权限 authority 永远在后端 RBAC/ACL。
+- router 只做分类/范围建议，不决定授权。
+- 前端 scope 只能收窄，不能扩权。
 
-1. Document upload.
-2. Parse Markdown/TXT.
-3. Chunking.
-4. Embedding.
-5. Store in PostgreSQL/pgvector-compatible schema.
-6. Permission-scoped retrieval.
-7. Answer generation.
-8. Audit and trace persistence.
+## 6. Quick Start
 
-## Knowledge Base Layers
+### Windows
 
-- `public-policy`: public/company introduction, open product line, external cooperation entry, visit guide, public contact.
-- `company-internal`: internal organization/process handbook for formal employees only (visitor denied).
-- `department-internal`: department-owned internal docs (`tech/sales/marketing/support/hr/admin/product`), each role sees only its own department plus allowed shared layers.
+```powershell
+git clone <repo>
+cd permission-aware-enterprise-graphrag
+copy .env.example .env
+.\scripts\demo-up.ps1
+```
 
-## GraphRAG Pipeline
-
-1. PostgreSQL knowledge base / document / chunk data.
-2. Neo4j graph sync.
-3. Permission-scoped graph overview.
-4. GraphRAG path viewer.
-5. Developer Trace graph path inspection.
-
-## Tech Stack
-
-| Layer | Stack |
-| --- | --- |
-| Frontend | React + TypeScript + Vite + Tailwind |
-| Backend | FastAPI + Pydantic + SQLAlchemy |
-| Database | PostgreSQL + pgvector |
-| Cache | Redis |
-| Graph | Neo4j |
-| Local model | Ollama `qwen2.5:0.5b-instruct` (router/classifier only) |
-| Testing | `pytest` + permission matrix script |
-| Deployment | Docker Compose |
-
-## Quick Start
+### macOS / Linux
 
 ```bash
-cd infra
-docker compose build
-docker compose up -d
-curl http://localhost:8000/healthz
+git clone <repo>
+cd permission-aware-enterprise-graphrag
+cp .env.example .env
+bash scripts/demo-up.sh
 ```
 
-- Frontend: `http://localhost:5173`
-- Swagger: `http://localhost:8000/docs`
-- Neo4j Browser (local dev only): `http://127.0.0.1:7474`
-- Adminer / PostgreSQL UI (local dev only): `http://127.0.0.1:8081`
-- Redis Commander / Redis UI (local dev only): `http://127.0.0.1:8082`
+访问地址：
 
-## Local Observability Dev Tools (Local Development Only)
+- Web: `http://localhost:5173`
+- API Docs: `http://localhost:8000/docs`
 
-The following tools are for **local development observability only**.  
-They are not production admin backends.
+验证：
 
-### Adminer (PostgreSQL UI)
-
-- URL: `http://127.0.0.1:8081`
-- System: `PostgreSQL`
-- Server: `postgres`
-- Username/Password/Database: read from `infra/.env` overrides (if set) or `infra/docker-compose.yml` defaults (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`)
-
-### Redis Commander (Redis UI)
-
-- URL: `http://127.0.0.1:8082`
-- Redis host: `redis`
-- Redis port: `6379`
-- Primary usage in this project: permission-aware cache inspection, KB version invalidation effect observation, temporary cache visibility
-
-### Neo4j Browser
-
-- URL: `http://127.0.0.1:7474`
-- Bolt: `bolt://127.0.0.1:7687`
-- Username/password: read from `infra/.env` overrides (if set) or `infra/docker-compose.yml` (`NEO4J_AUTH`, default `neo4j/password12345`)
-
-Common Cypher examples:
-
-```cypher
-MATCH (n) RETURN n LIMIT 100;
+```bash
+python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 ```
 
-```cypher
-MATCH ()-[r]->() RETURN r LIMIT 100;
-```
+常用脚本：
 
-```cypher
-MATCH (kb:KnowledgeBase) RETURN kb LIMIT 50;
-MATCH (doc:Document) RETURN doc LIMIT 50;
-MATCH (c:Chunk) RETURN c LIMIT 50;
-MATCH (e:Entity) RETURN e LIMIT 50;
-```
+- 启动：`scripts/demo-up.ps1` / `scripts/demo-up.sh`
+- 健康检查：`scripts/demo-check.ps1` / `scripts/demo-check.sh`
+- 停止：`scripts/demo-down.ps1` / `scripts/demo-down.sh`
 
-```cypher
-MATCH (c:Chunk {id: "<chunk_id>"})-[:MENTIONS]->(e:Entity)
-OPTIONAL MATCH (e)-[:RELATED_TO]-(related:Entity)
-RETURN c.id AS chunk_id, e.name AS entity, collect(DISTINCT related.name)[0..10] AS related_entities;
-```
+## 7. Demo Accounts
 
-Request-level graph note:
+默认密码（除 visitor 一键登录按钮外）：`Passw0rd!123`
 
-- Current Neo4j model does not persist `request_id` as a node.
-- For request-level GraphRAG analysis: use `qa_audit_logs.hit_chunk_ids` (PostgreSQL) or `GET /api/v1/qa/{request_id}/trace`, then query those chunk IDs in Neo4j.
+| Account | Scope |
+| --- | --- |
+| `visitor@example.local` | `public-policy` |
+| `tech_staff@example.local` | `public-policy`, `company-internal`, `tech-internal` |
+| `sales_staff@example.local` | `public-policy`, `company-internal`, `sales-internal` |
+| `marketing_staff@example.local` | `public-policy`, `company-internal`, `marketing-internal` |
+| `support_staff@example.local` | `public-policy`, `company-internal`, `support-internal` |
+| `hr_staff@example.local` | `public-policy`, `company-internal`, `hr-internal` |
+| `admin_staff@example.local` | `public-policy`, `company-internal`, `admin-internal` |
+| `product_staff@example.local` | `public-policy`, `company-internal`, `product-internal` |
+| `bilingual_admin@example.local` | 全部 9 个 KB |
 
-Detailed SQL / Redis CLI / Cypher cookbook: [docs/dev-observability.md](docs/dev-observability.md)
+## 8. Demo Questions
 
-## Preconfigured Local Accounts
+### visitor
 
-These are preconfigured **local demo accounts** for role-based walkthroughs.  
-They are not production authentication credentials.
+- 公司公开售后政策是什么？
+- 销售部本季度客户策略是什么？（预期：检索前拒绝）
 
-| Role | Email | Demo Password (Local) | Access Scope |
-| --- | --- | --- | --- |
-| `visitor` | `visitor@example.local` | one-click guest entry | `public-policy` only |
-| `tech_staff` | `tech_staff@example.local` | `Passw0rd!123` | `public-policy`, `company-internal`, `tech-internal` |
-| `sales_staff` | `sales_staff@example.local` | `Passw0rd!123` | `public-policy`, `company-internal`, `sales-internal` |
-| `marketing_staff` | `marketing_staff@example.local` | `Passw0rd!123` | `public-policy`, `company-internal`, `marketing-internal` |
-| `support_staff` | `support_staff@example.local` | `Passw0rd!123` | `public-policy`, `company-internal`, `support-internal` |
-| `hr_staff` | `hr_staff@example.local` | `Passw0rd!123` | `public-policy`, `company-internal`, `hr-internal` |
-| `admin_staff` | `admin_staff@example.local` | `Passw0rd!123` | `public-policy`, `company-internal`, `admin-internal` |
-| `product_staff` | `product_staff@example.local` | `Passw0rd!123` | `public-policy`, `company-internal`, `product-internal` |
-| `bilingual_admin` | `bilingual_admin@example.local` | `Passw0rd!123` | all demo knowledge bases + admin views |
+### tech_staff
 
-## Demo Walkthrough
+- 技术部机器人故障诊断流程是什么？
+- 公司内部员工如何申请知识库权限？
+- 销售部本季度客户策略是什么？（预期：检索前拒绝）
 
-1. Start services:
-   - `cd infra`
-   - `docker compose up -d --build`
-2. Login as `bilingual_admin@example.local`.
-3. Open `Knowledge Bases` and inspect Knowledge Base / Document / Chunk viewers.
-4. Send one department question in `Knowledge Chat`.
-5. Open `Developer Trace` and inspect retrieval/function trace steps.
-6. Open `GraphRAG` page and inspect graph overview/path view.
-7. Open `Audit Logs` and locate the latest `request_id`.
-8. Switch `visitor` / `tech_staff` / `sales_staff` / `marketing_staff` / `support_staff` / `hr_staff` / `admin_staff` / `product_staff` to validate isolation behavior.
-9. Open Adminer (`http://127.0.0.1:8081`) to inspect PostgreSQL tables and rows.
-10. Open Neo4j Browser (`http://127.0.0.1:7474`) to inspect graph nodes/relationships.
-11. Open Redis Commander (`http://127.0.0.1:8082`) to inspect permission-aware cache keys and TTL.
+### product_staff
 
-## Automated Tests
+- 产品生产流程是什么？
+- 产品部门内部知识库写的什么？
+
+### bilingual_admin
+
+- HR 招人流程是什么？
+- 销售部本季度客户策略是什么？
+- 技术部机器人故障诊断流程是什么？
+
+## 9. Security Guarantees
+
+- 本项目不是先全库检索再过滤。
+- 本项目在检索前执行权限范围收窄。
+- `target_kb_codes` 为空且路由不确定时，返回澄清，不执行检索和生成。
+- `target_kb_codes` 明确但与 `allowed_kb_ids` 无交集时，检索前拒绝。
+- 未授权 chunk 不会进入 retrieval、prompt、answer、trace、cache、audit、graph view。
+- 默认 `LLM_MODE=mock`、`EMBEDDING_MODE=mock`，CI 不依赖外部 API/模型下载。
+
+## 10. What is Implemented
+
+- JWT 登录与后端 RBAC/ACL。
+- 三层知识库结构：`public-policy` + `company-internal` + `department-internal`。
+- 路由目标范围收窄 + 后端交集计算。
+- 访问越权时 pre-retrieval deny。
+- pgvector 接入与 SQL 层权限过滤路径。
+- Redis 权限感知缓存。
+- QA 审计、Developer Trace、Graph Trace。
+- Neo4j 图投影（KB/Document/Chunk/Trace + light entity projection）。
+- 文档上传与 reindex（Markdown/TXT）。
+
+## 11. What is Demo-level / Not Implemented Yet
+
+- GraphRAG 当前是权限范围内的 KB / Document / Chunk / Trace 图谱投影，不是生产级实体知识图谱。
+- 未实现生产级实体消歧。
+- 未实现社区聚类（Louvain/Leiden）。
+- 未实现生产级自动关系抽取流水线。
+- 未实现秒级权限变更控制平面。
+- 未实现完整生产级权限后台。
+- 默认路径不依赖真实 LLM / 真实 embedding（为本地可复现与 CI 稳定）。
+
+## 12. Tech Stack
+
+- Frontend: React + TypeScript + Vite
+- Backend: FastAPI + Pydantic + SQLAlchemy
+- Storage: PostgreSQL + pgvector, Redis, Neo4j
+- Test: pytest + `scripts/test_permission_matrix.py`
+- Runtime: Docker Compose
+
+## 13. Testing
 
 ```bash
 cd apps/web
@@ -221,7 +171,7 @@ npm run build
 ```
 
 ```bash
-cd infra
+cd ../../infra
 docker compose exec -T api python -m pytest -q
 ```
 
@@ -230,97 +180,46 @@ cd ..
 python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 ```
 
-The permission matrix script validates cross-role access boundaries, knowledge-base isolation, and overreach denial.
+## 14. Roadmap
 
-## Automated Quality Gates
+- v0.7.x: demo hardening（安全链路与展示收口）
+- v0.8.x: optional local embedding / optional local LLM
+- v0.9.x: light semantic GraphRAG
+- v1.0: 生产化硬化候选（权限后台、数据治理、可靠性）
 
-GitHub Actions workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) enforces automated quality gates for every `push` and `pull_request` to `main`:
+## 15. Troubleshooting
 
-- Frontend build (`apps/web`, `npm run build`).
-- Backend pytest (`docker compose exec -T api python -m pytest -q`).
-- Permission-aware access matrix (`python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000`).
-
-These checks keep the current project posture unchanged: `LLM_MODE=mock` default, no external LLM API as default generator path, and no MCP dependency in CI.
-
-## Real Embedding + Real LLM Generator (Optional Local Runtime)
-
-Default runtime remains mock-first for stability:
-
-- `EMBEDDING_MODE=mock`
-- `LLM_MODE=mock`
-
-This keeps CI and automated tests independent from external model services.
-
-To enable real local embedding + generation in local development:
-
-1. Edit root `.env` (do not commit secrets).
-2. Set embedding mode:
-   - `EMBEDDING_MODE=local`
-   - `LOCAL_EMBEDDING_BACKEND=ollama` (recommended lightweight path) or `sentence-transformers`
-   - `LOCAL_EMBEDDING_MODEL=nomic-embed-text` (ollama example)
-3. Set generator mode:
-   - `LLM_MODE=ollama` for local Ollama generation, or
-   - `LLM_MODE=openai-compatible` for OpenAI-compatible API endpoint.
-4. Keep router scope unchanged:
-   - `LOCAL_ROUTER_MODE=rules|ollama` is optional intent-routing assistance only and does not decide permissions.
-5. Rebuild API container and re-index data for embedding consistency when switching embedding mode/model.
-
-Example local Ollama setup:
-
-```bash
-ollama pull nomic-embed-text
-ollama pull qwen2.5:7b-instruct
-```
-
-```bash
-# .env example
-EMBEDDING_MODE=local
-LOCAL_EMBEDDING_BACKEND=ollama
-LOCAL_EMBEDDING_MODEL=nomic-embed-text
-LOCAL_EMBEDDING_BASE_URL=http://host.docker.internal:11434
-
-LLM_MODE=ollama
-LLM_OLLAMA_BASE_URL=http://host.docker.internal:11434
-LLM_OLLAMA_MODEL=qwen2.5:7b-instruct
-```
-
-Security and scope guarantees remain unchanged in real generator mode:
-
-- Backend deterministic RBAC resolves `allowed_kb_ids` first.
-- Retrieval runs only in authorized KB scope.
-- Generator receives only authorized retrieved chunks/citations.
-- Unauthorized chunks are excluded from prompt/answer/trace/cache/audit/graph outputs.
-
-## Current Scope
-
-- Final answer generator defaults to `LLM_MODE=mock`.
-- Ollama local router is optional and classification-only.
-- Markdown/TXT upload is supported.
-- PDF/DOCX ingestion is planned.
-- MCP integration is planned.
-- Production hardening is planned.
-- Alembic migrations are planned.
-- This repository is a local runnable engineering showcase for a fictional company demo, not production-ready and not a hosted SaaS product.
-
-## Roadmap
-
-- Extend CI with additional static/security checks.
-- Real embedding model integration.
-- Real LLM generator integration.
-- PDF/DOCX ingestion.
-- User/role/permission admin panel.
-- Production hardening.
-- MCP adapter.
+- Docker daemon is not running  
+  `docker info`
+- Port 8000 already in use  
+  `docker compose -f infra/docker-compose.yml --env-file .env down`
+- Port 5173 already in use  
+  `docker compose -f infra/docker-compose.yml --env-file .env down`
+- Postgres volume dirty  
+  `docker compose -f infra/docker-compose.yml --env-file .env down -v`
+- Neo4j container failed  
+  `docker compose -f infra/docker-compose.yml --env-file .env logs neo4j`
+- permission matrix connection refused  
+  `docker compose -f infra/docker-compose.yml --env-file .env ps`
+- npm run build failed  
+  `cd apps/web && npm install && npm run build`
+- API container unhealthy  
+  `docker compose -f infra/docker-compose.yml --env-file .env logs api`
 
 ## Screenshots
 
-- TODO: Login and role selection.
-- TODO: Knowledge Chat.
-- TODO: Knowledge Base / Chunk Viewer.
-- TODO: Upload and re-indexing.
-- TODO: Developer Trace.
-- TODO: GraphRAG visualization.
+- TODO: `docs/assets/login.png`
+- TODO: `docs/assets/allowed-answer.png`
+- TODO: `docs/assets/denied-answer.png`
+- TODO: `docs/assets/developer-trace.png`
 
-## Project Status
+## Docs
 
-For implementation and release status, see [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
+- [Demo Guide](docs/DEMO_GUIDE.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Security Model](docs/SECURITY_MODEL.md)
+- [Interview Q&A](docs/INTERVIEW_QA.md)
+- [Roadmap](docs/ROADMAP.md)
+- [Local Embedding](docs/LOCAL_EMBEDDING.md)
+- [Local LLM](docs/LOCAL_LLM.md)
+- [GraphRAG Scope](docs/GRAPHRAG_SCOPE.md)

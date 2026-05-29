@@ -1,65 +1,39 @@
 # Architecture
 
-## 1. 总体架构
+## System Modules
 
-```mermaid
-flowchart LR
-    Web["React + Vite + TypeScript"] --> API["FastAPI API"]
-    API --> Auth["Auth/JWT Dependency"]
-    Auth --> Perm["PermissionService"]
-    Perm --> PG["PostgreSQL + pgvector"]
-    Perm --> Redis["Redis Permission-Aware Cache"]
-    PG --> Retriever["RAG Retriever"]
-    Retriever --> Neo4j["Neo4j GraphRAG"]
-    Neo4j --> Router["LocalModelRouter"]
-    Retriever --> Router
-    Router --> LLM["OpenAI-compatible LLM API"]
-    LLM --> Audit["AuditLog"]
-    API --> Audit
-```
+- `apps/web`: React 前端（登录、知识问答、审计、系统状态、Developer Trace、GraphRAG 页面）
+- `services/api`: FastAPI 后端（鉴权、权限、QA、审计、图谱、上传）
+- `infra/docker-compose.yml`: PostgreSQL/Redis/Neo4j/API/Web 一键运行
+- `sample_data`: 演示文档
+- `scripts`: 启停、健康检查、权限矩阵脚本
 
-## 2. 请求链路
+## Runtime Components
 
-1. React前端携带JWT调用后端API。
-2. FastAPI通过Auth依赖解析JWT。
-3. PermissionService读取用户、角色、部门、知识库ACL。
-4. 后端计算 `allowed_kb_ids` 和 `permission_scope_hash`。
-5. Redis先使用权限感知key查询缓存。
-6. 缓存未命中时，Retriever只在授权知识库内检索。
-7. GraphRAG只基于授权chunk和授权document扩展图谱。
-8. PromptBuilder只拼接授权上下文。
-9. LLM API生成最终回答。
-10. AuditLog记录请求、命中、拒绝和缓存信息。
+- 前端：React + TypeScript + Vite
+- 后端：FastAPI + SQLAlchemy + Pydantic
+- 检索存储：PostgreSQL + pgvector
+- 缓存：Redis
+- 图投影：Neo4j（不可用时回退本地轻实体投影）
 
-## 3. 模块职责
+## QA Request Flow
 
-| 模块 | 职责 |
-| --- | --- |
-| React Web | 登录、知识库列表、问答、审计日志、越权演示 |
-| FastAPI | API入口、鉴权依赖、请求校验、服务编排 |
-| PermissionService | 唯一权限判断来源 |
-| RAG Retriever | 基于pgvector执行权限范围内向量召回 |
-| GraphRAG Service | 在Neo4j中扩展授权文档关联实体和路径 |
-| CacheService | 构造权限感知缓存key，读写Redis |
-| LocalModelRouter | 判断意图、部门路由、是否需要RAG/GraphRAG |
-| LLMClient | 调用OpenAI-compatible高参数模型生成答案 |
-| AuditService | 写入所有问答和拒绝事件 |
+1. `/api/v1/auth/login` 获取 JWT
+2. `/api/v1/qa/ask` 发起问题
+3. router 产出 `target_kb_codes`（仅分类，不授权）
+4. 后端计算 `allowed_kb_ids`
+5. 后端求交 `selected_kb_ids = allowed ∩ target`
+6. 在 `selected_kb_ids` 内执行 retrieval（SQL 层过滤）
+7. 仅使用授权 citation 生成 answer
+8. 保存审计记录（命中 kb/doc/chunk id）
+9. `/qa/{request_id}/trace` 查看函数链路与安全说明
 
-## 4. 数据边界
+## Permission Flow
 
-- PostgreSQL是权限事实源。
-- Neo4j不决定权限，只提供图谱扩展。
-- Redis不作为权限来源，只缓存已授权结果。
-- LLM不决定用户是否有权限。
-- 前端不可信，不能依赖前端传入的角色或知识库范围做授权。
+`User Request -> JWT Claims -> RBAC/ACL -> allowed_kb_ids -> router target_kb_codes -> selected_kb_ids -> retrieval -> answer`
 
-## 5. 部署边界
+关键点：
 
-MVP推荐Docker Compose本地部署：
-
-- `web`：React静态应用或Vite开发服务。
-- `api`：FastAPI服务。
-- `postgres`：主数据库，启用pgvector。
-- `redis`：缓存层。
-- `neo4j`：图数据库。
-
+- Pre-filtering：检索前权限收敛。
+- router / LLM / 前端都不能扩权。
+- 未授权 chunk 不进入 prompt/answer/trace/cache/audit/graph view。
