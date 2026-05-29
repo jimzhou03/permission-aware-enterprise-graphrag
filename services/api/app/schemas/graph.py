@@ -9,7 +9,18 @@ from app.schemas.qa import GraphPath
 
 
 GraphNodeType = Literal["knowledge_base", "document", "chunk", "entity", "department", "topic"]
-GraphEdgeType = Literal["CONTAINS", "HAS_CHUNK", "MENTIONS", "BELONGS_TO", "RELATED_TO", "DERIVED_FROM"]
+GraphEdgeType = Literal[
+    "CONTAINS",
+    "HAS_CHUNK",
+    "MENTIONS",
+    "BELONGS_TO",
+    "RELATED_TO",
+    "DERIVED_FROM",
+    "DOCUMENT_MENTIONS_ENTITY",
+    "DEPARTMENT_OWNS_DOCUMENT",
+    "ROLE_CAN_ACCESS_KB",
+    "REQUEST_RETRIEVED_CHUNK",
+]
 
 
 class GraphNodePublic(BaseModel):
@@ -20,6 +31,11 @@ class GraphNodePublic(BaseModel):
     kb_code: str | None = None
     title: str | None = None
     metadata_summary: str | None = None
+    entity_type: str | None = None
+    canonical_name: str | None = None
+    source_document_id: str | None = None
+    confidence: float | None = None
+    evidence_text: str | None = None
 
 
 class GraphEdgePublic(BaseModel):
@@ -28,6 +44,7 @@ class GraphEdgePublic(BaseModel):
     target: str
     type: GraphEdgeType
     label: str
+    relation_type: str | None = None
 
 
 class GraphStatusResponse(BaseModel):

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import ROOT_DIR, get_settings
 from app.models import Document, DocumentChunk, IngestionJob, KnowledgeBase, User
 from app.services.embedding_service import embed_text
-from app.services.entity_service import extract_entities
+from app.services.entity_service import build_light_entities
 from app.services.graph_service import neo4j_service
 
 
@@ -349,7 +349,7 @@ def _upsert_document_and_chunks(
 
     db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document.id))
     for idx, chunk in enumerate(chunks):
-        entities = extract_entities(chunk)
+        entities = build_light_entities(chunk)
         db.add(
             DocumentChunk(
                 document_id=document.id,
@@ -444,7 +444,7 @@ def _replace_document_chunks(
                     "source": source_filename,
                     "content_type": content_type,
                     "action": action,
-                    "entities": extract_entities(chunk_text),
+                    "entities": build_light_entities(chunk_text),
                 },
             )
         )

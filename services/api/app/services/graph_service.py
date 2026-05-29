@@ -13,7 +13,7 @@ from app.core.config import get_settings
 from app.models import Department, Document, DocumentChunk, KnowledgeBase
 from app.schemas.graph import GraphEdgePublic, GraphNodePublic
 from app.schemas.qa import Citation, GraphPath
-from app.services.entity_service import extract_entities
+from app.services.entity_service import build_light_entities
 
 try:
     from neo4j import GraphDatabase
@@ -216,23 +216,35 @@ class Neo4jService:
                     document_id=str(chunk.document.id),
                     chunk_id=str(chunk.id),
                 )
-                entities = _chunk_entities(chunk)
+                entities = _chunk_light_entities(chunk)
                 for entity in entities:
+                    name = str(entity.get("name", "")).strip() or "unknown-entity"
+                    canonical_name = str(entity.get("canonical_name", name)).strip() or name
+                    entity_type = str(entity.get("entity_type", "Unknown"))
+                    confidence = float(entity.get("confidence", 0.6))
+                    evidence_text = str(entity.get("evidence_text", name)).strip() or name
                     session.run(
-                        "MERGE (e:Entity {name: $name})",
-                        name=entity,
+                        "MERGE (e:Entity {canonical_name: $canonical_name}) "
+                        "SET e.name=$name, e.entity_type=$entity_type, e.confidence=$confidence, e.evidence_text=$evidence_text",
+                        canonical_name=canonical_name,
+                        name=name,
+                        entity_type=entity_type,
+                        confidence=confidence,
+                        evidence_text=evidence_text,
                     )
                     session.run(
-                        "MATCH (c:Chunk {id: $chunk_id}), (e:Entity {name: $name}) "
+                        "MATCH (c:Chunk {id: $chunk_id}), (e:Entity {canonical_name: $canonical_name}) "
                         "MERGE (c)-[:MENTIONS]->(e)",
                         chunk_id=str(chunk.id),
-                        name=entity,
+                        canonical_name=canonical_name,
                     )
                 for idx in range(len(entities) - 1):
-                    left = entities[idx]
-                    right = entities[idx + 1]
+                    left = str(entities[idx].get("canonical_name", "")).strip()
+                    right = str(entities[idx + 1].get("canonical_name", "")).strip()
+                    if not left or not right:
+                        continue
                     session.run(
-                        "MATCH (a:Entity {name: $left}), (b:Entity {name: $right}) "
+                        "MATCH (a:Entity {canonical_name: $left}), (b:Entity {canonical_name: $right}) "
                         "MERGE (a)-[:RELATED_TO]-(b)",
                         left=left,
                         right=right,
@@ -286,13 +298,38 @@ class Neo4jService:
 
 
 def _chunk_entities(chunk: DocumentChunk) -> list[str]:
+    return [str(item.get("name", "")) for item in _chunk_light_entities(chunk) if str(item.get("name", ""))]
+
+
+def _chunk_light_entities(chunk: DocumentChunk, limit: int = 6) -> list[dict[str, str | float]]:
     metadata = chunk.chunk_metadata if isinstance(chunk.chunk_metadata, dict) else {}
     metadata_entities = metadata.get("entities")
     if isinstance(metadata_entities, list):
+        if metadata_entities and isinstance(metadata_entities[0], dict):
+            rows: list[dict[str, str | float]] = []
+            for item in metadata_entities:
+                if not isinstance(item, dict):
+                    continue
+                name = str(item.get("name", "")).strip()
+                if not name:
+                    continue
+                rows.append(
+                    {
+                        "name": name,
+                        "canonical_name": str(item.get("canonical_name", name)).strip() or name,
+                        "entity_type": str(item.get("entity_type", "Unknown")),
+                        "confidence": float(item.get("confidence", 0.6)),
+                        "evidence_text": str(item.get("evidence_text", name)).strip() or name,
+                    }
+                )
+                if len(rows) >= limit:
+                    break
+            if rows:
+                return rows
         values = [item for item in metadata_entities if isinstance(item, str)]
         if values:
-            return values[:6]
-    return extract_entities(chunk.content, limit=6)
+            return build_light_entities("\n".join(values), limit=limit)
+    return build_light_entities(chunk.content, limit=limit)
 
 
 def _chunk_preview(text: str, max_length: int = 120) -> str:
@@ -404,19 +441,40 @@ def build_graph_elements_from_chunk_rows(
             )
         )
 
-        entities = _chunk_entities(chunk)[: max(1, max_entities_per_chunk)]
+        add_edge(
+            GraphEdgePublic(
+                id=f"{department_node_id}|DEPARTMENT_OWNS_DOCUMENT|{doc_node_id}",
+                source=department_node_id,
+                target=doc_node_id,
+                type="DEPARTMENT_OWNS_DOCUMENT",
+                label="DEPARTMENT_OWNS_DOCUMENT",
+                relation_type="DEPARTMENT_OWNS_DOCUMENT",
+            )
+        )
+
+        entities = _chunk_light_entities(chunk, limit=max(1, max_entities_per_chunk))
         previous_entity_node_id: str | None = None
         for entity in entities:
-            entity_node_id = _graph_node_id("entity", entity)
+            entity_name = str(entity.get("name", "")).strip() or "unknown-entity"
+            canonical_name = str(entity.get("canonical_name", entity_name)).strip() or entity_name
+            entity_type = str(entity.get("entity_type", "Unknown"))
+            confidence = float(entity.get("confidence", 0.6))
+            evidence_text = str(entity.get("evidence_text", entity_name)).strip() or entity_name
+            entity_node_id = _graph_node_id("entity", canonical_name)
             add_node(
                 GraphNodePublic(
                     id=entity_node_id,
-                    label=entity,
+                    label=entity_name,
                     type="entity",
                     kb_id=str(kb.id),
                     kb_code=kb.code,
-                    title=entity,
-                    metadata_summary="entity extracted from authorized chunk",
+                    title=entity_name,
+                    metadata_summary=f"type={entity_type} confidence={confidence:.2f}",
+                    entity_type=entity_type,
+                    canonical_name=canonical_name,
+                    source_document_id=str(document.id),
+                    confidence=confidence,
+                    evidence_text=evidence_text,
                 )
             )
             add_edge(
@@ -426,6 +484,7 @@ def build_graph_elements_from_chunk_rows(
                     target=entity_node_id,
                     type="MENTIONS",
                     label="MENTIONS",
+                    relation_type="DOCUMENT_MENTIONS_ENTITY",
                 )
             )
             if previous_entity_node_id:
@@ -436,6 +495,7 @@ def build_graph_elements_from_chunk_rows(
                         target=entity_node_id,
                         type="RELATED_TO",
                         label="RELATED_TO",
+                        relation_type="ENTITY_CO_OCCURRENCE",
                     )
                 )
             previous_entity_node_id = entity_node_id
