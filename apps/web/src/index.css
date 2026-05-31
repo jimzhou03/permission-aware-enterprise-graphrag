@@ -36,7 +36,7 @@ body {
 }
 
 .console-statusbar {
-  @apply flex items-center justify-between gap-3 px-3 py-2 text-xs;
+  @apply flex flex-wrap items-center justify-between gap-3 overflow-hidden px-3 py-2 text-xs;
   border: 2px solid #1b1a17;
   background: linear-gradient(90deg, #121721 0%, #0f141d 55%, #151c27 100%);
   color: #d6e2f3;
@@ -50,6 +50,10 @@ body {
 
 .console-statusbar-mid {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #6e8a63;
   opacity: 0.8;
 }

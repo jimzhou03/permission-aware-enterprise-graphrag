@@ -188,7 +188,7 @@ def seed_demo_data(db: Session) -> None:
     _bind_role_permissions(db, role_map["marketing_staff"], ["qa:ask"], perm_map)
     _bind_role_permissions(db, role_map["support_staff"], ["qa:ask"], perm_map)
     _bind_role_permissions(db, role_map["hr_staff"], ["qa:ask"], perm_map)
-    _bind_role_permissions(db, role_map["admin_staff"], ["qa:ask"], perm_map)
+    _bind_role_permissions(db, role_map["admin_staff"], ["qa:ask", "admin:users:read"], perm_map)
     _bind_role_permissions(db, role_map["product_staff"], ["qa:ask"], perm_map)
     _bind_role_permissions(db, role_map["visitor"], ["qa:ask"], perm_map)
 
