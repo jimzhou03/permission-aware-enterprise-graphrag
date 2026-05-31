@@ -38,6 +38,18 @@ SAMPLE_DOCUMENT_MANIFEST: list[dict[str, Any]] = [
         "source_label": "fictional-enterprise-doc",
     },
     {
+        "kb_code": "company-internal",
+        "title": "Internal Collaboration Handbook",
+        "path": ROOT_DIR / "sample_data" / "company" / "internal-collaboration-handbook.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "company-internal",
+        "title": "Knowledge Access Request Guide",
+        "path": ROOT_DIR / "sample_data" / "company" / "knowledge-access-request-guide.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
         "kb_code": "tech-internal",
         "title": "Robot SDK Manual",
         "path": ROOT_DIR / "sample_data" / "tech" / "robot-sdk-manual.md",
@@ -57,6 +69,12 @@ SAMPLE_DOCUMENT_MANIFEST: list[dict[str, Any]] = [
     },
     {
         "kb_code": "tech-internal",
+        "title": "Robot SDK Integration Guide",
+        "path": ROOT_DIR / "sample_data" / "tech" / "robot-sdk-integration-guide.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "tech-internal",
         "title": "Robot Fault Diagnosis SOP",
         "path": ROOT_DIR / "sample_data" / "tech" / "robot-fault-diagnosis-sop.md",
         "source_label": "fictional-enterprise-doc",
@@ -68,9 +86,45 @@ SAMPLE_DOCUMENT_MANIFEST: list[dict[str, Any]] = [
         "source_label": "fictional-enterprise-doc",
     },
     {
+        "kb_code": "sales-internal",
+        "title": "销售报价策略",
+        "path": ROOT_DIR / "sample_data" / "sales" / "sales-pricing-policy.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "sales-internal",
+        "title": "客户分级 Playbook",
+        "path": ROOT_DIR / "sample_data" / "sales" / "customer-segmentation-playbook.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "sales-internal",
+        "title": "本季度客户策略",
+        "path": ROOT_DIR / "sample_data" / "sales" / "quarterly-customer-strategy.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
         "kb_code": "marketing-internal",
         "title": "市场活动与品牌规范手册",
         "path": ROOT_DIR / "sample_data" / "marketing" / "marketing-internal.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "marketing-internal",
+        "title": "品牌定位指南",
+        "path": ROOT_DIR / "sample_data" / "marketing" / "brand-positioning-guide.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "marketing-internal",
+        "title": "展会宣传方案",
+        "path": ROOT_DIR / "sample_data" / "marketing" / "exhibition-campaign-plan.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "marketing-internal",
+        "title": "内容发布审核规范",
+        "path": ROOT_DIR / "sample_data" / "marketing" / "content-review-guideline.md",
         "source_label": "fictional-enterprise-doc",
     },
     {
@@ -80,15 +134,69 @@ SAMPLE_DOCUMENT_MANIFEST: list[dict[str, Any]] = [
         "source_label": "fictional-enterprise-doc",
     },
     {
+        "kb_code": "support-internal",
+        "title": "售后工单 SOP",
+        "path": ROOT_DIR / "sample_data" / "support" / "aftersales-ticket-sop.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "support-internal",
+        "title": "保修政策内部标准",
+        "path": ROOT_DIR / "sample_data" / "support" / "warranty-policy-internal.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "support-internal",
+        "title": "投诉升级指南",
+        "path": ROOT_DIR / "sample_data" / "support" / "complaint-escalation-guide.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
         "kb_code": "hr-internal",
         "title": "人事制度手册",
         "path": ROOT_DIR / "sample_data" / "hr" / "hr-internal.md",
         "source_label": "fictional-enterprise-doc",
     },
     {
+        "kb_code": "hr-internal",
+        "title": "入职流程",
+        "path": ROOT_DIR / "sample_data" / "hr" / "onboarding-process.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "hr-internal",
+        "title": "招聘流程",
+        "path": ROOT_DIR / "sample_data" / "hr" / "recruitment-process.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "hr-internal",
+        "title": "绩效评估流程",
+        "path": ROOT_DIR / "sample_data" / "hr" / "performance-review-policy.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
         "kb_code": "admin-internal",
         "title": "行政流程手册",
         "path": ROOT_DIR / "sample_data" / "admin" / "admin-internal.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "admin-internal",
+        "title": "办公资产管理",
+        "path": ROOT_DIR / "sample_data" / "admin" / "office-asset-management.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "admin-internal",
+        "title": "会议室预约规范",
+        "path": ROOT_DIR / "sample_data" / "admin" / "meeting-room-policy.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "admin-internal",
+        "title": "采购申请流程",
+        "path": ROOT_DIR / "sample_data" / "admin" / "procurement-request-process.md",
         "source_label": "fictional-enterprise-doc",
     },
     {
@@ -101,6 +209,18 @@ SAMPLE_DOCUMENT_MANIFEST: list[dict[str, Any]] = [
         "kb_code": "product-internal",
         "title": "Product Production Workflow",
         "path": ROOT_DIR / "sample_data" / "product" / "product-production-workflow.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "product-internal",
+        "title": "产品需求评审流程",
+        "path": ROOT_DIR / "sample_data" / "product" / "product-requirements-process.md",
+        "source_label": "fictional-enterprise-doc",
+    },
+    {
+        "kb_code": "product-internal",
+        "title": "竞品分析框架",
+        "path": ROOT_DIR / "sample_data" / "product" / "competitor-analysis-framework.md",
         "source_label": "fictional-enterprise-doc",
     },
 ]
@@ -367,6 +487,7 @@ def seed_documents_and_chunks(db: Session) -> None:
         kb.code: kb
         for kb in db.scalars(select(KnowledgeBase).where(KnowledgeBase.is_active.is_(True))).all()
     }
+    touched_kb_ids: set[Any] = set()
     for item in SAMPLE_DOCUMENT_MANIFEST:
         kb = kb_by_code.get(item["kb_code"])
         if kb is None:
@@ -381,6 +502,10 @@ def seed_documents_and_chunks(db: Session) -> None:
             source_label=item["source_label"],
             content=content,
         )
+        touched_kb_ids.add(kb.id)
+    for kb in kb_by_code.values():
+        if kb.id in touched_kb_ids:
+            _touch_kb_version(kb)
     db.commit()
 
 

@@ -281,7 +281,7 @@ def seed_demo_data(db: Session) -> None:
         db,
         "company-internal",
         "全员内部通用知识库",
-        "公司组织架构、跨部门协作流程、权限申请与内部协作规范。",
+        "Demo v0.9.4 fictional company-internal docs: 权限申请、跨部门协作、内部知识库使用规范。",
         "private",
         dept_map["company"],
     )
@@ -289,7 +289,7 @@ def seed_demo_data(db: Session) -> None:
         db,
         "tech-internal",
         "技术部内部知识库",
-        "Robot SDK Manual, API Integration Guide, Deployment Troubleshooting.",
+        "Demo v0.9.4 fictional tech docs: 机器人故障诊断、SDK 集成、部署排障。",
         "private",
         dept_map["tech"],
     )
@@ -297,7 +297,7 @@ def seed_demo_data(db: Session) -> None:
         db,
         "sales-internal",
         "销售部内部知识库",
-        "机器人产品报价策略、客户沟通话术、渠道合作政策。",
+        "Demo v0.9.4 fictional sales docs: 报价策略、客户分级、本季度客户策略。",
         "private",
         dept_map["sales"],
     )
@@ -305,7 +305,7 @@ def seed_demo_data(db: Session) -> None:
         db,
         "marketing-internal",
         "市场部内部知识库",
-        "品牌定位、展会方案、宣传内容规范。",
+        "Demo v0.9.4 fictional marketing docs: 品牌定位、展会宣传、内容发布审核。",
         "private",
         dept_map["marketing"],
     )
@@ -313,7 +313,7 @@ def seed_demo_data(db: Session) -> None:
         db,
         "support-internal",
         "客服部内部知识库",
-        "售后流程、保修政策、常见故障处理。",
+        "Demo v0.9.4 fictional support docs: 售后工单、保修标准、投诉升级。",
         "private",
         dept_map["support"],
     )
@@ -321,7 +321,7 @@ def seed_demo_data(db: Session) -> None:
         db,
         "hr-internal",
         "人事部内部知识库",
-        "入职流程、考勤制度、绩效制度。",
+        "Demo v0.9.4 fictional HR docs: 招聘、入职、试用期目标、绩效评估。",
         "private",
         dept_map["hr"],
     )
@@ -329,7 +329,7 @@ def seed_demo_data(db: Session) -> None:
         db,
         "admin-internal",
         "行政部内部知识库",
-        "会议室管理、采购流程、办公资产管理。",
+        "Demo v0.9.4 fictional admin docs: 采购申请、会议室预约、办公资产管理。",
         "private",
         dept_map["admin"],
     )
@@ -337,7 +337,7 @@ def seed_demo_data(db: Session) -> None:
         db,
         "product-internal",
         "产品部内部知识库",
-        "机器人产品规格、功能路线图、竞品分析。",
+        "Demo v0.9.4 fictional product docs: 产品生产流程、需求评审、版本发布、竞品分析。",
         "private",
         dept_map["product"],
     )

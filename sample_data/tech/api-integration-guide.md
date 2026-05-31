@@ -1,167 +1,23 @@
-# API Integration Guide - StarSea Robotics Internal (Demo v0.7.1)
+# API Integration Guide（tech-internal）
 
-## 1. Document Title
-API Integration Guide for StarSea Robotics Co., Ltd. internal technical implementation.
+## 1. 适用范围
+本文件属于星海智造机器人有限公司 Demo v0.9.4 的虚构技术部内部资料，只允许技术部和管理员访问。技术部 API Integration Guide 用于回答机器人 API、SDK 集成、任务调度和部署排障问题，不包含真实密钥。
 
-## 2. Applicable Department
-Technology Department (`tech-internal`) only.
+## 2. 集成前置条件
+技术部 API 集成前，需要确认目标环境、机器人编号、API base URL、服务账号、网络连接和日志采集。任何设备凭据都只能保存在授权环境，不得写入公开资料、聊天答案或跨部门材料。访客不能访问技术部 API 集成细节。
 
-## 3. Purpose
-- Define a consistent integration path for backend services, robot gateways, and enterprise systems.
-- Reduce integration defects caused by inconsistent authentication and command semantics.
-- Provide technical FAQ, do/don't boundaries, and reusable implementation patterns.
+## 3. 标准调用流程
+技术部标准 API 调用流程为：获取授权、注册设备、发送心跳、创建任务、查询任务状态、读取导航与遥测、记录错误码。SDK 集成应使用受控重试和幂等 request_id，避免因重复请求造成任务队列异常。
 
-## 4. Scope and Non-Scope
-This guide covers:
-- API authentication and token handling
-- Device pairing endpoints
-- Robot command APIs
-- Route planning/task dispatch APIs
-- Operational reliability patterns
+## 4. 异常排查
+API 调用失败时，技术部先检查网络连接、DNS、端口、防火墙和证书，再检查请求参数、权限范围、接口版本和 SDK 版本。机器人网络连接异常要结合遥测、心跳和网关日志判断；传感器、电机、导航异常要进入模块自检。
 
-This guide does NOT cover:
-- Sales pricing, customer discounting, or channel policy
-- HR attendance/performance/salary policies
-- Marketing narrative, campaign copy, or exhibition scripts
-- Product launch commitments and commercial roadmap promises
+## 5. 测试与交接
+技术部完成 API 集成后，需要执行复现与回归测试，覆盖注册、心跳、任务调度、导航状态、传感器告警、电机状态和日志上报。交接给现场或高级工程师时，应提供时间线、request_id、robot_id、复现步骤和当前结论。
 
-## 5. Integration Architecture Overview
-Recommended integration flow:
-1. Enterprise app authenticates via backend service account.
-2. Backend service pairs target robot/session.
-3. Backend service submits commands/tasks through API gateway.
-4. Client consumes command/task status and telemetry events.
-5. Audit log persists request IDs, outcomes, and permission-scoped traces.
-
-Key rule: frontend UI can request actions but cannot own privileged credentials.
-
-## 6. Authentication and Authorization
-### 6.1 Token strategy
-- Use short-lived access tokens for command-time actions.
-- Use refresh flow only on trusted backend components.
-- Keep per-environment credential separation (dev/staging/prod).
-
-### 6.2 Permission boundary
-- API permission is validated server-side by deterministic RBAC/ACL.
-- Callers can narrow scope but cannot expand `allowed_kb_ids` or command scope by client parameters.
-- Unauthorized calls must return explicit denial responses without disclosing internal details.
-
-### 6.3 Credential safety rules
-- Store secrets in managed environment variables or secret manager.
-- Never ship secrets in mobile/web bundles.
-- Rotate keys and token issuers on a regular schedule.
-
-## 7. Device Pairing API Workflow
-### 7.1 Typical endpoints
-- `POST /device/pairing/challenge`
-- `POST /device/pairing/verify`
-- `POST /device/session/heartbeat`
-- `POST /device/session/release`
-
-### 7.2 Pairing contract
-Required fields usually include:
-- `robot_id`
-- `gateway_id`
-- `signed_nonce`
-- `firmware_version`
-- `capability_hash`
-
-### 7.3 Validation outcomes
-- `paired`: session established
-- `rejected_unregistered_device`: unknown robot registry
-- `rejected_signature`: invalid signature proof
-- `rejected_token_scope`: service account scope mismatch
-
-## 8. Robot Command APIs
-### 8.1 Command categories
-- Motion: navigate, stop, return-to-dock
-- Interaction: speak, display, greet profile
-- Delivery: assign package, start route, confirm handoff
-- Inspection: start patrol, submit anomaly snapshot
-
-### 8.2 Request pattern
-Each command request should include:
-- `request_id` (idempotency key)
-- `robot_id`
-- `command`
-- `arguments`
-- `safety_profile`
-- `issued_by` (service identity)
-
-### 8.3 Response pattern
-- Immediate response: request accepted/denied
-- Deferred status: queued/executing/success/failure/cancelled
-- Error payload: code + user-safe message + operation hint
-
-### 8.4 Idempotency and retries
-- Reuse same `request_id` for retry of the same logical action.
-- Apply exponential backoff and jitter on transient failures.
-- Do not retry non-idempotent actions blindly.
-
-## 9. Route Planning and Task Dispatch APIs
-### 9.1 Route planning input
-- Start and destination points
-- Allowed zone policy
-- Time window / priority
-- Robot capability requirement
-
-### 9.2 Dispatch lifecycle
-1. Validate route request.
-2. Check resource locks and zone policy.
-3. Select robot candidate by battery/capability/state.
-4. Commit dispatch plan and return task ID.
-5. Stream task events until completion.
-
-### 9.3 Dispatch failure examples
-- `route_blocked`: no available safe route
-- `robot_unavailable`: no robot meets constraints
-- `policy_rejected`: scope/policy mismatch
-- `task_timeout`: execution exceeded SLA window
-
-## 10. Deployment Checklist for Integrators
-Before go-live in a site environment:
-- Confirm API base URL and TLS trust chain.
-- Verify service account role and permission scope.
-- Validate robot registry IDs and firmware compatibility.
-- Run pairing smoke tests for at least two robots.
-- Execute command lifecycle tests (success, cancel, failure).
-- Validate telemetry ingestion and alerting pipeline.
-- Confirm audit logs include request IDs and outcome states.
-
-## 11. Troubleshooting Quick Map
-- 401/403 spikes: token expiration or permission misconfiguration.
-- Pairing stuck at challenge: signature mismatch or clock drift.
-- Commands accepted but never execute: queue backlog or robot offline.
-- Task failures with policy errors: zone policy mismatch or safety profile violation.
-- Telemetry gaps: gateway packet loss or stream consumer backpressure.
-
-## 12. Roles and Responsibilities
-- API Engineer: maintain contracts/versioning/error model.
-- Integration Engineer: build adapters and orchestrations.
-- Site Engineer: verify environment/network/device readiness.
-- QA Engineer: validate regression, retry behavior, and denial paths.
-
-## 13. FAQ
-Q1: Can integration directly skip pairing and invoke commands?
-A1: No. Commands depend on valid active session context.
-
-Q2: Can one service account be shared across all environments?
-A2: Not recommended. Keep strict environment separation.
-
-Q3: Should API denial reasons include internal implementation details?
-A3: No. Return operator-safe messages only.
-
-## 14. Prohibited Actions / Permission Boundaries
-- Do not expose device keys or backend secrets to non-technical users.
-- Do not bypass authorization by client-side filtering assumptions.
-- Do not use technical APIs to derive sales, HR, pricing, or internal roadmap data.
-
-## 15. Example Scenario
-A campus deployment backend receives a visitor guidance request, validates token scope, confirms robot session via pairing heartbeat, issues `navigate` command, tracks execution events, and stores an audit trace with request ID.
-
-## 16. RAG-Ready Explicit Fact Points
-- Pairing lifecycle: challenge -> verify -> heartbeat -> release.
-- Command API must use `request_id` for idempotency.
-- Dispatch can fail with `route_blocked`, `robot_unavailable`, `policy_rejected`, or `task_timeout`.
-- RBAC/ACL are backend-enforced; client cannot expand permission scope.
-- Non-technical departmental data is out of technical API guide scope.
+## 6. 可回答的问题
+- 如何集成机器人 SDK？
+- SDK/API 调用检查包括什么？
+- 机器人网络连接异常怎么排查？
+- 任务调度异常如何排查？
+- 技术部交接给高级工程师需要哪些信息？
