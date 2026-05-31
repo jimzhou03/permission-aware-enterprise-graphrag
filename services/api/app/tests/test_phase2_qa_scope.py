@@ -42,37 +42,37 @@ def test_department_accounts_can_retrieve_only_allowed_scope(client):
         (
             "tech_staff@example.local",
             {"tech-internal", "company-internal", "public-policy"},
-            "Summarize the Robot SDK Manual deployment checklist.",
+            "技术部机器人故障诊断流程是什么？",
         ),
         (
             "sales_staff@example.local",
             {"sales-internal", "company-internal", "public-policy"},
-            "请总结销售部机器人产品报价策略。",
+            "销售部本季度客户策略是什么？",
         ),
         (
             "marketing_staff@example.local",
             {"marketing-internal", "company-internal", "public-policy"},
-            "请说明市场部展会方案与宣传规范。",
+            "市场部品牌定位是什么？",
         ),
         (
             "support_staff@example.local",
             {"support-internal", "company-internal", "public-policy"},
-            "请总结客服部售后流程和保修政策。",
+            "客服部售后处理流程是什么？",
         ),
         (
             "hr_staff@example.local",
             {"hr-internal", "company-internal", "public-policy"},
-            "请总结人事部入职流程和考勤制度。",
+            "HR 招人流程是什么？",
         ),
         (
             "admin_staff@example.local",
             {"admin-internal", "company-internal", "public-policy"},
-            "请总结行政部会议室管理与采购流程。",
+            "行政部采购流程是什么？",
         ),
         (
             "product_staff@example.local",
             {"product-internal", "company-internal", "public-policy"},
-            "请总结产品部规格与路线图。",
+            "产品生产流程是什么？",
         ),
         (
             "visitor@example.local",
@@ -282,17 +282,73 @@ def test_bilingual_admin_can_hit_multiple_department_targets(client):
         assert {item["kb_code"] for item in payload["citations"]}.issubset(expected_scope)
 
 
-def test_demo_routing_cases_for_v0721(client):
+def test_v094_demo_knowledge_coverage_routing_cases(client):
     cases = [
         {
-            "email": "visitor@example.local",
-            "question": "公司公开售后政策是什么？",
-            "expected_kb_code": "public-policy",
+            "name": "tech staff can ask tech coverage question",
+            "email": "tech_staff@example.local",
+            "question": "技术部机器人故障诊断流程是什么？",
+            "expected_kb_code": "tech-internal",
             "denied": False,
-            "expected_scope": "public",
+            "expected_scope": "department",
             "expect_trace_denied": False,
         },
         {
+            "name": "sales staff can ask quarterly customer strategy",
+            "email": "sales_staff@example.local",
+            "question": "销售部本季度客户策略是什么？",
+            "expected_kb_code": "sales-internal",
+            "denied": False,
+            "expected_scope": "department",
+            "expect_trace_denied": False,
+        },
+        {
+            "name": "marketing staff can ask brand positioning",
+            "email": "marketing_staff@example.local",
+            "question": "市场部品牌定位是什么？",
+            "expected_kb_code": "marketing-internal",
+            "denied": False,
+            "expected_scope": "department",
+            "expect_trace_denied": False,
+        },
+        {
+            "name": "support staff can ask aftersales flow",
+            "email": "support_staff@example.local",
+            "question": "客服部售后处理流程是什么？",
+            "expected_kb_code": "support-internal",
+            "denied": False,
+            "expected_scope": "department",
+            "expect_trace_denied": False,
+        },
+        {
+            "name": "hr staff can ask recruitment flow",
+            "email": "hr_staff@example.local",
+            "question": "HR 招人流程是什么？",
+            "expected_kb_code": "hr-internal",
+            "denied": False,
+            "expected_scope": "department",
+            "expect_trace_denied": False,
+        },
+        {
+            "name": "admin staff can ask procurement flow",
+            "email": "admin_staff@example.local",
+            "question": "行政部采购流程是什么？",
+            "expected_kb_code": "admin-internal",
+            "denied": False,
+            "expected_scope": "department",
+            "expect_trace_denied": False,
+        },
+        {
+            "name": "product staff can ask production flow",
+            "email": "product_staff@example.local",
+            "question": "产品生产流程是什么？",
+            "expected_kb_code": "product-internal",
+            "denied": False,
+            "expected_scope": "department",
+            "expect_trace_denied": False,
+        },
+        {
+            "name": "visitor is denied sales internal strategy",
             "email": "visitor@example.local",
             "question": "销售部本季度客户策略是什么？",
             "expected_kb_code": "sales-internal",
@@ -301,39 +357,8 @@ def test_demo_routing_cases_for_v0721(client):
             "expect_trace_denied": True,
         },
         {
-            "email": "tech_staff@example.local",
-            "question": "技术部机器人故障诊断流程是什么？",
-            "expected_kb_code": "tech-internal",
-            "denied": False,
-            "expected_scope": "department",
-            "expect_trace_denied": False,
-        },
-        {
-            "email": "tech_staff@example.local",
-            "question": "公司内部员工如何申请知识库权限？",
-            "expected_kb_code": "company-internal",
-            "denied": False,
-            "expected_scope": "company",
-            "expect_trace_denied": False,
-        },
-        {
+            "name": "product staff is denied tech internal flow",
             "email": "product_staff@example.local",
-            "question": "产品生产流程",
-            "expected_kb_code": "product-internal",
-            "denied": False,
-            "expected_scope": "department",
-            "expect_trace_denied": False,
-        },
-        {
-            "email": "product_staff@example.local",
-            "question": "产品部门内部知识库写的什么？",
-            "expected_kb_code": "product-internal",
-            "denied": False,
-            "expected_scope": "department",
-            "expect_trace_denied": False,
-        },
-        {
-            "email": "sales_staff@example.local",
             "question": "技术部机器人故障诊断流程是什么？",
             "expected_kb_code": "tech-internal",
             "denied": True,
@@ -341,12 +366,23 @@ def test_demo_routing_cases_for_v0721(client):
             "expect_trace_denied": True,
         },
         {
-            "email": "bilingual_admin@example.local",
-            "question": "hr招人流程",
-            "expected_kb_code": "hr-internal",
+            "name": "visitor can ask public aftersales policy",
+            "email": "visitor@example.local",
+            "question": "公司公开售后政策是什么？",
+            "expected_kb_code": "public-policy",
             "denied": False,
-            "expected_scope": "department",
+            "expected_scope": "public",
             "expect_trace_denied": False,
+        },
+        {
+            "name": "visitor vague internal flow requires clarification",
+            "email": "visitor@example.local",
+            "question": "内部流程怎么走？",
+            "expected_kb_code": None,
+            "denied": False,
+            "expected_scope": "clarification_required",
+            "expect_trace_denied": False,
+            "expected_mode": "clarification_required",
         },
     ]
 
@@ -357,10 +393,18 @@ def test_demo_routing_cases_for_v0721(client):
         payload = response.json()
         assert payload["denied"] is case["denied"], {"case": case, "payload": payload}
         assert payload["route"]["target_scope"] == case["expected_scope"], {"case": case, "payload": payload}
+        if case["expected_kb_code"] is None:
+            assert payload["route"]["target_kb_codes"] == [], {"case": case, "payload": payload}
+            assert payload["mode"] == case.get("expected_mode"), {"case": case, "payload": payload}
+            assert payload["citations"] == [], {"case": case, "payload": payload}
+            assert payload["sources"] == [], {"case": case, "payload": payload}
+            continue
+
         assert payload["route"]["target_kb_codes"] == [case["expected_kb_code"]], {"case": case, "payload": payload}
 
         if case["denied"]:
             assert payload["citations"] == [], {"case": case, "payload": payload}
+            assert payload["sources"] == [], {"case": case, "payload": payload}
             trace_payload = _trace(client, token, payload["request_id"])
             assert _trace_step_status(trace_payload, "search_allowed_chunks") == "denied", {
                 "case": case,
@@ -368,7 +412,11 @@ def test_demo_routing_cases_for_v0721(client):
             }
         else:
             hit_codes = {item["kb_code"] for item in payload.get("citations", [])}
+            source_codes = {item["kb_code"] for item in payload.get("sources", [])}
+            assert hit_codes, {"case": case, "payload": payload}
+            assert source_codes, {"case": case, "payload": payload}
             assert hit_codes.issubset({case["expected_kb_code"]}), {"case": case, "payload": payload}
+            assert source_codes.issubset({case["expected_kb_code"]}), {"case": case, "payload": payload}
             assert payload["answer"], {"case": case, "payload": payload}
 
 
