@@ -29,11 +29,12 @@ bash scripts/demo-up.sh
 
 ## 3. 推荐演示路径
 
-1. `visitor`：先问公开问题，再问越权问题（应检索前拒绝）
-2. `tech_staff`：问技术问题（命中 `tech-internal`），再问销售问题（拒绝）
-3. `product_staff`：问产品流程（命中 `product-internal`）
-4. `bilingual_admin`：跨部门问题（可访问全部 9 个 KB）
-5. 打开 Developer Trace：展示 `allowed_kb_ids -> target_kb_codes -> selected_kb_ids`
+1. 登录 `bilingual_admin@example.local`，打开 `Permission Matrix` 页面。
+2. 在矩阵里选择 `product_staff@example.local`。
+3. 解释该用户的 `allowed KBs` 与 `blocked KBs`。
+4. 切到知识问答，提问“公司内部员工如何申请知识库权限？”（`company-internal`，应允许）。
+5. 再提问“技术部机器人故障诊断流程是什么？”（`tech-internal`，应检索前拒绝）。
+6. 打开 Developer Trace：展示 `selected_kb_ids = allowed_kb_ids ∩ target_kb_ids`。
 
 ## 4. 每个账号问什么
 

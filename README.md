@@ -82,7 +82,13 @@ python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 
 越权问题在检索前拒绝；unauthorized chunks 不会进入 retrieval / answer / trace / cache / audit / graph projection。
 
-### 4. Developer trace and GraphRAG projection
+### 4. Permission Matrix Visualizer (read-only)
+
+Permission Matrix Visualizer 是只读权限可视化页面，用于演示 9 个 demo accounts 与 9 个知识库之间的访问关系（✅ allowed / — denied）。
+
+它不提供权限编辑、用户创建、角色修改或 ACL 写入能力，权限 authority 仍在后端 RBAC/ACL。
+
+### 5. Developer trace and GraphRAG projection
 
 ![Developer trace and GraphRAG projection](docs/assets/developer-trace.png)
 
@@ -169,6 +175,7 @@ flowchart LR
 - pgvector 接入与 SQL 层权限过滤路径。
 - Redis 权限感知缓存。
 - QA 审计、Developer Trace、Graph Trace。
+- Permission Matrix Visualizer（read-only）。
 - Neo4j 图投影（KB/Document/Chunk/Trace + light entity projection）。
 - 文档上传与 reindex（Markdown/TXT）。
 
@@ -240,6 +247,7 @@ python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 - [Security Model](docs/SECURITY_MODEL.md)
 - [Interview Q&A](docs/INTERVIEW_QA.md)
 - [Roadmap](docs/ROADMAP.md)
+- [Pitch](docs/PITCH.md)
 - [Local Embedding](docs/LOCAL_EMBEDDING.md)
 - [Local LLM](docs/LOCAL_LLM.md)
 - [GraphRAG Scope](docs/GRAPHRAG_SCOPE.md)
