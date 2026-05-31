@@ -10,6 +10,7 @@ import type {
   GraphStatus,
   KnowledgeBaseDocument,
   KnowledgeBase,
+  PermissionMatrixResponse,
   QAGraphTrace,
   RequestTrace,
   RetrievalConfig,
@@ -134,6 +135,10 @@ export async function listDemoCases(): Promise<DemoCase[]> {
 
 export async function listAuditLogs(token: string): Promise<AuditLog[]> {
   return request<AuditLog[]>("/admin/audit-logs", { method: "GET" }, token);
+}
+
+export async function listPermissionMatrix(token: string): Promise<PermissionMatrixResponse> {
+  return request<PermissionMatrixResponse>("/admin/permission-matrix", { method: "GET" }, token);
 }
 
 export async function getRetrievalConfig(token: string): Promise<RetrievalConfig> {

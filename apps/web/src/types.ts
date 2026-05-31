@@ -28,6 +28,36 @@ export interface AuthMeResponse {
   };
 }
 
+export interface PermissionMatrixUser {
+  email: string;
+  role: string;
+  department: string | null;
+  allowed_kb_codes: string[];
+}
+
+export interface PermissionMatrixRole {
+  name: string;
+  description: string;
+}
+
+export interface PermissionMatrixDepartment {
+  code: string;
+  name: string;
+}
+
+export interface PermissionMatrixKnowledgeBase {
+  code: string;
+  name: string;
+  scope: "public" | "company" | "department" | string;
+}
+
+export interface PermissionMatrixResponse {
+  users: PermissionMatrixUser[];
+  roles: PermissionMatrixRole[];
+  departments: PermissionMatrixDepartment[];
+  knowledge_bases: PermissionMatrixKnowledgeBase[];
+}
+
 export interface KnowledgeBase {
   id: string;
   code: string;

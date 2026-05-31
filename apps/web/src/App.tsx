@@ -9,6 +9,7 @@ import {
   getRequestTrace,
   getRetrievalConfig,
   getRequestDetail,
+  listPermissionMatrix,
   listDocumentChunks,
   listAuditLogs,
   listKnowledgeBaseDocuments,
@@ -50,6 +51,7 @@ import type {
   GraphStatus,
   KnowledgeBase,
   KnowledgeBaseDocument,
+  PermissionMatrixResponse,
   QAGraphTrace,
   RequestTrace,
   RetrievalConfig,
@@ -71,6 +73,7 @@ type AppView =
   | "knowledge_bases"
   | "audit_logs"
   | "system_status"
+  | "permission_matrix"
   | "developer_trace"
   | "graph_rag";
 
@@ -218,6 +221,36 @@ const OVERREACH_SCENARIOS: Array<{
     id: "support_product_roadmap",
     account: "support_staff",
     question: "请总结产品部功能路线图。"
+  }
+];
+
+const PERMISSION_MATRIX_DEMO_CASES: Array<{
+  label: string;
+  user: string;
+  question: string;
+  target: string;
+  decision: string;
+}> = [
+  {
+    label: "Case A",
+    user: "product_staff",
+    question: "公司内部员工如何申请知识库权限？",
+    target: "company-internal",
+    decision: "allowed"
+  },
+  {
+    label: "Case B",
+    user: "product_staff",
+    question: "技术部机器人故障诊断流程是什么？",
+    target: "tech-internal",
+    decision: "pre-retrieval denied"
+  },
+  {
+    label: "Case C",
+    user: "visitor",
+    question: "内部流程怎么走？",
+    target: "clarification_required",
+    decision: "skipped retrieval and generation"
   }
 ];
 
@@ -550,6 +583,8 @@ export default function App() {
   const [traceRequestId, setTraceRequestId] = useState("");
   const [requestTrace, setRequestTrace] = useState<RequestTrace | null>(null);
   const [requestGraphTrace, setRequestGraphTrace] = useState<QAGraphTrace | null>(null);
+  const [permissionMatrix, setPermissionMatrix] = useState<PermissionMatrixResponse | null>(null);
+  const [selectedMatrixUserEmail, setSelectedMatrixUserEmail] = useState("");
   const [retrievalConfig, setRetrievalConfig] = useState<RetrievalConfig | null>(null);
   const [graphStatus, setGraphStatus] = useState<GraphStatus | null>(null);
   const [graphOverview, setGraphOverview] = useState<GraphOverview | null>(null);
@@ -568,6 +603,7 @@ export default function App() {
   const [activeView, setActiveView] = useState<AppView>("knowledge_chat");
   const [viewerPending, setViewerPending] = useState(false);
   const [tracePending, setTracePending] = useState(false);
+  const [permissionMatrixPending, setPermissionMatrixPending] = useState(false);
   const [graphPending, setGraphPending] = useState(false);
   const [graphSyncPending, setGraphSyncPending] = useState(false);
   const [uploadTitle, setUploadTitle] = useState("");
@@ -644,6 +680,22 @@ export default function App() {
     return next;
   }, [positionedGraphNodes]);
   const selectedGraphNode = selectedGraphNodeId ? graphNodeById.get(selectedGraphNodeId) ?? null : null;
+  const permissionMatrixUsers = permissionMatrix?.users ?? [];
+  const permissionMatrixKnowledgeBases = permissionMatrix?.knowledge_bases ?? [];
+  const selectedMatrixUser = useMemo(
+    () =>
+      permissionMatrixUsers.find((item) => item.email === selectedMatrixUserEmail) ??
+      permissionMatrixUsers[0] ??
+      null,
+    [permissionMatrixUsers, selectedMatrixUserEmail]
+  );
+  const blockedMatrixKbCodes = useMemo(() => {
+    if (!selectedMatrixUser) return [];
+    const allowedCodes = new Set(selectedMatrixUser.allowed_kb_codes);
+    return permissionMatrixKnowledgeBases
+      .map((item) => item.code)
+      .filter((code) => !allowedCodes.has(code));
+  }, [permissionMatrixKnowledgeBases, selectedMatrixUser]);
 
   useEffect(() => {
     window.localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
@@ -704,6 +756,8 @@ export default function App() {
       setTraceRequestId("");
       setRequestTrace(null);
       setRequestGraphTrace(null);
+      setPermissionMatrix(null);
+      setSelectedMatrixUserEmail("");
       setAllowedKbCodesFromMe([]);
       setRetrievalConfig(null);
       setGraphStatus(null);
@@ -789,6 +843,35 @@ export default function App() {
       cancelled = true;
     };
   }, [token, traceRequestId]);
+
+  useEffect(() => {
+    if (!token || !canViewAdminViews || activeView !== "permission_matrix") {
+      setPermissionMatrixPending(false);
+      return;
+    }
+    let cancelled = false;
+    setPermissionMatrixPending(true);
+    async function loadPermissionMatrix() {
+      try {
+        const payload = await listPermissionMatrix(token);
+        if (cancelled) return;
+        setPermissionMatrix(payload);
+        setSelectedMatrixUserEmail((prev) => {
+          if (prev && payload.users.some((item) => item.email === prev)) return prev;
+          return payload.users[0]?.email ?? "";
+        });
+      } catch {
+        if (cancelled) return;
+        setPermissionMatrix(null);
+      } finally {
+        if (!cancelled) setPermissionMatrixPending(false);
+      }
+    }
+    void loadPermissionMatrix();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeView, canViewAdminViews, token]);
 
   useEffect(() => {
     if (!token) {
@@ -900,6 +983,7 @@ export default function App() {
       ? [
           { key: "audit_logs" as const, label: t.navAuditLogs, icon: AuditIcon },
           { key: "system_status" as const, label: t.navSystemStatus, icon: SystemIcon },
+          { key: "permission_matrix" as const, label: t.navPermissionMatrix, icon: ShieldIcon },
           { key: "developer_trace" as const, label: t.navDeveloperTrace, icon: TraceIcon },
           { key: "graph_rag" as const, label: t.navGraphRag, icon: GraphIcon },
         ]
@@ -995,6 +1079,8 @@ export default function App() {
     setTraceRequestId("");
     setRequestTrace(null);
     setRequestGraphTrace(null);
+    setPermissionMatrix(null);
+    setSelectedMatrixUserEmail("");
     setRetrievalConfig(null);
     setGraphStatus(null);
     setGraphOverview(null);
@@ -1607,7 +1693,7 @@ export default function App() {
     <div className="console-root min-h-screen text-slate-900">
       <div className="console-shell mx-auto w-full max-w-[1880px] p-3 md:p-4">
         <div className="console-statusbar mb-2">
-          <div className="console-statusbar-left">GRAPHRAG OS v0.9.0</div>
+            <div className="console-statusbar-left">GRAPHRAG OS v0.9.2</div>
           <div className="console-statusbar-mid" aria-hidden="true">
             /////////////////////////
           </div>
@@ -2496,6 +2582,156 @@ export default function App() {
                   </div>
                 </div>
                 <p className="mt-4 text-xs text-slate-500">{t.systemStatusHint}</p>
+              </section>
+            ) : null}
+
+            {activeView === "permission_matrix" ? (
+              <section className="space-y-4">
+                <div className="glass-panel p-6">
+                  <h2 className="panel-title">{t.permissionMatrixPageTitle}</h2>
+                  <p className="mb-4 text-sm text-slate-600">{t.permissionMatrixPageHint}</p>
+
+                  {permissionMatrixPending ? (
+                    <p className="text-sm text-slate-500">{t.working}</p>
+                  ) : permissionMatrix ? (
+                    <div className="space-y-4">
+                      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_370px]">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                          <div className="overflow-x-auto">
+                            <table className="w-full border-collapse text-left text-xs">
+                              <thead>
+                                <tr className="border-b border-slate-200 text-slate-600">
+                                  <th className="px-2 py-2">{t.permissionMatrixUsers}</th>
+                                  {permissionMatrixKnowledgeBases.map((kb) => (
+                                    <th key={kb.code} className="px-2 py-2 font-mono text-[11px]">
+                                      <div>{kb.code}</div>
+                                      <div className="font-normal text-[10px] text-slate-500">{kb.scope}</div>
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {permissionMatrixUsers.map((userItem) => {
+                                  const isSelected = selectedMatrixUser?.email === userItem.email;
+                                  const allowedSet = new Set(userItem.allowed_kb_codes);
+                                  return (
+                                    <tr
+                                      key={userItem.email}
+                                      className={`cursor-pointer border-b border-slate-100 ${
+                                        isSelected ? "bg-white" : "hover:bg-white/70"
+                                      }`}
+                                      onClick={() => setSelectedMatrixUserEmail(userItem.email)}
+                                    >
+                                      <td className="px-2 py-2">
+                                        <div className="font-mono text-[11px] text-slate-800">{userItem.email}</div>
+                                        <div className="text-[11px] text-slate-500">
+                                          {userItem.role} / {userItem.department ?? t.noValue}
+                                        </div>
+                                      </td>
+                                      {permissionMatrixKnowledgeBases.map((kb) => (
+                                        <td key={`${userItem.email}_${kb.code}`} className="px-2 py-2 text-center">
+                                          {allowedSet.has(kb.code) ? "✅" : "—"}
+                                        </td>
+                                      ))}
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                          <p className="mt-2 text-xs text-slate-500">{t.permissionMatrixSelectUserHint}</p>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                            <h3 className="text-sm font-semibold text-slate-800">{t.permissionMatrixUserDetailTitle}</h3>
+                            {selectedMatrixUser ? (
+                              <div className="mt-2 space-y-2 text-xs text-slate-700">
+                                <div className="font-mono">{selectedMatrixUser.email}</div>
+                                <div>
+                                  role: <span className="font-mono">{selectedMatrixUser.role}</span>
+                                </div>
+                                <div>
+                                  department: <span className="font-mono">{selectedMatrixUser.department ?? t.noValue}</span>
+                                </div>
+                                <div>
+                                  {t.permissionMatrixAllowedKbs}:{" "}
+                                  {selectedMatrixUser.allowed_kb_codes.length > 0 ? (
+                                    <span className="font-mono">
+                                      {selectedMatrixUser.allowed_kb_codes.join(", ")}
+                                    </span>
+                                  ) : (
+                                    t.noValue
+                                  )}
+                                </div>
+                                <div>
+                                  {t.permissionMatrixBlockedKbs}:{" "}
+                                  {blockedMatrixKbCodes.length > 0 ? (
+                                    <span className="font-mono">
+                                      {blockedMatrixKbCodes.join(", ")}
+                                    </span>
+                                  ) : (
+                                    t.noValue
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="mt-2 text-sm text-slate-500">{t.permissionMatrixNoData}</p>
+                            )}
+                          </div>
+
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                            <h3 className="text-sm font-semibold text-slate-800">{t.permissionMatrixFormulaTitle}</h3>
+                            <div className="mt-2 rounded-sm border border-slate-200 bg-white px-2 py-2 font-mono text-xs text-slate-800">
+                              {t.permissionMatrixFormulaLine1}
+                            </div>
+                            <div className="mt-2 space-y-1 text-xs text-slate-600">
+                              <div>{t.permissionMatrixFormulaLine2}</div>
+                              <div>{t.permissionMatrixFormulaLine3}</div>
+                              <div>{t.permissionMatrixFormulaLine4}</div>
+                            </div>
+                          </div>
+
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                            <h3 className="text-sm font-semibold text-slate-800">{t.permissionMatrixDemoCasesTitle}</h3>
+                            <div className="mt-2 space-y-2">
+                              {PERMISSION_MATRIX_DEMO_CASES.map((item) => (
+                                <div key={item.label} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                                  <div className="font-semibold text-slate-800">{item.label}</div>
+                                  <div>user = {item.user}</div>
+                                  <div>question = {item.question}</div>
+                                  <div>target = {item.target}</div>
+                                  <div>decision = {item.decision}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                        <h3 className="text-sm font-semibold text-amber-900">{t.permissionMatrixSecurityTitle}</h3>
+                        <div className="mt-2 font-mono">{t.permissionMatrixTraditionalFlow}</div>
+                        <div className="mt-1 font-mono">{t.permissionMatrixProjectFlow}</div>
+                        <ul className="mt-2 space-y-1">
+                          <li>{t.permissionMatrixSecurityPoint1}</li>
+                          <li>{t.permissionMatrixSecurityPoint2}</li>
+                          <li>{t.permissionMatrixSecurityPoint3}</li>
+                          <li>{t.permissionMatrixSecurityPoint4}</li>
+                        </ul>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                        <div>roles: {permissionMatrix.roles.map((item) => item.name).join(", ") || t.noValue}</div>
+                        <div className="mt-1">
+                          departments: {permissionMatrix.departments.map((item) => item.code).join(", ") || t.noValue}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">{t.permissionMatrixNoData}</p>
+                  )}
+                </div>
               </section>
             ) : null}
 
