@@ -153,8 +153,9 @@ export const UI_TEXT = {
     navPermissionMatrix: "权限矩阵",
     navDeveloperTrace: "开发者追踪",
     navGraphRag: "GraphRAG图谱",
-    permissionMatrixPageTitle: "Permission Matrix Visualizer",
-    permissionMatrixPageHint: "只读权限关系展示页：用于演示账号与知识库访问范围说明，不提供权限编辑。",
+    permissionMatrixPageTitle: "权限矩阵可视化工具",
+    permissionMatrixPageHint:
+      "只读权限范围展示：用于演示账号与知识库访问关系，不提供权限编辑。权限由后端 RBAC/ACL 决定，前端只展示结果。",
     permissionMatrixNoData: "当前暂无可展示的权限矩阵数据。",
     permissionMatrixSelectUserHint: "点击左侧用户行查看详情。",
     permissionMatrixUsers: "演示账号",
@@ -441,7 +442,7 @@ export const UI_TEXT = {
     navGraphRag: "GraphRAG",
     permissionMatrixPageTitle: "Permission Matrix Visualizer",
     permissionMatrixPageHint:
-      "Read-only permission visualization for demo accounts and knowledge-base access scope. No permission editing.",
+      "Read-only permission scope visualization for demo accounts and knowledge-base access. No permission editing; RBAC/ACL authority stays in backend.",
     permissionMatrixNoData: "No permission matrix data is available for the current session.",
     permissionMatrixSelectUserHint: "Select a user row to inspect details.",
     permissionMatrixUsers: "Demo Accounts",

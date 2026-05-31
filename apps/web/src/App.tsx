@@ -250,7 +250,7 @@ const PERMISSION_MATRIX_DEMO_CASES: Array<{
     user: "visitor",
     question: "内部流程怎么走？",
     target: "clarification_required",
-    decision: "skipped retrieval and generation"
+    decision: "clarification_required"
   }
 ];
 
@@ -1498,7 +1498,7 @@ export default function App() {
         <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center px-6">
           <div className="console-shell w-full max-w-2xl p-3">
             <div className="console-statusbar mb-3">
-              <div className="console-statusbar-left">GRAPHRAG OS v0.7.1</div>
+              <div className="console-statusbar-left">GRAPHRAG OS v0.9.3</div>
               <div className="console-statusbar-mid">///////////////</div>
               <div className="console-statusbar-right">SYSTEM ONLINE</div>
             </div>
@@ -1515,7 +1515,7 @@ export default function App() {
         <div className="mx-auto flex h-full w-full max-w-[1260px] items-center px-3 py-3 md:px-6 md:py-4">
           <div className="console-shell flex h-full w-full flex-col p-3 md:p-4">
             <div className="console-statusbar mb-2">
-              <div className="console-statusbar-left">GRAPHRAG OS v0.6.0</div>
+              <div className="console-statusbar-left">GRAPHRAG OS v0.9.3</div>
               <div className="console-statusbar-mid">/////////////////////////</div>
               <div className="console-statusbar-right">SYSTEM ONLINE</div>
             </div>
@@ -1693,7 +1693,7 @@ export default function App() {
     <div className="console-root min-h-screen text-slate-900">
       <div className="console-shell mx-auto w-full max-w-[1880px] p-3 md:p-4">
         <div className="console-statusbar mb-2">
-            <div className="console-statusbar-left">GRAPHRAG OS v0.9.2</div>
+            <div className="console-statusbar-left">GRAPHRAG OS v0.9.3</div>
           <div className="console-statusbar-mid" aria-hidden="true">
             /////////////////////////
           </div>

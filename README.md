@@ -62,6 +62,27 @@ python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 - 健康检查：`scripts/demo-check.ps1` / `scripts/demo-check.sh`
 - 停止：`scripts/demo-down.ps1` / `scripts/demo-down.sh`
 
+## Demo in 3 Minutes
+
+1. Start the demo:
+   `.\scripts\demo-up.ps1`
+2. Login as [bilingual_admin@example.local](mailto:bilingual_admin@example.local), open `Permission Matrix` page, and explain:
+   - 9 demo accounts
+   - 9 knowledge bases
+   - allowed / denied scopes
+   - `selected_kb_ids = allowed_kb_ids ∩ target_kb_ids`
+3. Login as [product_staff@example.local](mailto:product_staff@example.local), ask:
+   `公司内部员工如何申请知识库权限？`
+   Expected: allowed answer from `company-internal`
+4. Still as [product_staff@example.local](mailto:product_staff@example.local), ask:
+   `技术部机器人故障诊断流程是什么？`
+   Expected: pre-retrieval deny
+5. Login as [bilingual_admin@example.local](mailto:bilingual_admin@example.local), open Developer Trace / GraphRAG projection, and explain:
+   - router decision
+   - selected scope
+   - retrieval status
+   - trace / audit path
+
 ## 5. Screenshots
 
 ### 1. Login and role-based access
@@ -142,20 +163,21 @@ flowchart LR
 
 ### tech_staff
 
-- 技术部机器人故障诊断流程是什么？
+- Summarize the Robot SDK deployment troubleshooting checklist.
 - 公司内部员工如何申请知识库权限？
 - 销售部本季度客户策略是什么？（预期：检索前拒绝）
 
 ### product_staff
 
-- 产品生产流程是什么？
+- 公司内部员工如何申请知识库权限？（预期：允许，`company-internal`）
+- 技术部机器人故障诊断流程是什么？（预期：检索前拒绝）
 - 产品部门内部知识库写的什么？
 
 ### bilingual_admin
 
 - HR 招人流程是什么？
 - 销售部本季度客户策略是什么？
-- 技术部机器人故障诊断流程是什么？
+- 打开 Developer Trace 和 Permission Matrix 页面解释权限链路。
 
 ## 10. Security Guarantees
 
