@@ -10,6 +10,7 @@
 - 可审计的 QA / Trace / Graph 可观测链路。
 - 默认 `LLM_MODE=mock`、`EMBEDDING_MODE=mock` 的稳定离线演示路径。
 - 可选本地增强（Ollama / local embedding），但非默认依赖。
+- v0.9.4 扩充了 `sample_data` fictional demo knowledge base，让每个部门都有稳定问答路径；这些样本文档不代表真实企业资料。
 
 ## 2. Why ordinary RAG is risky in enterprise permission scenarios
 
@@ -155,28 +156,76 @@ flowchart LR
 
 ## 9. Demo Questions
 
+`sample_data` 是 fictional demo knowledge base，仅用于验证权限范围、检索稳定性和 trace。不要把其中部门文档理解为真实企业知识库或生产级知识治理。
+
 ### visitor
 
 - 公司公开售后政策是什么？
+- 公司有哪些公开产品线？
+- 访客可以访问哪些资料？
 - 销售部本季度客户策略是什么？（预期：检索前拒绝）
 - 内部流程怎么走？（预期：`mode=clarification_required`，HTTP 200，不检索、不生成）
 
 ### tech_staff
 
-- Summarize the Robot SDK deployment troubleshooting checklist.
+- 技术部机器人故障诊断流程是什么？
+- Robot SDK 部署排障清单是什么？
+- 如何集成机器人 SDK？
 - 公司内部员工如何申请知识库权限？
 - 销售部本季度客户策略是什么？（预期：检索前拒绝）
+
+### sales_staff
+
+- 销售部本季度客户策略是什么？
+- 销售报价策略是什么？
+- 客户分级规则是什么？
+- 技术部机器人故障诊断流程是什么？（预期：检索前拒绝）
+
+### marketing_staff
+
+- 市场部品牌定位是什么？
+- 展会宣传方案是什么？
+- 内容发布审核规范是什么？
+- 客服部售后处理流程是什么？（预期：检索前拒绝）
+
+### support_staff
+
+- 客服部售后处理流程是什么？
+- 客户投诉如何升级？
+- 保修政策内部标准是什么？
+- 产品生产流程是什么？（预期：检索前拒绝）
+
+### hr_staff
+
+- HR 招人流程是什么？
+- 入职流程是什么？
+- 绩效评估流程是什么？
+- 行政部采购流程是什么？（预期：检索前拒绝）
+
+### admin_staff
+
+- 行政部采购流程是什么？
+- 办公资产如何管理？
+- 会议室如何预约？
+- HR 招人流程是什么？（预期：检索前拒绝）
 
 ### product_staff
 
 - 公司内部员工如何申请知识库权限？（预期：允许，`company-internal`）
 - 技术部机器人故障诊断流程是什么？（预期：检索前拒绝）
+- 产品生产流程是什么？
+- 产品需求如何评审？
+- 竞品分析框架是什么？
 - 产品部门内部知识库写的什么？
 
 ### bilingual_admin
 
 - HR 招人流程是什么？
 - 销售部本季度客户策略是什么？
+- 市场部品牌定位是什么？
+- 客服部售后处理流程是什么？
+- 行政部采购流程是什么？
+- 产品生产流程是什么？
 - 打开 Developer Trace 和 Permission Matrix 页面解释权限链路。
 
 ## 10. Security Guarantees
@@ -200,10 +249,12 @@ flowchart LR
 - Permission Matrix Visualizer（read-only）。
 - Neo4j 图投影（KB/Document/Chunk/Trace + light entity projection）。
 - 文档上传与 reindex（Markdown/TXT）。
+- v0.9.4 fictional department seed coverage：public/company/tech/sales/marketing/support/hr/admin/product 均有演示问答锚点。
 
 ## 12. What is Demo-level / Not Implemented Yet
 
 - GraphRAG 当前是权限范围内的 KB / Document / Chunk / Trace 图谱投影，不是生产级实体知识图谱。
+- `sample_data` 是虚构 demo seed data，不是真实企业资料。
 - 未实现生产级实体消歧。
 - 未实现社区聚类（Louvain/Leiden）。
 - 未实现生产级自动关系抽取流水线。

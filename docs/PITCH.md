@@ -4,6 +4,8 @@
 
 这是一个本地可复现的权限感知企业 RAG Demo。核心不是模型效果，而是企业知识库中的权限安全问题。系统通过 JWT、RBAC 和知识库 ACL 先计算用户可访问范围，再结合 router 识别问题目标知识库，执行 `selected_kb_ids = allowed_kb_ids ∩ target_kb_ids`，只在交集内检索。无权限内容不会进入 retrieval、答案生成、trace、cache、audit 或 graph projection。
 
+本项目使用 fictional department documents 作为 demo seed data，用于验证权限范围、检索稳定性和 trace，不代表真实企业资料。
+
 ## 2-minute architecture explanation
 
 - 前端：React + Vite（只展示权限范围，不决定权限）
