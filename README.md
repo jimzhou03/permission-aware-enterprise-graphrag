@@ -90,6 +90,12 @@ python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 
 ![Login and role-based access](docs/assets/login.png)
 
+### Read-only Permission Matrix Visualizer
+
+The Permission Matrix page visualizes demo users, knowledge bases, and allowed scopes. It is read-only and does not act as a production permission management backend.
+
+![Read-only Permission Matrix Visualizer](docs/assets/permission-matrix.png)
+
 登录后会显示当前用户身份与可访问范围；真正授权由后端 RBAC/ACL 决定，前端仅展示 scope，不可扩权。
 
 ### 2. Authorized answer within the user's knowledge scope
@@ -324,3 +330,4 @@ python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 - [Local Embedding](docs/LOCAL_EMBEDDING.md)
 - [Local LLM](docs/LOCAL_LLM.md)
 - [GraphRAG Scope](docs/GRAPHRAG_SCOPE.md)
+
