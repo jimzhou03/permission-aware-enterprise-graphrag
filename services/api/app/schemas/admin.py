@@ -16,3 +16,32 @@ class DocumentCreate(BaseModel):
     source_label: str = "fictional-enterprise-doc"
     entities: list[str] = []
 
+
+class PermissionMatrixUser(BaseModel):
+    email: str
+    role: str
+    department: str | None
+    allowed_kb_codes: list[str] = Field(default_factory=list)
+
+
+class PermissionMatrixRole(BaseModel):
+    name: str
+    description: str
+
+
+class PermissionMatrixDepartment(BaseModel):
+    code: str
+    name: str
+
+
+class PermissionMatrixKnowledgeBase(BaseModel):
+    code: str
+    name: str
+    scope: str
+
+
+class PermissionMatrixResponse(BaseModel):
+    users: list[PermissionMatrixUser] = Field(default_factory=list)
+    roles: list[PermissionMatrixRole] = Field(default_factory=list)
+    departments: list[PermissionMatrixDepartment] = Field(default_factory=list)
+    knowledge_bases: list[PermissionMatrixKnowledgeBase] = Field(default_factory=list)
