@@ -34,7 +34,7 @@ bash scripts/demo-up.sh
 3. 解释该用户的 `allowed KBs` 与 `blocked KBs`。
 4. 切到知识问答，提问“公司内部员工如何申请知识库权限？”（`company-internal`，应允许）。
 5. 再提问“技术部机器人故障诊断流程是什么？”（`tech-internal`，应检索前拒绝）。
-6. 打开 Developer Trace：展示 `selected_kb_ids = allowed_kb_ids ∩ target_kb_ids`。
+6. 打开 Developer Trace：展示 `selected_kb_ids = allowed_kb_ids ∩ target_kb_codes`（target codes 解析为 KB IDs 后求交）。
 
 ## 4. 每个账号问什么
 

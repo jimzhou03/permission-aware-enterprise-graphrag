@@ -22,7 +22,7 @@
 
 本项目采用后端强制的权限前置收敛：
 
-`selected_kb_ids = allowed_kb_ids ∩ target_kb_ids`
+`selected_kb_ids = allowed_kb_ids ∩ target_kb_codes`（router 输出 code，后端解析为 KB IDs 后求交）
 
 然后仅在 `selected_kb_ids` 内执行 retrieval，不允许先全库召回再过滤。
 
@@ -71,7 +71,7 @@ python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
    - 9 demo accounts
    - 9 knowledge bases
    - allowed / denied scopes
-   - `selected_kb_ids = allowed_kb_ids ∩ target_kb_ids`
+   - `selected_kb_ids = allowed_kb_ids ∩ target_kb_codes`（resolved to KB IDs）
 3. Login as [product_staff@example.local](mailto:product_staff@example.local), ask:
    `公司内部员工如何申请知识库权限？`
    Expected: allowed answer from `company-internal`
@@ -108,7 +108,7 @@ The Permission Matrix page visualizes demo users, knowledge bases, and allowed s
 
 ![Pre-retrieval denial for unauthorized scope](docs/assets/denied-answer.png)
 
-越权问题在检索前拒绝；unauthorized chunks 不会进入 retrieval / answer / trace / cache / audit / graph projection。
+越权问题在检索前拒绝；核心安全保证是 unauthorized chunks 在 retrieval 之前被排除，不会进入 answer generation、cache、audit 或 graph projection。
 
 ### 4. Permission Matrix Visualizer (read-only)
 
@@ -240,8 +240,12 @@ flowchart LR
 - 本项目在检索前执行权限范围收窄。
 - `target_kb_codes` 为空且路由不确定时，返回澄清，不执行检索和生成。
 - `target_kb_codes` 明确但与 `allowed_kb_ids` 无交集时，检索前拒绝。
-- 未授权 chunk 不会进入 retrieval、prompt、answer、trace、cache、audit、graph view。
+- 普通前端聊天视图显示 sanitized sources，并隐藏 chunk-level debug fields。
+- QA API 为调试和 trace 兼容性保留 authorized `citations` / `retrieved_chunks`；这些字段仍受后端 RBAC/ACL 与 `selected_kb_ids` 约束。
+- Developer Trace 和 document chunk APIs 可在当前认证用户授权范围内展示 full chunk content；它们是 debugging/observability views，不是 public responses。
+- 核心安全保证是 unauthorized chunks 在 retrieval 之前被排除，不进入 answer generation、cache、audit 或 graph projection。
 - 默认 `LLM_MODE=mock`、`EMBEDDING_MODE=mock`，CI 不依赖外部 API/模型下载。
+- Docker Compose 是 local demo setup；它包含 Adminer 和 Redis Commander 等观测工具，不是 production deployment profile。
 
 ## 11. What is Implemented
 
@@ -295,10 +299,8 @@ python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 
 ## 15. Roadmap
 
-- v0.7.x: demo hardening（安全链路与展示收口）
-- v0.8.x: optional local embedding / optional local LLM
-- v0.9.x: light semantic GraphRAG
-- v1.0: 生产化硬化候选（权限后台、数据治理、可靠性）
+- Completed: CI, Permission Matrix Visualizer, department demo knowledge coverage, Docker demo scripts, permission matrix tests.
+- Future: sanitized public ask response split, production permission admin panel, SSO, secret management, real embedding provider, production LLM generator, production graph construction, cloud deployment hardening, observability stack.
 
 ## 16. Troubleshooting
 

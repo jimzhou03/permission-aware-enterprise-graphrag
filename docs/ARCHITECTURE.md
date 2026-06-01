@@ -22,7 +22,7 @@
 2. `/api/v1/qa/ask` 发起问题
 3. router 产出 `target_kb_codes`（仅分类，不授权）
 4. 后端计算 `allowed_kb_ids`
-5. 后端求交 `selected_kb_ids = allowed ∩ target`
+5. 后端求交 `selected_kb_ids = allowed_kb_ids ∩ target_kb_codes`（target codes 解析为 KB IDs 后求交）
 6. 在 `selected_kb_ids` 内执行 retrieval（SQL 层过滤）
 7. 仅使用授权 citation 生成 answer
 8. 保存审计记录（命中 kb/doc/chunk id）

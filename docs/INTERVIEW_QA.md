@@ -39,3 +39,25 @@ Pre-filtering。先计算 `allowed_kb_ids`，再与 `target_kb_codes` 求交得�
 ## 10. 项目当前边界是什么？
 
 这是安全链路与可观测性优先的工程演示项目，不是生产级权限后台或完整实体知识图谱平台。
+
+## What not to overclaim
+
+Do not say:
+
+- This is a production-grade enterprise permission platform.
+- This is a complete GraphRAG / knowledge graph system.
+- The project implements production-grade entity disambiguation or community detection.
+- The system never exposes raw chunks under any endpoint.
+- Docker Compose is production secure.
+- The project uses real enterprise data.
+- The default path uses a real LLM or real embedding model.
+
+Say instead:
+
+- This is a local reproducible permission-aware RAG / light GraphRAG demo.
+- The core contribution is backend pre-filtering with RBAC/ACL before retrieval.
+- Normal chat UI hides chunk-level debug fields.
+- Trace and chunk APIs can expose authorized chunk content for debugging.
+- GraphRAG is implemented as a light graph projection over KB / document / chunk / trace, not as a production entity graph.
+- The sample documents are fictional demo seed data.
+- The default mode is mock LLM / mock embedding / rules router for reproducibility.

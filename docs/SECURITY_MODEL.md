@@ -13,7 +13,9 @@
 
 ## 核心收敛公式
 
-`selected_kb_ids = allowed_kb_ids ∩ target_kb_ids`
+`selected_kb_ids = allowed_kb_ids ∩ target_kb_codes`
+
+这里的 `target_kb_codes` 是 router 或用户选择给出的目标知识库 code；后端会先解析为 KB IDs，再与 `allowed_kb_ids` 求交。
 
 - 若 `target_kb_codes` 明确且交集为空：检索前拒绝。
 - 若路由不确定（`clarification_required`）且未显式指定 scope：不检索、不生成，返回澄清提示。

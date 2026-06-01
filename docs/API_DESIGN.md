@@ -1,173 +1,202 @@
 # API Design
 
-## 1. API约定
+## 1. API Conventions
 
-- Base URL：`/api/v1`
-- 鉴权方式：`Authorization: Bearer <access_token>`
-- 请求和响应格式：JSON
-- 错误响应使用标准HTTP状态码和结构化错误信息。
+- Base URL: `/api/v1`
+- Authentication: `Authorization: Bearer <access_token>`
+- Request and response format: JSON unless an endpoint explicitly accepts file upload.
+- Errors use standard HTTP status codes with structured FastAPI error responses.
+
+This document describes the API surface that exists in the current v0.9.4 demo. Future ideas are listed separately and must not be presented as implemented endpoints.
 
 ## 2. Auth API
 
 ### POST `/auth/login`
 
-登录并返回JWT。
+Logs in with a demo account and returns a JWT.
 
-请求：
-
-```json
-{
-  "email": "hr@example.local",
-  "password": "demo-password"
-}
-```
-
-响应：
+Request:
 
 ```json
 {
-  "access_token": "example.jwt.token",
-  "token_type": "bearer",
-  "user": {
-    "id": "00000000-0000-0000-0000-000000000000",
-    "email": "hr@example.local",
-    "full_name": "Demo HR User",
-    "role": "hr",
-    "department": "hr",
-    "permissions": ["qa:ask"]
-  }
+  "email": "product_staff@example.local",
+  "password": "Passw0rd!123"
 }
 ```
+
+Response includes:
+
+- `access_token`
+- `token_type`
+- `user`
 
 ### GET `/auth/me`
 
-返回当前用户、角色、部门和权限摘要。
+Returns the current authenticated user, role, department, and permission summary.
 
 ## 3. Knowledge Base API
 
 ### GET `/knowledge-bases`
 
-只返回当前用户可访问的知识库。
+Returns only knowledge bases visible to the current authenticated user according to backend RBAC/ACL.
 
-响应：
+### GET `/knowledge-bases/{kb_id}/documents`
 
-```json
-[
-  {
-    "id": "00000000-0000-0000-0000-000000000000",
-    "code": "hr-policy",
-    "name": "HR Policy",
-    "description": "Fictional HR policy knowledge base",
-    "department": "hr",
-    "visibility": "private",
-    "version": 1
-  }
-]
-```
+Returns documents for an authorized knowledge base. `{kb_id}` may be the knowledge base UUID or code.
 
-## 4. QA API
+### POST `/knowledge-bases/{kb_id}/documents/upload`
+
+Uploads a Markdown/TXT document into an authorized writable knowledge base.
+
+- Requires authentication.
+- Requires the target KB to be in the user's allowed scope.
+- Requires backend write permission for that KB.
+- This is a demo ingestion path, not a production document governance workflow.
+
+## 4. Document / Chunk API
+
+### GET `/documents/{document_id}/chunks`
+
+Returns chunks for a document only when the current user can access the document's knowledge base.
+
+This endpoint can expose full authorized chunk content for debugging and observability. It does not expose chunks outside the viewer's backend RBAC/ACL scope.
+
+### POST `/documents/{document_id}/reindex`
+
+Reindexes an existing document when the user can access the document's KB and has backend write permission for that KB.
+
+## 5. QA API
 
 ### POST `/qa/ask`
 
-提交问题。后端先做权限判断，再进入RAG或GraphRAG。
+Submits a question. The backend resolves the authenticated user's allowed KBs, classifies the requested target scope, computes `selected_kb_ids = allowed_kb_ids ∩ target_kb_codes` after resolving target codes to IDs, and retrieves only within the selected scope.
 
-请求：
+Request:
 
 ```json
 {
-  "question": "访客可以查看财务薪酬制度吗？",
+  "question": "公司内部员工如何申请知识库权限？",
   "mode": "auto",
   "knowledge_base_codes": []
 }
 ```
 
-响应：
+Response includes:
 
-```json
-{
-  "request_id": "qa_20260524_example",
-  "answer": "你没有权限访问财务知识库。",
-  "denied": true,
-  "refusal_reason": "Requested knowledge base is outside allowed scope.",
-  "cache_hit": false,
-  "mode": "rag",
-  "route": {
-    "target_department": "finance",
-    "mode": "rag",
-    "requires_rag": true,
-    "confidence": 0.86,
-    "reason": "Question mentions finance compensation policy."
-  },
-  "citations": [],
-  "graph_paths": []
-}
-```
+- `request_id`
+- `answer`
+- `denied`
+- `refusal_reason`
+- `cache_hit`
+- `mode`
+- `route`
+- `sources`
+- `retrieved_chunks`
+- `citations`
+- `graph_paths`
+- `function_trace_summary`
+
+The normal chat UI hides chunk-level debug fields and displays sanitized sources. The API response may retain authorized `citations` / `retrieved_chunks` for debugging and trace compatibility; these are still scoped by backend RBAC/ACL and selected KB IDs.
 
 ### GET `/qa/{request_id}`
 
-查看单次问答详情，包括引用、图谱路径和审计状态。
+Returns a QA audit record for the request owner or a user with `audit:read`.
 
-## 5. Admin API
+### GET `/qa/{request_id}/trace`
 
-### GET `/admin/users`
+Returns Developer Trace details for the request owner or a user with `audit:read`.
 
-管理员查看用户列表。
+Trace can reconstruct and expose full authorized chunk content. It filters chunk content by the current viewer's backend permission scope.
 
-### POST `/admin/knowledge-bases`
+### GET `/qa/{request_id}/graph`
 
-管理员创建知识库。
+Returns graph trace elements for the request owner or a user with `audit:read`.
 
-请求：
+Graph trace is scoped to the current viewer's backend permission scope and does not expose full chunk content.
 
-```json
-{
-  "code": "finance-policy",
-  "name": "Finance Policy",
-  "description": "Fictional finance policy knowledge base",
-  "department_code": "finance",
-  "visibility": "private"
-}
-```
+## 6. Graph API
 
-### POST `/admin/documents`
+### GET `/graph/status`
 
-管理员录入虚构文档。
+Returns Neo4j / graph projection status for an authenticated user.
 
-请求：
+### GET `/graph/overview`
 
-```json
-{
-  "knowledge_base_code": "finance-policy",
-  "title": "Fictional Compensation Policy",
-  "content": "This is fictional sample content for demonstration only.",
-  "source_label": "fictional-enterprise-doc",
-  "entities": ["Compensation", "Finance Department"]
-}
-```
+Returns a permission-scoped graph overview for the current authenticated user.
+
+### POST `/graph/sync`
+
+Synchronizes the light Neo4j graph projection.
+
+- Requires `admin:kb:write`.
+- This is a demo graph projection sync, not a production graph construction pipeline.
+
+## 7. Admin API
 
 ### GET `/admin/audit-logs`
 
-管理员查看问答审计日志。
+Returns recent QA audit records.
 
-## 6. Demo API
+- Requires `audit:read`.
+
+### GET `/admin/permission-matrix`
+
+Returns the read-only permission matrix used by the Permission Matrix Visualizer.
+
+- Requires `admin:users:read`.
+- Read-only.
+- Does not create users, edit roles, rotate passwords, issue tokens, or expose secrets.
+- Does not act as a production permission management backend.
+
+## 8. System API
+
+### GET `/system/retrieval-config`
+
+Returns runtime retrieval, embedding, router, cache, upload, and graph configuration visible to an authenticated user.
+
+## 9. Demo API
 
 ### GET `/demo/overreach-cases`
 
-返回预设越权演示案例，例如：
+Returns preset demo overreach cases for walkthroughs.
 
-- `visitor` 提问财务薪酬制度。
-- `hr` 提问财务预算审批。
-- `finance` 提问技术发布密钥轮换。
+This endpoint is unauthenticated and contains only static demo prompts.
 
-## 7. 权限要求汇总
+## 10. Permission Summary
 
-| API | 鉴权 | 权限 |
+| API | Auth | Permission / Scope |
 | --- | --- | --- |
-| `/auth/login` | 否 | 无 |
-| `/auth/me` | 是 | 当前用户 |
-| `/knowledge-bases` | 是 | 当前用户可访问范围 |
-| `/qa/ask` | 是 | `qa:ask` |
-| `/qa/{request_id}` | 是 | 本人或 `audit:read` |
-| `/admin/*` | 是 | 对应管理员权限 |
-| `/demo/overreach-cases` | 是 | 当前用户或公开演示策略 |
+| `POST /auth/login` | No | Demo account credentials |
+| `GET /auth/me` | Yes | Current user |
+| `GET /knowledge-bases` | Yes | Current user's allowed KB scope |
+| `GET /knowledge-bases/{kb_id}/documents` | Yes | Authorized KB scope |
+| `POST /knowledge-bases/{kb_id}/documents/upload` | Yes | Authorized KB scope + KB write permission |
+| `GET /documents/{document_id}/chunks` | Yes | Authorized document KB scope |
+| `POST /documents/{document_id}/reindex` | Yes | Authorized document KB scope + KB write permission |
+| `POST /qa/ask` | Yes | `qa:ask` |
+| `GET /qa/{request_id}` | Yes | Request owner or `audit:read` |
+| `GET /qa/{request_id}/trace` | Yes | Request owner or `audit:read` |
+| `GET /qa/{request_id}/graph` | Yes | Request owner or `audit:read` |
+| `GET /graph/status` | Yes | Current user |
+| `GET /graph/overview` | Yes | Current user's allowed KB scope |
+| `POST /graph/sync` | Yes | `admin:kb:write` |
+| `GET /admin/audit-logs` | Yes | `audit:read` |
+| `GET /admin/permission-matrix` | Yes | `admin:users:read` |
+| `GET /system/retrieval-config` | Yes | Current user |
+| `GET /demo/overreach-cases` | No | Static demo endpoint |
 
+## 11. Future / Not Implemented
+
+The following are not implemented in v0.9.4 and must not be described as current APIs:
+
+- `/admin/users`
+- `/admin/documents`
+- Production permission admin panel.
+- Enterprise SSO.
+- Production secret management.
+- Sanitized public ask response split.
+- Real-time permission propagation control plane.
+- Production-grade entity disambiguation.
+- Community detection.
+- Full production graph construction pipeline.
+- MCP adapter.
