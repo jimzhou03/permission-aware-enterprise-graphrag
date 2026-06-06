@@ -44,6 +44,10 @@ def _trace(client, token: str, request_id: str) -> dict:
     return response.json()
 
 
+def _audit_token(client) -> str:
+    return _login(client, "bilingual_admin@example.local")
+
+
 def _trace_step_map(trace_payload: dict) -> dict[str, dict]:
     steps = trace_payload.get("function_trace", [])
     return {item["tool_name"]: item for item in steps}
@@ -96,7 +100,7 @@ def test_authorized_rag_question_exposes_controlled_function_trace(client):
     assert ask_payload["denied"] is False
     assert ask_payload["function_trace_summary"]
 
-    trace_payload = _trace(client, token, ask_payload["request_id"])
+    trace_payload = _trace(client, _audit_token(client), ask_payload["request_id"])
     _assert_trace_order(trace_payload)
     steps = _trace_step_map(trace_payload)
     assert steps["classify_query"]["status"] == "success"
@@ -108,6 +112,25 @@ def test_authorized_rag_question_exposes_controlled_function_trace(client):
     assert steps["save_audit_log"]["status"] == "success"
 
 
+def test_request_owner_trace_is_sanitized_without_audit_permission(client):
+    token = _login(client, "sales_staff@example.local")
+    ask_response = _ask(client, token, "请总结销售部内部报价流程和沟通约定。", mode="rag")
+    assert ask_response.status_code == 200, ask_response.text
+    request_id = ask_response.json()["request_id"]
+
+    trace_payload = _trace(client, token, request_id)
+    assert trace_payload["request_id"] == request_id
+    assert trace_payload["retrieved_chunks"] == []
+    assert trace_payload["hit_chunk_ids"] == []
+    assert trace_payload["hit_document_ids"] == []
+    assert trace_payload["hit_kb_ids"] == []
+    assert trace_payload["function_trace"] == []
+    assert trace_payload["router_decision"] is None
+    assert trace_payload["model"] == "redacted"
+    assert trace_payload["retrieval_engine"] == "redacted"
+    assert any("audit:read" in item for item in trace_payload["trace_limits"])
+
+
 def test_general_greeting_trace_skips_retrieval(client):
     token = _login(client, "sales_staff@example.local")
     ask_response = _ask(client, token, "你好", mode="auto")
@@ -115,7 +138,7 @@ def test_general_greeting_trace_skips_retrieval(client):
     ask_payload = ask_response.json()
     assert ask_payload["mode"] == "general"
 
-    trace_payload = _trace(client, token, ask_payload["request_id"])
+    trace_payload = _trace(client, _audit_token(client), ask_payload["request_id"])
     _assert_trace_order(trace_payload)
     steps = _trace_step_map(trace_payload)
     assert steps["search_allowed_chunks"]["status"] == "skipped"
@@ -136,7 +159,7 @@ def test_cache_hit_trace_marks_retrieval_and_generation_skipped(client):
     second_payload = second.json()
     assert second_payload["cache_hit"] is True
 
-    trace_payload = _trace(client, token, second_payload["request_id"])
+    trace_payload = _trace(client, _audit_token(client), second_payload["request_id"])
     _assert_trace_order(trace_payload)
     steps = _trace_step_map(trace_payload)
     assert steps["check_cache"]["status"] == "success"
@@ -153,9 +176,11 @@ def test_permission_denial_trace_hides_unauthorized_chunk_content(client):
     assert ask_response.status_code == 200, ask_response.text
     ask_payload = ask_response.json()
     assert ask_payload["denied"] is True
-    assert ask_payload["citations"] == []
+    assert ask_payload["sources"] == []
+    assert "citations" not in ask_payload
+    assert "retrieved_chunks" not in ask_payload
 
-    trace_payload = _trace(client, token, ask_payload["request_id"])
+    trace_payload = _trace(client, _audit_token(client), ask_payload["request_id"])
     _assert_trace_order(trace_payload)
     steps = _trace_step_map(trace_payload)
     assert steps["search_allowed_chunks"]["status"] == "denied"
@@ -191,7 +216,7 @@ def test_cross_department_isolation_still_enforced_with_function_trace(
     assert ask_response.status_code == 200, ask_response.text
     ask_payload = ask_response.json()
 
-    trace_payload = _trace(client, token, ask_payload["request_id"])
+    trace_payload = _trace(client, _audit_token(client), ask_payload["request_id"])
     _assert_trace_order(trace_payload)
     assert set(trace_payload["allowed_kb_codes"]) == expected_allowed_codes
     if ask_payload["denied"] is False:
@@ -245,7 +270,7 @@ def test_frontend_scope_selection_cannot_expand_permissions_in_function_trace(cl
     payload = ask_response.json()
     assert payload["denied"] is True
 
-    trace_payload = _trace(client, token, payload["request_id"])
+    trace_payload = _trace(client, _audit_token(client), payload["request_id"])
     _assert_trace_order(trace_payload)
     assert set(trace_payload["allowed_kb_codes"]) == {"public-policy", "company-internal", "sales-internal"}
     assert trace_payload["retrieved_chunks"] == []
@@ -271,9 +296,11 @@ def test_ollama_router_cannot_expand_permissions_in_function_trace(client, monke
     assert ask_response.status_code == 200, ask_response.text
     ask_payload = ask_response.json()
     assert ask_payload["denied"] is True
-    assert ask_payload["citations"] == []
+    assert ask_payload["sources"] == []
+    assert "citations" not in ask_payload
+    assert "retrieved_chunks" not in ask_payload
 
-    trace_payload = _trace(client, token, ask_payload["request_id"])
+    trace_payload = _trace(client, _audit_token(client), ask_payload["request_id"])
     _assert_trace_order(trace_payload)
     steps = _trace_step_map(trace_payload)
     assert set(trace_payload["allowed_kb_codes"]) == {"public-policy"}

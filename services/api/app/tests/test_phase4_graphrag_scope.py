@@ -20,7 +20,8 @@ def test_graphrag_sales_staff_returns_graph_paths_in_authorized_scope(client):
     assert payload["denied"] is False
     assert payload["mode"] == "graphrag"
     assert payload["graph_paths"], payload
-    assert {item["kb_code"] for item in payload["citations"]}.issubset({"sales-internal"})
+    assert {item["kb_code"] for item in payload["sources"]}.issubset({"sales-internal"})
+    assert all("chunk_id" not in item for item in payload["graph_paths"])
 
     allowed_prefixes = {"KB:sales-internal"}
     for graph_path in payload["graph_paths"]:
@@ -41,5 +42,7 @@ def test_graphrag_visitor_sales_internal_request_denied(client):
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["denied"] is True
-    assert payload["citations"] == []
+    assert payload["sources"] == []
+    assert "citations" not in payload
+    assert "retrieved_chunks" not in payload
     assert payload["graph_paths"] == []

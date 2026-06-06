@@ -6,7 +6,7 @@
 
 - 权限范围内的 `KB / Document / Chunk / Trace / Light Entity` 图投影
 - 支持 Neo4j 可视化与不可用时本地 fallback
-- 支持请求级 graph trace（基于授权 citations）
+- 支持请求级 graph trace（基于后端授权 retrieval hits；普通 ask 不暴露 raw citations）
 
 ## Light semantic 增强
 

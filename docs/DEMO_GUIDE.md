@@ -59,7 +59,7 @@ bash scripts/demo-up.sh
 
 - 公开问题：命中 `public-policy`
 - 同部门问题：命中对应 `<department>-internal`
-- 越权问题：检索前拒绝（`denied=true`, `citations=[]`）
+- 越权问题：检索前拒绝（`denied=true`, `sources=[]`，普通 ask 不返回 raw citation/debug 字段）
 - 不确定问题：返回 `clarification_required`（HTTP 200），不检索、不生成
 
 ## 6. Department Knowledge Coverage Demo
@@ -72,4 +72,4 @@ bash scripts/demo-up.sh
 - `sales_staff@example.local`：销售部本季度客户策略是什么？（应命中 `sales-internal`）
 - `hr_staff@example.local`：HR 招人流程是什么？（应命中 `hr-internal`）
 - `product_staff@example.local`：产品生产流程是什么？（应命中 `product-internal`）
-- `visitor@example.local`：销售部本季度客户策略是什么？（应检索前拒绝，`citations=[]`）
+- `visitor@example.local`：销售部本季度客户策略是什么？（应检索前拒绝，`sources=[]`）

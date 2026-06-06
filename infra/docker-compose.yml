@@ -34,6 +34,8 @@ services:
   redis-commander:
     image: rediscommander/redis-commander:latest
     container_name: paegr-redis-commander
+    profiles:
+      - debug
     restart: unless-stopped
     environment:
       REDIS_HOSTS: local:redis:6379
@@ -63,6 +65,8 @@ services:
   adminer:
     image: adminer:4
     container_name: paegr-adminer
+    profiles:
+      - debug
     restart: unless-stopped
     ports:
       - "8081:8080"

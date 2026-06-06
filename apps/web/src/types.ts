@@ -87,7 +87,7 @@ export interface DocumentChunk {
   knowledge_base_code: string;
   chunk_index: number;
   content_preview: string;
-  content: string;
+  content?: string;
   has_embedding: boolean;
   embedding_dimension: number;
 }
@@ -113,17 +113,6 @@ export interface DemoCase {
   expected: string;
 }
 
-export interface Citation {
-  kb_id: string;
-  kb_code: string;
-  kb_name: string;
-  document_id: string;
-  document_title: string;
-  chunk_id: string;
-  score: number;
-  excerpt: string;
-}
-
 export interface AnswerSource {
   kb_code: string;
   kb_name: string;
@@ -132,6 +121,11 @@ export interface AnswerSource {
 
 export interface GraphPath {
   chunk_id: string;
+  path: string[];
+  explanation: string;
+}
+
+export interface PublicGraphPath {
   path: string[];
   explanation: string;
 }
@@ -263,9 +257,7 @@ export interface AskResponse {
   router_fallback_used: boolean;
   router_error: string | null;
   sources: AnswerSource[];
-  retrieved_chunks: Citation[];
-  citations: Citation[];
-  graph_paths: GraphPath[];
+  graph_paths: PublicGraphPath[];
   function_trace_summary: string[];
 }
 
@@ -326,6 +318,7 @@ export interface RequestTrace {
   hit_kb_ids: string[];
   hit_document_ids: string[];
   hit_chunk_ids: string[];
+  sources: AnswerSource[];
   retrieved_chunks: TraceRetrievedChunk[];
   retrieval_engine: string;
   router_mode: "rules" | "ollama";

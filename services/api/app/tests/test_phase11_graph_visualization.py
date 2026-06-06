@@ -177,7 +177,7 @@ def test_neo4j_unavailable_fallback_does_not_break_graphrag_qa(client):
 
         trace_response = client.get(
             f"/api/v1/qa/{ask_payload['request_id']}/trace",
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {_login(client, 'bilingual_admin@example.local')}"},
         )
         assert trace_response.status_code == 200, trace_response.text
         steps = {item["tool_name"]: item for item in trace_response.json()["function_trace"]}

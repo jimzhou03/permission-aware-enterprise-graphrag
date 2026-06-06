@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models import Document, DocumentChunk, KnowledgeBase, User
 from app.schemas.common import DocumentChunkPublic, DocumentIngestionResponse
+from app.services.auth_service import user_has_permission
 from app.services.ingestion_service import record_ingestion_failure_event, reindex_document_chunks
 from app.services.permission_service import can_write_knowledge_base, list_allowed_knowledge_bases
 
@@ -17,7 +18,11 @@ from app.services.permission_service import can_write_knowledge_base, list_allow
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
-@router.get("/{document_id}/chunks", response_model=list[DocumentChunkPublic])
+@router.get(
+    "/{document_id}/chunks",
+    response_model=list[DocumentChunkPublic],
+    response_model_exclude_none=True,
+)
 def list_document_chunks(
     document_id: str,
     current_user: User = Depends(get_current_user),
@@ -35,6 +40,11 @@ def list_document_chunks(
     allowed_kb_ids = {kb.id for kb in list_allowed_knowledge_bases(db, current_user)}
     if document.knowledge_base_id not in allowed_kb_ids:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden to read this document")
+    can_read_full_content = user_has_permission(db, current_user, "audit:read") or user_has_permission(
+        db,
+        current_user,
+        "admin:kb:write",
+    )
 
     kb = db.scalar(select(KnowledgeBase).where(KnowledgeBase.id == document.knowledge_base_id))
     kb_code = kb.code if kb else "unknown"
@@ -62,7 +72,7 @@ def list_document_chunks(
                 knowledge_base_code=kb_code,
                 chunk_index=chunk.ordinal,
                 content_preview=preview,
-                content=chunk.content,
+                content=chunk.content if can_read_full_content else None,
                 has_embedding=bool(embedding),
                 embedding_dimension=len(embedding),
             )

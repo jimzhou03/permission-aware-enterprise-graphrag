@@ -10,10 +10,12 @@
 - Demo hardening for pre-retrieval deny, clarification-required flow, and Developer Trace.
 - Optional local embedding / local LLM documentation.
 - Light GraphRAG projection over KB / document / chunk / trace data.
+- Sanitized public ask response split.
+- Production configuration guard for demo defaults.
+- Debug-only compose profile for Adminer and Redis Commander.
 
 ## Future
 
-- Sanitized public ask response split.
 - Production permission admin panel.
 - Enterprise SSO.
 - Secret management.
@@ -26,4 +28,4 @@
 
 ## Boundary
 
-The current v0.9.4 target is a local demo-ready portfolio version. Future items are not implemented unless explicitly listed under Completed.
+The current v0.9.5 target is a local demo-ready portfolio hardening version. Future items are not implemented unless explicitly listed under Completed.

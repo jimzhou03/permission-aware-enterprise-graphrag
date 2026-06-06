@@ -24,11 +24,12 @@
 ## Pre-retrieval deny
 
 - 拒绝发生在 retrieval 之前。
-- denied 请求不会产生命中 chunk，`citations` 为空。
+- denied 请求不会产生命中 chunk；普通 ask 只返回空 `sources`，不会返回 raw citation/debug 字段。
 
 ## Trace / Cache / Audit / Graph 隔离
 
 - trace 重建时会按当前查看者权限再过滤 chunk 内容。
+- full chunk content 仅对具备 `audit:read` 或写入调试权限的用户开放。
 - cache key 包含角色/部门/权限范围，防止跨角色复用越权答案。
 - audit 记录仅持久化安全元数据（命中 id 集合、模式、延迟等）。
 - graph overview / graph trace 仅展示当前授权范围内节点边。

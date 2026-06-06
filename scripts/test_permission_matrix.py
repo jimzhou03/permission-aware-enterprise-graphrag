@@ -148,15 +148,15 @@ def _assert_true(name: str, condition: bool, context: dict) -> None:
         raise PermissionMatrixFailure(f"[FAIL] {name}: context={json.dumps(context, ensure_ascii=False)}")
 
 
-def _assert_citations_in_scope(name: str, ask_data: dict, allowed_codes: set[str], context: dict) -> None:
-    citations = ask_data.get("citations", [])
-    if not isinstance(citations, list):
+def _assert_sources_in_scope(name: str, ask_data: dict, allowed_codes: set[str], context: dict) -> None:
+    sources = ask_data.get("sources", [])
+    if not isinstance(sources, list):
         raise PermissionMatrixFailure(
-            f"[FAIL] {name}: citations is not list, context={json.dumps(context, ensure_ascii=False)}"
+            f"[FAIL] {name}: sources is not list, context={json.dumps(context, ensure_ascii=False)}"
         )
     kb_codes = {
         item.get("kb_code")
-        for item in citations
+        for item in sources
         if isinstance(item, dict) and isinstance(item.get("kb_code"), str)
     }
     if not kb_codes.issubset(allowed_codes):
@@ -220,8 +220,13 @@ def run(base_url: str) -> int:
                 ask_data.get("denied") is False,
                 {"question": account.allowed_question, "response": ask_data},
             )
-            _assert_citations_in_scope(
-                f"{case_prefix} allowed ask citation scope",
+            _assert_true(
+                f"{case_prefix} allowed ask has no raw debug fields",
+                "citations" not in ask_data and "retrieved_chunks" not in ask_data,
+                {"response": ask_data},
+            )
+            _assert_sources_in_scope(
+                f"{case_prefix} allowed ask source scope",
                 ask_data,
                 account.expected_kb_codes,
                 {"question": account.allowed_question, "response": ask_data},
@@ -245,9 +250,14 @@ def run(base_url: str) -> int:
                     {"response": denied_ask},
                 )
                 _assert_equal(
-                    f"{case_prefix} overreach citations empty",
-                    denied_ask.get("citations"),
+                    f"{case_prefix} overreach sources empty",
+                    denied_ask.get("sources"),
                     [],
+                    {"response": denied_ask},
+                )
+                _assert_true(
+                    f"{case_prefix} overreach ask has no raw debug fields",
+                    "citations" not in denied_ask and "retrieved_chunks" not in denied_ask,
                     {"response": denied_ask},
                 )
                 denied_request_id = str(denied_ask.get("request_id", ""))
@@ -257,33 +267,6 @@ def run(base_url: str) -> int:
                     {"response": denied_ask},
                 )
                 denied_request_ids.append(denied_request_id)
-
-                status, trace_data = _request_json("GET", f"{api}/qa/{denied_request_id}/trace", token=token)
-                _assert_equal(f"{case_prefix} denied trace status", status, 200, {"response": trace_data})
-                _assert_equal(
-                    f"{case_prefix} denied trace retrieved_chunks empty",
-                    trace_data.get("retrieved_chunks"),
-                    [],
-                    {"response": trace_data},
-                )
-                _assert_equal(
-                    f"{case_prefix} denied trace hit_chunk_ids empty",
-                    trace_data.get("hit_chunk_ids"),
-                    [],
-                    {"response": trace_data},
-                )
-                _assert_equal(
-                    f"{case_prefix} denied trace search status",
-                    _function_status(trace_data, "search_allowed_chunks"),
-                    "denied",
-                    {"response": trace_data},
-                )
-                _assert_equal(
-                    f"{case_prefix} denied trace generate status",
-                    _function_status(trace_data, "generate_answer"),
-                    "skipped",
-                    {"response": trace_data},
-                )
 
                 status, detail_data = _request_json("GET", f"{api}/qa/{denied_request_id}", token=token)
                 _assert_equal(f"{case_prefix} denied detail status", status, 200, {"response": detail_data})
@@ -327,6 +310,33 @@ def run(base_url: str) -> int:
                     [],
                     {"row": row},
                 )
+            for denied_request_id in denied_request_ids:
+                status, trace_data = _request_json("GET", f"{api}/qa/{denied_request_id}/trace", token=admin_token)
+                _assert_equal("admin denied trace status", status, 200, {"response": trace_data})
+                _assert_equal(
+                    "admin denied trace retrieved_chunks empty",
+                    trace_data.get("retrieved_chunks"),
+                    [],
+                    {"response": trace_data},
+                )
+                _assert_equal(
+                    "admin denied trace hit_chunk_ids empty",
+                    trace_data.get("hit_chunk_ids"),
+                    [],
+                    {"response": trace_data},
+                )
+                _assert_equal(
+                    "admin denied trace search status",
+                    _function_status(trace_data, "search_allowed_chunks"),
+                    "denied",
+                    {"response": trace_data},
+                )
+                _assert_equal(
+                    "admin denied trace generate status",
+                    _function_status(trace_data, "generate_answer"),
+                    "skipped",
+                    {"response": trace_data},
+                )
         passes += 1
         print("[PASS] admin audit logs safe for denied requests")
     except PermissionMatrixFailure as exc:
@@ -346,7 +356,11 @@ def run(base_url: str) -> int:
         _assert_equal("visitor greeting ask status", status, 200, {"response": greeting_data})
         _assert_equal("visitor greeting mode", greeting_data.get("mode"), "general", {"response": greeting_data})
         _assert_equal("visitor greeting denied", greeting_data.get("denied"), False, {"response": greeting_data})
-        _assert_equal("visitor greeting citations empty", greeting_data.get("citations"), [], {"response": greeting_data})
+        _assert_true(
+            "visitor greeting has no raw debug fields",
+            "citations" not in greeting_data and "retrieved_chunks" not in greeting_data,
+            {"response": greeting_data},
+        )
 
         status, intro_data = _request_json(
             "POST",
@@ -357,10 +371,10 @@ def run(base_url: str) -> int:
         _assert_equal("visitor company intro ask status", status, 200, {"response": intro_data})
         _assert_equal("visitor company intro denied", intro_data.get("denied"), False, {"response": intro_data})
         _assert_true(
-            "visitor company intro citations in public-policy",
+            "visitor company intro sources in public-policy",
             {
                 item.get("kb_code")
-                for item in intro_data.get("citations", [])
+                for item in intro_data.get("sources", [])
                 if isinstance(item, dict) and isinstance(item.get("kb_code"), str)
             }.issubset({"public-policy"}),
             {"response": intro_data},
@@ -383,7 +397,7 @@ def run(base_url: str) -> int:
         )
         _assert_equal("visitor company internal ask status", status, 200, {"response": company_internal_data})
         _assert_equal("visitor company internal denied", company_internal_data.get("denied"), True, {"response": company_internal_data})
-        _assert_equal("visitor company internal citations empty", company_internal_data.get("citations"), [], {"response": company_internal_data})
+        _assert_equal("visitor company internal sources empty", company_internal_data.get("sources"), [], {"response": company_internal_data})
 
         status, clarification_data = _request_json(
             "POST",
@@ -399,7 +413,6 @@ def run(base_url: str) -> int:
             "clarification_required",
             {"response": clarification_data},
         )
-        _assert_equal("visitor clarification citations empty", clarification_data.get("citations"), [], {"response": clarification_data})
         _assert_equal("visitor clarification sources empty", clarification_data.get("sources"), [], {"response": clarification_data})
 
         visitor_clarification_request_id = str(clarification_data.get("request_id", ""))
@@ -408,11 +421,9 @@ def run(base_url: str) -> int:
             len(visitor_clarification_request_id) > 0,
             {"response": clarification_data},
         )
-        status, clarification_trace = _request_json(
-            "GET",
-            f"{api}/qa/{visitor_clarification_request_id}/trace",
-            token=visitor_token,
-        )
+        admin_token = tokens.get("bilingual_admin")
+        _assert_true("bilingual_admin token exists for clarification trace", bool(admin_token), {"tokens": list(tokens.keys())})
+        status, clarification_trace = _request_json("GET", f"{api}/qa/{visitor_clarification_request_id}/trace", token=admin_token)
         _assert_equal("visitor clarification trace status", status, 200, {"response": clarification_trace})
         _assert_equal(
             "visitor clarification trace search status",
@@ -447,10 +458,10 @@ def run(base_url: str) -> int:
             _assert_equal(f"{role} company ask status", status, 200, {"response": staff_company_data})
             _assert_equal(f"{role} company ask denied", staff_company_data.get("denied"), False, {"response": staff_company_data})
             _assert_true(
-                f"{role} company ask citations in company-internal",
+                f"{role} company ask sources in company-internal",
                 {
                     item.get("kb_code")
-                    for item in staff_company_data.get("citations", [])
+                    for item in staff_company_data.get("sources", [])
                     if isinstance(item, dict) and isinstance(item.get("kb_code"), str)
                 }.issubset({"company-internal"}),
                 {"response": staff_company_data},

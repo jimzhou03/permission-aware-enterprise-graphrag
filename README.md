@@ -241,11 +241,11 @@ flowchart LR
 - `target_kb_codes` 为空且路由不确定时，返回澄清，不执行检索和生成。
 - `target_kb_codes` 明确但与 `allowed_kb_ids` 无交集时，检索前拒绝。
 - 普通前端聊天视图显示 sanitized sources，并隐藏 chunk-level debug fields。
-- QA API 为调试和 trace 兼容性保留 authorized `citations` / `retrieved_chunks`；这些字段仍受后端 RBAC/ACL 与 `selected_kb_ids` 约束。
-- Developer Trace 和 document chunk APIs 可在当前认证用户授权范围内展示 full chunk content；它们是 debugging/observability views，不是 public responses。
+- 普通 QA API 只返回 sanitized `sources`，不返回 `citations` / `retrieved_chunks` / `chunk_id` / `score` / `excerpt`。
+- Debug ask、Developer Trace 和 document chunk full content 仅面向具备调试/审计权限的用户；这些字段仍受后端 RBAC/ACL 与当前 viewer scope 约束。
 - 核心安全保证是 unauthorized chunks 在 retrieval 之前被排除，不进入 answer generation、cache、audit 或 graph projection。
 - 默认 `LLM_MODE=mock`、`EMBEDDING_MODE=mock`，CI 不依赖外部 API/模型下载。
-- Docker Compose 是 local demo setup；它包含 Adminer 和 Redis Commander 等观测工具，不是 production deployment profile。
+- Docker Compose 是 local demo setup，不是 production deployment profile；Adminer 和 Redis Commander 仅在 `debug` profile 下启动。
 
 ## 11. What is Implemented
 
@@ -257,6 +257,7 @@ flowchart LR
 - Redis 权限感知缓存。
 - QA 审计、Developer Trace、Graph Trace。
 - Permission Matrix Visualizer（read-only）。
+- v0.9.5 hardening：普通 ask/debug ask 分层、trace/chunk full content 收紧、production config guard、debug compose profile。
 - Neo4j 图投影（KB/Document/Chunk/Trace + light entity projection）。
 - 文档上传与 reindex（Markdown/TXT）。
 - v0.9.4 fictional department seed coverage：public/company/tech/sales/marketing/support/hr/admin/product 均有演示问答锚点。
@@ -299,8 +300,8 @@ python scripts/test_permission_matrix.py --base-url http://127.0.0.1:8000
 
 ## 15. Roadmap
 
-- Completed: CI, Permission Matrix Visualizer, department demo knowledge coverage, Docker demo scripts, permission matrix tests.
-- Future: sanitized public ask response split, production permission admin panel, SSO, secret management, real embedding provider, production LLM generator, production graph construction, cloud deployment hardening, observability stack.
+- Completed: CI, Permission Matrix Visualizer, department demo knowledge coverage, Docker demo scripts, permission matrix tests, sanitized public ask response split.
+- Future: production permission admin panel, SSO, secret management, real embedding provider, production LLM generator, production graph construction, cloud deployment hardening, observability stack.
 
 ## 16. Troubleshooting
 

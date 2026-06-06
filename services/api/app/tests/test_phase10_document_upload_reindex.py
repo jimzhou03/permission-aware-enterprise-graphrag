@@ -57,6 +57,7 @@ def test_bilingual_admin_can_upload_md_and_view_document_and_chunks(client):
     assert chunks
     assert all(item["has_embedding"] for item in chunks)
     assert all(item["embedding_dimension"] == settings.embedding_dimensions for item in chunks)
+    assert all(item.get("content") for item in chunks)
 
     kb_after = _knowledge_base_by_code(client, token, "public-policy")
     assert kb_after["version"] >= before_version + 1
@@ -163,3 +164,4 @@ def test_reindex_endpoint_rebuilds_chunks_and_updates_versions(client):
     chunks = chunks_response.json()
     assert chunks
     assert all(item["has_embedding"] for item in chunks)
+    assert all(item.get("content") for item in chunks)

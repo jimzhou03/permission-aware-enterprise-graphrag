@@ -12,9 +12,12 @@ from app.models import Document, DocumentChunk, KnowledgeBase, User
 from app.schemas.graph import QAGraphResponse
 from app.schemas.qa import (
     AskRequest,
+    AskPublicResponse,
     AskResponse,
+    AnswerSource,
     Citation,
     FunctionTraceStep,
+    PublicGraphPath,
     QAAuditRecordResponse,
     QATraceResponse,
     RouteDecision,
@@ -45,6 +48,48 @@ def _parse_uuid_list(values: list[str]) -> list[UUID]:
         except ValueError:
             continue
     return parsed
+
+
+def _to_public_ask_response(response: AskResponse) -> AskPublicResponse:
+    return AskPublicResponse(
+        request_id=response.request_id,
+        answer=response.answer,
+        denied=response.denied,
+        refusal_reason=response.refusal_reason,
+        cache_hit=response.cache_hit,
+        mode=response.mode,
+        route=response.route,
+        router_mode=response.router_mode,
+        router_model=response.router_model,
+        router_fallback_used=response.router_fallback_used,
+        router_error=response.router_error,
+        sources=response.sources,
+        graph_paths=[
+            PublicGraphPath(path=item.path, explanation=item.explanation)
+            for item in response.graph_paths
+        ],
+        function_trace_summary=response.function_trace_summary,
+    )
+
+
+def _sources_from_authorized_rows(
+    rows: list[tuple[DocumentChunk, Document, KnowledgeBase]],
+) -> list[AnswerSource]:
+    sources: list[AnswerSource] = []
+    seen: set[tuple[str, str]] = set()
+    for _, document, kb in rows:
+        key = (kb.code, document.title)
+        if key in seen:
+            continue
+        seen.add(key)
+        sources.append(
+            AnswerSource(
+                kb_code=kb.code,
+                kb_name=kb.name,
+                document_title=document.title,
+            )
+        )
+    return sources
 
 
 def _parse_retrieval_engine_from_model(model: str) -> str | None:
@@ -188,10 +233,20 @@ def _default_function_trace(record_mode: str, denied: bool, cache_hit: bool) -> 
     ]
 
 
-@router.post("/ask", response_model=AskResponse)
+@router.post("/ask", response_model=AskPublicResponse)
 def ask(
     payload: AskRequest,
     current_user: User = Depends(require_permission("qa:ask")),
+    db: Session = Depends(get_db),
+) -> AskPublicResponse:
+    result = ask_question(db=db, user=current_user, payload=payload)
+    return _to_public_ask_response(result.response)
+
+
+@router.post("/debug/ask", response_model=AskResponse)
+def debug_ask(
+    payload: AskRequest,
+    current_user: User = Depends(require_permission("audit:read")),
     db: Session = Depends(get_db),
 ) -> AskResponse:
     result = ask_question(db=db, user=current_user, payload=payload)
@@ -213,6 +268,7 @@ def get_request_detail(
     if not is_owner and not can_read_audit:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden to read this record")
 
+    can_see_debug_metadata = can_read_audit
     return QAAuditRecordResponse(
         request_id=record.request_id,
         user_id=record.user_id,
@@ -220,11 +276,11 @@ def get_request_detail(
         answer=record.answer,
         denied=record.denied,
         refusal_reason=record.refusal_reason,
-        hit_kb_ids=record.hit_kb_ids,
-        hit_document_ids=record.hit_document_ids,
-        hit_chunk_ids=record.hit_chunk_ids,
+        hit_kb_ids=record.hit_kb_ids if can_see_debug_metadata else [],
+        hit_document_ids=record.hit_document_ids if can_see_debug_metadata else [],
+        hit_chunk_ids=record.hit_chunk_ids if can_see_debug_metadata else [],
         mode=record.mode,
-        model=record.model,
+        model=record.model if can_see_debug_metadata else "redacted",
         cache_hit=record.cache_hit,
         latency_ms=record.latency_ms,
     )
@@ -276,6 +332,7 @@ def get_request_trace(
     row_by_chunk_id = {str(chunk.id): (chunk, document, kb) for chunk, document, kb in chunk_rows}
 
     reconstructed_chunks: list[TraceRetrievedChunk] = []
+    authorized_rows: list[tuple[DocumentChunk, Document, KnowledgeBase]] = []
     omitted_for_scope = 0
     for chunk_id in hit_chunk_ids:
         row = row_by_chunk_id.get(chunk_id)
@@ -284,6 +341,9 @@ def get_request_trace(
         chunk, document, kb = row
         if kb.id not in viewer_allowed_kb_ids:
             omitted_for_scope += 1
+            continue
+        authorized_rows.append(row)
+        if not can_read_audit:
             continue
         embedding = chunk.embedding if isinstance(chunk.embedding, list) else []
         preview = chunk.content.strip().replace("\n", " ")
@@ -325,6 +385,18 @@ def get_request_trace(
         trace_limits.append(
             "function trace is reconstructed from audit metadata when runtime step snapshots are unavailable."
         )
+    if not can_read_audit:
+        trace_limits.append(
+            "Full trace diagnostics require audit:read; this owner trace view is sanitized."
+        )
+
+    visible_hit_kb_ids = hit_kb_ids if can_read_audit else []
+    visible_hit_document_ids = hit_document_ids if can_read_audit else []
+    visible_hit_chunk_ids = hit_chunk_ids if can_read_audit else []
+    visible_allowed_kb_ids = allowed_kb_ids if can_read_audit else []
+    visible_allowed_kb_codes = allowed_kb_codes if can_read_audit else []
+    visible_route_decision = route_decision if can_read_audit else None
+    visible_function_trace = function_trace if can_read_audit else []
 
     return QATraceResponse(
         request_id=record.request_id,
@@ -337,14 +409,17 @@ def get_request_trace(
         mode=record.mode,
         denied=record.denied,
         refusal_reason=record.refusal_reason,
-        allowed_kb_ids=allowed_kb_ids,
-        allowed_kb_codes=allowed_kb_codes,
-        hit_kb_ids=hit_kb_ids,
-        hit_document_ids=hit_document_ids,
-        hit_chunk_ids=hit_chunk_ids,
+        allowed_kb_ids=visible_allowed_kb_ids,
+        allowed_kb_codes=visible_allowed_kb_codes,
+        hit_kb_ids=visible_hit_kb_ids,
+        hit_document_ids=visible_hit_document_ids,
+        hit_chunk_ids=visible_hit_chunk_ids,
+        sources=_sources_from_authorized_rows(authorized_rows),
         retrieved_chunks=reconstructed_chunks,
         retrieval_engine=(
-            _parse_retrieval_engine_from_model(record.model) or current_runtime.retrieval_engine
+            (_parse_retrieval_engine_from_model(record.model) or current_runtime.retrieval_engine)
+            if can_read_audit
+            else "redacted"
         ),
         router_mode=route_snapshot.router_mode if route_snapshot else current_router_status.mode,
         router_model=route_snapshot.router_model if route_snapshot else current_router_status.model,
@@ -355,11 +430,11 @@ def get_request_trace(
             route_snapshot.router_fallback_used if route_snapshot else current_router_status.fallback_used
         ),
         router_error=route_snapshot.router_error if route_snapshot else current_router_status.error,
-        router_decision=route_decision,
+        router_decision=visible_route_decision,
         cache_hit=record.cache_hit,
-        model=record.model,
+        model=record.model if can_read_audit else "redacted",
         latency_ms=record.latency_ms,
-        function_trace=function_trace,
+        function_trace=visible_function_trace,
         trace_limits=trace_limits,
     )
 

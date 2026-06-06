@@ -221,5 +221,7 @@ def test_router_target_scope_denied_request_skips_llm_generation(client, monkeyp
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["denied"] is True
-    assert payload["citations"] == []
+    assert payload["sources"] == []
+    assert "citations" not in payload
+    assert "retrieved_chunks" not in payload
     assert calls["count"] == 0

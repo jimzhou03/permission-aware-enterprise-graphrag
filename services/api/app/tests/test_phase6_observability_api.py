@@ -111,6 +111,7 @@ def test_document_and_chunk_access_scope_enforced(client):
     assert visitor_chunks_response.status_code == 200, visitor_chunks_response.text
     for item in visitor_chunks_response.json():
         assert item["knowledge_base_code"] == "public-policy"
+        assert "content" not in item
 
 
 def test_trace_endpoint_filters_chunk_content_for_unauthorized_audit_reader(client):
@@ -124,7 +125,9 @@ def test_trace_endpoint_filters_chunk_content_for_unauthorized_audit_reader(clie
     )
     assert ask_response.status_code == 200, ask_response.text
     ask_payload = ask_response.json()
-    assert ask_payload["citations"]
+    assert ask_payload["sources"]
+    assert "citations" not in ask_payload
+    assert "retrieved_chunks" not in ask_payload
     request_id = ask_payload["request_id"]
 
     _grant_role_permission("visitor", "audit:read")

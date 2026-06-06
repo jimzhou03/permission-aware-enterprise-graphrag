@@ -7,7 +7,7 @@
 - Request and response format: JSON unless an endpoint explicitly accepts file upload.
 - Errors use standard HTTP status codes with structured FastAPI error responses.
 
-This document describes the API surface that exists in the current v0.9.4 demo. Future ideas are listed separately and must not be presented as implemented endpoints.
+This document describes the API surface that exists in the current v0.9.5 demo hardening version. Future ideas are listed separately and must not be presented as implemented endpoints.
 
 ## 2. Auth API
 
@@ -59,7 +59,7 @@ Uploads a Markdown/TXT document into an authorized writable knowledge base.
 
 Returns chunks for a document only when the current user can access the document's knowledge base.
 
-This endpoint can expose full authorized chunk content for debugging and observability. It does not expose chunks outside the viewer's backend RBAC/ACL scope.
+This endpoint returns chunk previews by default. Full authorized chunk content is returned only to users with `audit:read` or `admin:kb:write`; it does not expose chunks outside the viewer's backend RBAC/ACL scope.
 
 ### POST `/documents/{document_id}/reindex`
 
@@ -91,22 +91,27 @@ Response includes:
 - `mode`
 - `route`
 - `sources`
-- `retrieved_chunks`
-- `citations`
 - `graph_paths`
 - `function_trace_summary`
 
-The normal chat UI hides chunk-level debug fields and displays sanitized sources. The API response may retain authorized `citations` / `retrieved_chunks` for debugging and trace compatibility; these are still scoped by backend RBAC/ACL and selected KB IDs.
+The normal ask response is public-chat safe. It exposes sanitized `sources` only and does not expose `citations`, `retrieved_chunks`, `chunk_id`, `score`, or `excerpt`.
+
+### POST `/qa/debug/ask`
+
+Submits a debug ask request and returns the full internal ask response, including authorized `citations` / `retrieved_chunks`.
+
+- Requires `audit:read`.
+- Still scopes retrieval by backend RBAC/ACL and selected KB IDs.
 
 ### GET `/qa/{request_id}`
 
-Returns a QA audit record for the request owner or a user with `audit:read`.
+Returns a QA audit record for the request owner or a user with `audit:read`. Request owners without `audit:read` receive redacted hit IDs and model metadata.
 
 ### GET `/qa/{request_id}/trace`
 
 Returns Developer Trace details for the request owner or a user with `audit:read`.
 
-Trace can reconstruct and expose full authorized chunk content. It filters chunk content by the current viewer's backend permission scope.
+Trace can reconstruct and expose full authorized chunk content only for users with `audit:read`. Request owners without `audit:read` receive a sanitized trace view without hit IDs, function trace steps, router decision, model, or retrieved chunks.
 
 ### GET `/qa/{request_id}/graph`
 
@@ -171,9 +176,10 @@ This endpoint is unauthenticated and contains only static demo prompts.
 | `GET /knowledge-bases` | Yes | Current user's allowed KB scope |
 | `GET /knowledge-bases/{kb_id}/documents` | Yes | Authorized KB scope |
 | `POST /knowledge-bases/{kb_id}/documents/upload` | Yes | Authorized KB scope + KB write permission |
-| `GET /documents/{document_id}/chunks` | Yes | Authorized document KB scope |
+| `GET /documents/{document_id}/chunks` | Yes | Authorized document KB scope; full content requires `audit:read` or `admin:kb:write` |
 | `POST /documents/{document_id}/reindex` | Yes | Authorized document KB scope + KB write permission |
-| `POST /qa/ask` | Yes | `qa:ask` |
+| `POST /qa/ask` | Yes | `qa:ask`, sanitized response only |
+| `POST /qa/debug/ask` | Yes | `audit:read` |
 | `GET /qa/{request_id}` | Yes | Request owner or `audit:read` |
 | `GET /qa/{request_id}/trace` | Yes | Request owner or `audit:read` |
 | `GET /qa/{request_id}/graph` | Yes | Request owner or `audit:read` |
@@ -187,14 +193,13 @@ This endpoint is unauthenticated and contains only static demo prompts.
 
 ## 11. Future / Not Implemented
 
-The following are not implemented in v0.9.4 and must not be described as current APIs:
+The following are not implemented in v0.9.5 and must not be described as current APIs:
 
 - `/admin/users`
 - `/admin/documents`
 - Production permission admin panel.
 - Enterprise SSO.
 - Production secret management.
-- Sanitized public ask response split.
 - Real-time permission propagation control plane.
 - Production-grade entity disambiguation.
 - Community detection.

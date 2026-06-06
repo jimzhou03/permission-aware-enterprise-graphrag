@@ -47,7 +47,7 @@ class DocumentChunkPublic(ORMModel):
     knowledge_base_code: str
     chunk_index: int
     content_preview: str
-    content: str
+    content: str | None = None
     has_embedding: bool
     embedding_dimension: int
 

@@ -34,8 +34,30 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Lint frontend
+        run: npm run lint
+
       - name: Build frontend
         run: npm run build
+
+  backend-lint:
+    name: Backend Ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        run: python -m pip install --upgrade pip ruff
+
+      - name: Ruff check
+        run: python -m ruff check services/api/app scripts
 
   backend-quality-gates:
     name: Backend Pytest + Permission Matrix

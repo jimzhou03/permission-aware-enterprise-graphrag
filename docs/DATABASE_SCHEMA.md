@@ -78,7 +78,7 @@ PostgreSQL保存系统事实数据：
 | `knowledge_base_id` | UUID | 关联知识库 |
 | `role_id` | UUID | 可选，授权角色 |
 | `department_id` | UUID | 可选，授权部门 |
-| `access_level` | varchar | `read`、`manage` |
+| `access_level` | varchar | `read`、`write`、`admin` |
 
 ### `documents`
 
@@ -156,4 +156,3 @@ PostgreSQL保存系统事实数据：
 ## 4. 权限与图谱关系
 
 Neo4j不是权限事实源。GraphRAG查询前必须已经从PostgreSQL获得授权chunk或授权document，再进入图谱扩展。
-

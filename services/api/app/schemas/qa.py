@@ -94,6 +94,11 @@ class GraphPath(BaseModel):
     explanation: str
 
 
+class PublicGraphPath(BaseModel):
+    path: list[str]
+    explanation: str
+
+
 class FunctionTraceStep(BaseModel):
     tool_name: str
     status: FunctionTraceStatus
@@ -121,6 +126,23 @@ class AskResponse(BaseModel):
     retrieved_chunks: list[Citation] = Field(default_factory=list)
     citations: list[Citation] = Field(default_factory=list)
     graph_paths: list[GraphPath] = Field(default_factory=list)
+    function_trace_summary: list[str] = Field(default_factory=list)
+
+
+class AskPublicResponse(BaseModel):
+    request_id: str
+    answer: str
+    denied: bool
+    refusal_reason: str | None = None
+    cache_hit: bool
+    mode: ResponseMode
+    route: RouteDecision
+    router_mode: RouterMode = "rules"
+    router_model: str = "rules"
+    router_fallback_used: bool = False
+    router_error: str | None = None
+    sources: list[AnswerSource] = Field(default_factory=list)
+    graph_paths: list[PublicGraphPath] = Field(default_factory=list)
     function_trace_summary: list[str] = Field(default_factory=list)
 
 
@@ -170,6 +192,7 @@ class QATraceResponse(BaseModel):
     hit_kb_ids: list[str] = Field(default_factory=list)
     hit_document_ids: list[str] = Field(default_factory=list)
     hit_chunk_ids: list[str] = Field(default_factory=list)
+    sources: list[AnswerSource] = Field(default_factory=list)
     retrieved_chunks: list[TraceRetrievedChunk] = Field(default_factory=list)
     retrieval_engine: str
     router_mode: RouterMode = "rules"

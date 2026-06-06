@@ -33,7 +33,9 @@ def _trace_step_status(trace_payload: dict, step_name: str) -> str:
 
 
 def _assert_no_unauthorized_chunks(payload: dict, allowed_codes: set[str]) -> None:
-    kb_codes = {item["kb_code"] for item in payload.get("citations", [])}
+    assert "citations" not in payload
+    assert "retrieved_chunks" not in payload
+    kb_codes = {item["kb_code"] for item in payload.get("sources", [])}
     assert kb_codes.issubset(allowed_codes)
 
 
@@ -112,7 +114,9 @@ def test_explicit_unauthorized_kb_scope_is_denied(client):
         assert response.status_code == 200, response.text
         payload = response.json()
         assert payload["denied"] is True, {"email": email, "kb": unauthorized_kb, "payload": payload}
-        assert payload["citations"] == []
+        assert payload["sources"] == []
+        assert "citations" not in payload
+        assert "retrieved_chunks" not in payload
 
 
 def test_bilingual_admin_can_retrieve_all_department_knowledge(client):
@@ -172,8 +176,8 @@ def test_greeting_uses_general_fallback_without_rag(client):
     assert payload["route"]["need_rag"] is False
     assert payload["route"]["query_language"] == "zh"
     assert payload["route"]["requires_internal_access"] is False
-    assert payload["citations"] == []
-    assert payload["retrieved_chunks"] == []
+    assert "citations" not in payload
+    assert "retrieved_chunks" not in payload
 
 
 def test_identity_and_capability_questions_use_general_fallback(client):
@@ -184,7 +188,7 @@ def test_identity_and_capability_questions_use_general_fallback(client):
         payload = response.json()
         assert payload["denied"] is False
         assert payload["mode"] == "general"
-        assert payload["citations"] == []
+        assert "citations" not in payload
         assert payload["route"]["requires_internal_access"] is False
         assert payload["route"]["intent"] in {"assistant_identity", "assistant_capability"}
 
@@ -201,7 +205,7 @@ def test_company_and_cooperation_questions_use_authorized_public_scope(client):
         assert payload["route"]["target_department"] is None
         assert payload["route"]["target_kb_codes"] == ["public-policy"]
         assert payload["route"]["requires_internal_access"] is False
-        assert {item["kb_code"] for item in payload["citations"]}.issubset({"public-policy"})
+        assert {item["kb_code"] for item in payload["sources"]}.issubset({"public-policy"})
         assert "当前账号可访问" in payload["answer"] or "Based on the knowledge bases available" in payload["answer"]
 
 
@@ -211,7 +215,7 @@ def test_company_internal_questions_require_company_internal_scope(client):
     assert visitor_response.status_code == 200, visitor_response.text
     visitor_payload = visitor_response.json()
     assert visitor_payload["denied"] is True
-    assert visitor_payload["citations"] == []
+    assert visitor_payload["sources"] == []
     assert visitor_payload["route"]["target_scope"] == "company"
     assert visitor_payload["route"]["target_kb_codes"] == ["company-internal"]
 
@@ -220,7 +224,7 @@ def test_company_internal_questions_require_company_internal_scope(client):
     assert staff_response.status_code == 200, staff_response.text
     staff_payload = staff_response.json()
     assert staff_payload["denied"] is False
-    assert {item["kb_code"] for item in staff_payload["citations"]}.issubset({"company-internal"})
+    assert {item["kb_code"] for item in staff_payload["sources"]}.issubset({"company-internal"})
     assert staff_payload["route"]["target_scope"] == "company"
 
 
@@ -241,9 +245,9 @@ def test_router_target_scope_narrowing_for_department_questions(client):
         payload = response.json()
         assert payload["denied"] is denied_expected, {"email": email, "question": question, "payload": payload}
         if denied_expected:
-            assert payload["citations"] == []
+            assert payload["sources"] == []
             continue
-        assert {item["kb_code"] for item in payload["citations"]}.issubset(allowed_hit_codes)
+        assert {item["kb_code"] for item in payload["sources"]}.issubset(allowed_hit_codes)
 
 
 def test_all_staff_can_hit_company_internal_for_permission_workflow_question(client):
@@ -263,7 +267,7 @@ def test_all_staff_can_hit_company_internal_for_permission_workflow_question(cli
         payload = response.json()
         assert payload["denied"] is False, {"email": email, "payload": payload}
         assert payload["route"]["target_scope"] == "company"
-        assert {item["kb_code"] for item in payload["citations"]}.issubset({"company-internal"})
+        assert {item["kb_code"] for item in payload["sources"]}.issubset({"company-internal"})
 
 
 def test_bilingual_admin_can_hit_multiple_department_targets(client):
@@ -279,7 +283,7 @@ def test_bilingual_admin_can_hit_multiple_department_targets(client):
         assert response.status_code == 200, response.text
         payload = response.json()
         assert payload["denied"] is False
-        assert {item["kb_code"] for item in payload["citations"]}.issubset(expected_scope)
+        assert {item["kb_code"] for item in payload["sources"]}.issubset(expected_scope)
 
 
 def test_v094_demo_knowledge_coverage_routing_cases(client):
@@ -386,6 +390,7 @@ def test_v094_demo_knowledge_coverage_routing_cases(client):
         },
     ]
 
+    audit_token = _login(client, "bilingual_admin@example.local")
     for case in cases:
         token = _login(client, case["email"])
         response = _ask(client, token, case["question"], mode="auto")
@@ -396,26 +401,25 @@ def test_v094_demo_knowledge_coverage_routing_cases(client):
         if case["expected_kb_code"] is None:
             assert payload["route"]["target_kb_codes"] == [], {"case": case, "payload": payload}
             assert payload["mode"] == case.get("expected_mode"), {"case": case, "payload": payload}
-            assert payload["citations"] == [], {"case": case, "payload": payload}
             assert payload["sources"] == [], {"case": case, "payload": payload}
+            assert "citations" not in payload, {"case": case, "payload": payload}
+            assert "retrieved_chunks" not in payload, {"case": case, "payload": payload}
             continue
 
         assert payload["route"]["target_kb_codes"] == [case["expected_kb_code"]], {"case": case, "payload": payload}
 
         if case["denied"]:
-            assert payload["citations"] == [], {"case": case, "payload": payload}
             assert payload["sources"] == [], {"case": case, "payload": payload}
-            trace_payload = _trace(client, token, payload["request_id"])
+            assert "citations" not in payload, {"case": case, "payload": payload}
+            assert "retrieved_chunks" not in payload, {"case": case, "payload": payload}
+            trace_payload = _trace(client, audit_token, payload["request_id"])
             assert _trace_step_status(trace_payload, "search_allowed_chunks") == "denied", {
                 "case": case,
                 "trace": trace_payload,
             }
         else:
-            hit_codes = {item["kb_code"] for item in payload.get("citations", [])}
             source_codes = {item["kb_code"] for item in payload.get("sources", [])}
-            assert hit_codes, {"case": case, "payload": payload}
             assert source_codes, {"case": case, "payload": payload}
-            assert hit_codes.issubset({case["expected_kb_code"]}), {"case": case, "payload": payload}
             assert source_codes.issubset({case["expected_kb_code"]}), {"case": case, "payload": payload}
             assert payload["answer"], {"case": case, "payload": payload}
 
@@ -425,6 +429,7 @@ def test_clarification_required_skips_retrieval_and_generation(client):
         ("visitor@example.local", "内部流程怎么走？"),
         ("tech_staff@example.local", "那个流程是什么？"),
     ]
+    audit_token = _login(client, "bilingual_admin@example.local")
     for email, question in checks:
         token = _login(client, email)
         response = _ask(client, token, question, mode="auto")
@@ -434,11 +439,11 @@ def test_clarification_required_skips_retrieval_and_generation(client):
         assert payload["mode"] == "clarification_required", {"email": email, "payload": payload}
         assert payload["route"]["target_scope"] == "clarification_required", {"email": email, "payload": payload}
         assert payload["route"]["target_kb_codes"] == [], {"email": email, "payload": payload}
-        assert payload["citations"] == [], {"email": email, "payload": payload}
-        assert payload["retrieved_chunks"] == [], {"email": email, "payload": payload}
+        assert "citations" not in payload, {"email": email, "payload": payload}
+        assert "retrieved_chunks" not in payload, {"email": email, "payload": payload}
         assert payload["sources"] == [], {"email": email, "payload": payload}
 
-        trace_payload = _trace(client, token, payload["request_id"])
+        trace_payload = _trace(client, audit_token, payload["request_id"])
         assert _trace_step_status(trace_payload, "search_allowed_chunks") == "skipped", {
             "email": email,
             "trace": trace_payload,
@@ -463,7 +468,11 @@ def test_normal_answer_payload_exposes_only_sanitized_sources_for_chat_render(cl
         assert "score" not in source
         assert "excerpt" not in source
 
-    trace_payload = _trace(client, token, payload["request_id"])
+    assert "citations" not in payload
+    assert "retrieved_chunks" not in payload
+
+    audit_token = _login(client, "bilingual_admin@example.local")
+    trace_payload = _trace(client, audit_token, payload["request_id"])
     assert _trace_step_status(trace_payload, "search_allowed_chunks") == "success", trace_payload
     assert len(trace_payload.get("retrieved_chunks", [])) >= 0
 
@@ -475,6 +484,6 @@ def test_unsupported_query_returns_unsupported_mode_without_retrieval(client):
     payload = response.json()
     assert payload["denied"] is False
     assert payload["mode"] == "unsupported"
-    assert payload["citations"] == []
-    assert payload["retrieved_chunks"] == []
+    assert "citations" not in payload
+    assert "retrieved_chunks" not in payload
     assert payload["route"]["intent"] == "unsupported"

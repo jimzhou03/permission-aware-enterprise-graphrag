@@ -160,7 +160,9 @@ def test_ollama_router_cannot_expand_permissions_for_visitor(client, monkeypatch
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["denied"] is True
-    assert payload["citations"] == []
+    assert payload["sources"] == []
+    assert "citations" not in payload
+    assert "retrieved_chunks" not in payload
 
 
 def test_ollama_router_sales_and_tech_isolation_still_enforced(client, monkeypatch):
@@ -221,7 +223,7 @@ def test_ollama_router_admin_can_still_retrieve_authorized_bilingual_content(cli
     assert cn_response.status_code == 200, cn_response.text
     cn_payload = cn_response.json()
     assert cn_payload["denied"] is False
-    assert {item["kb_code"] for item in cn_payload["citations"]}.issubset({"sales-internal"})
+    assert {item["kb_code"] for item in cn_payload["sources"]}.issubset({"sales-internal"})
 
     en_response = _ask(
         client,
@@ -233,7 +235,7 @@ def test_ollama_router_admin_can_still_retrieve_authorized_bilingual_content(cli
     assert en_response.status_code == 200, en_response.text
     en_payload = en_response.json()
     assert en_payload["denied"] is False
-    assert {item["kb_code"] for item in en_payload["citations"]}.issubset({"tech-internal"})
+    assert {item["kb_code"] for item in en_payload["sources"]}.issubset({"tech-internal"})
 
 
 def test_trace_contains_safe_router_metadata(client, monkeypatch):
@@ -256,7 +258,8 @@ def test_trace_contains_safe_router_metadata(client, monkeypatch):
     assert ask_response.status_code == 200, ask_response.text
     request_id = ask_response.json()["request_id"]
 
-    trace_response = client.get(f"/api/v1/qa/{request_id}/trace", headers={"Authorization": f"Bearer {token}"})
+    audit_token = _login(client, "bilingual_admin@example.local")
+    trace_response = client.get(f"/api/v1/qa/{request_id}/trace", headers={"Authorization": f"Bearer {audit_token}"})
     assert trace_response.status_code == 200, trace_response.text
     trace_payload = trace_response.json()
     assert trace_payload["router_mode"] == "ollama"

@@ -5,6 +5,12 @@ from app.models import KnowledgeBase, KnowledgeBaseACL, User
 from app.services.auth_service import user_has_permission
 
 
+KB_ACCESS_READ = "read"
+KB_ACCESS_WRITE = "write"
+KB_ACCESS_ADMIN = "admin"
+KB_WRITE_ACCESS_LEVELS = {KB_ACCESS_WRITE, KB_ACCESS_ADMIN}
+
+
 def list_allowed_knowledge_bases(db: Session, user: User) -> list[KnowledgeBase]:
     statement = select(KnowledgeBase).where(KnowledgeBase.is_active.is_(True))
 
@@ -43,7 +49,7 @@ def can_write_knowledge_base(db: Session, user: User, kb: KnowledgeBase) -> bool
     statement = select(KnowledgeBaseACL).where(
         and_(
             KnowledgeBaseACL.knowledge_base_id == kb.id,
-            KnowledgeBaseACL.access_level.in_(["write", "admin"]),
+            KnowledgeBaseACL.access_level.in_(KB_WRITE_ACCESS_LEVELS),
             or_(*predicates),
         )
     )

@@ -568,13 +568,7 @@ function collectLocalAuditRecords(sessions: ChatSession[], untitledFallback: str
         cacheHit: current.response.cache_hit,
         createdAt: current.createdAt,
         question,
-        hitKbCodes: [
-          ...new Set(
-            (current.response.sources?.length ? current.response.sources : current.response.citations).map(
-              (item) => item.kb_code
-            )
-          ),
-        ]
+        hitKbCodes: [...new Set(current.response.sources.map((item) => item.kb_code))]
       });
     }
   }
@@ -766,7 +760,7 @@ export default function App() {
   const canUploadDocuments = Boolean(user?.permissions?.includes("admin:kb:write"));
   const latestHitKbCodes = useMemo(() => {
     if (!activeResponse) return [];
-    return [...new Set((activeResponse.sources?.length ? activeResponse.sources : activeResponse.citations).map((item) => item.kb_code))];
+    return [...new Set(activeResponse.sources.map((item) => item.kb_code))];
   }, [activeResponse]);
   const effectiveAllowedKbCodes = useMemo(
     () => (allowedKbCodesFromMe.length > 0 ? allowedKbCodesFromMe : knowledgeBases.map((kb) => kb.code)),
@@ -2111,17 +2105,13 @@ export default function App() {
                                   </div>
                                 ) : null}
 
-                                {chatMessage.response &&
-                                (chatMessage.response.sources?.length > 0 || chatMessage.response.citations.length > 0) ? (
+                                {chatMessage.response && chatMessage.response.sources.length > 0 ? (
                                   <div className="mt-3 border-t border-[#494238] pt-3">
                                     <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[#5b5448]">
                                       {t.citations}
                                     </p>
                                     <div className="space-y-2">
-                                      {(chatMessage.response.sources?.length
-                                        ? chatMessage.response.sources
-                                        : chatMessage.response.citations
-                                      ).map((item) => (
+                                      {chatMessage.response.sources.map((item) => (
                                         <div
                                           key={`${item.kb_code}::${item.document_title}`}
                                           className="rounded-sm border border-[#5c5448] bg-[#f2e7d7] px-3 py-2"
@@ -2436,10 +2426,12 @@ export default function App() {
                                   </div>
                                   <p className="mt-1 text-sm text-slate-700">{chunk.content_preview}</p>
                                 </summary>
-                                <div className="mt-2 border-t border-slate-200 pt-2">
-                                  <p className="mb-1 text-xs text-slate-500">{t.fullChunkContent}</p>
-                                  <pre className="answer-block text-xs">{chunk.content}</pre>
-                                </div>
+                                {chunk.content ? (
+                                  <div className="mt-2 border-t border-slate-200 pt-2">
+                                    <p className="mb-1 text-xs text-slate-500">{t.fullChunkContent}</p>
+                                    <pre className="answer-block text-xs">{chunk.content}</pre>
+                                  </div>
+                                ) : null}
                               </details>
                             ))}
                           </div>

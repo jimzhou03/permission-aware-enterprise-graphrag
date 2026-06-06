@@ -1,10 +1,10 @@
 # Project Status
 
-Last updated: 2026-06-01
+Last updated: 2026-06-06
 
 ## Current Version
 
-`v0.9.4 demo-ready portfolio version`
+`v0.9.5 demo-ready hardening version`
 
 This repository is a local reproducible permission-aware RAG / light GraphRAG demo. It is intended for portfolio review, engineering walkthroughs, and local validation of the permission boundary. Do not claim production readiness.
 
@@ -23,6 +23,9 @@ This repository is a local reproducible permission-aware RAG / light GraphRAG de
 - Fictional department knowledge coverage.
 - Docker Compose local demo.
 - pytest and permission matrix tests.
+- Public ask response hides raw chunk/citation debug fields.
+- Developer Trace and document full chunk content are restricted to audit/debug permissions.
+- Production configuration guard blocks unsafe demo defaults when `ENVIRONMENT=production`.
 
 ## Demo-Level Only
 
@@ -31,6 +34,7 @@ This repository is a local reproducible permission-aware RAG / light GraphRAG de
 - Rule-based router by default.
 - Fictional seed documents.
 - Local Docker Compose.
+- Adminer and Redis Commander are debug-profile tools, not production services.
 
 ## Not Implemented
 
@@ -45,11 +49,11 @@ This repository is a local reproducible permission-aware RAG / light GraphRAG de
 
 ## Validation Snapshot
 
-The latest v0.9.4 validation state recorded for this demo track:
+The latest v0.9.5 validation state should be refreshed after hardening changes:
 
-- pytest: 80 passed, 1 skipped.
-- permission matrix: 11/11 PASS.
-- demo-check: passed.
-- `npm run build`: success.
+- pytest: pending re-run.
+- permission matrix: pending re-run.
+- demo-check: pending re-run.
+- `npm run build`: pending re-run.
 
 Re-run these checks before release tagging or public publication if the code changes after this document update.

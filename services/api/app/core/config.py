@@ -103,6 +103,28 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
+    def validate_runtime_safety(self) -> None:
+        if self.environment.lower() != "production":
+            return
+
+        failures: list[str] = []
+        if self.seed_on_startup:
+            failures.append("SEED_ON_STARTUP must be false in production")
+        if self.jwt_secret_key in {
+            "change-me-in-.env",
+            "change-me-local-demo",
+            "change-me-local-dev-secret",
+            "change-me-in-docker-compose",
+        }:
+            failures.append("JWT_SECRET_KEY must not use a demo default in production")
+        if self.neo4j_password in {"password123", "password12345"}:
+            failures.append("NEO4J_PASSWORD must not use a demo default in production")
+        if "graphrag:graphrag@" in self.database_url:
+            failures.append("DATABASE_URL must not use the demo Postgres password in production")
+
+        if failures:
+            raise RuntimeError("Unsafe production configuration: " + "; ".join(failures))
+
 
 @lru_cache
 def get_settings() -> Settings:

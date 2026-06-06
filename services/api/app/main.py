@@ -17,6 +17,7 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings.validate_runtime_safety()
     db_module.init_database()
     if settings.seed_on_startup:
         db: Session = db_module.SessionLocal()

@@ -8,8 +8,14 @@ These tools are not production admin backends.
 - PostgreSQL: `127.0.0.1:5432`
 - Redis: `127.0.0.1:6379`
 - Neo4j Browser: `http://127.0.0.1:7474`
-- Adminer (PostgreSQL UI): `http://127.0.0.1:8081`
-- Redis Commander (Redis UI): `http://127.0.0.1:8082`
+- Adminer (PostgreSQL UI, debug profile only): `http://127.0.0.1:8081`
+- Redis Commander (Redis UI, debug profile only): `http://127.0.0.1:8082`
+
+Start debug-only observability tools with:
+
+```bash
+docker compose -f infra/docker-compose.yml --env-file .env --profile debug up -d adminer redis-commander
+```
 
 ## 2) PostgreSQL in Adminer (Local Dev Only)
 
